@@ -1,0 +1,117 @@
+/* Scoped to the cinematic hero only. */
+.hero-cinematic {
+  position: relative;
+  width: 100%;
+  height: 100svh;
+  overflow: hidden;
+  background: #000;
+}
+
+.hero-cinematic > canvas,
+.hero-cinematic > .hero-cinematic__still {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Still photo when WebGL is unavailable or the context is lost. */
+.hero-cinematic > .hero-cinematic__still {
+  object-fit: cover;
+  object-position: 50% 42%;
+  opacity: 0;
+  transition: opacity 1.2s ease-out;
+}
+
+.hero-cinematic > .hero-cinematic__still.is-revealed {
+  opacity: 1;
+}
+
+/* ---- J. Scroll transition ------------------------------------------------ */
+
+/* A tall track whose sticky stage is the pinned hero. About starts exactly
+   where the pin releases (negative margin) and slides in underneath it. */
+.hero-track {
+  position: relative;
+  z-index: 1;
+  height: calc(100svh + var(--hero-pin, 300vh));
+  margin-bottom: -100svh;
+  /* The track overlaps About's first screen: it must never swallow its clicks. */
+  pointer-events: none;
+}
+
+.hero-track > .hero-stage {
+  position: sticky;
+  top: 0;
+  width: 100%;
+  height: 100svh;
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+.hero-static > .hero-stage {
+  position: relative;
+  width: 100%;
+}
+
+/* The canvas is transparent where the laptop screen opens onto About. */
+.hero-cinematic.is-portal {
+  background: transparent;
+}
+
+/* Scroll affordance: fades in after the intro, fades out on the first scroll. */
+.hero-cue {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--gutter, 1.5rem) + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  opacity: 0;
+  transition: opacity 1.4s ease-out 1.8s;
+  pointer-events: none;
+}
+
+.hero-cue[data-on] {
+  opacity: 1;
+}
+
+.hero-cue__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.7rem;
+  color: rgb(236 234 242 / 0.62);
+  opacity: var(--hero-cue, 1);
+}
+
+.hero-cue__line {
+  position: relative;
+  display: block;
+  width: 1px;
+  height: 2.6rem;
+  overflow: hidden;
+  background: rgb(236 234 242 / 0.14);
+}
+
+.hero-cue__line::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, transparent, rgb(236 234 242 / 0.85), transparent);
+  transform: translateY(-100%);
+  animation: hero-cue-drop 2.2s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+
+@keyframes hero-cue-drop {
+  to {
+    transform: translateY(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-cue__line::after {
+    animation: none;
+    transform: none;
+    opacity: 0.4;
+  }
+}

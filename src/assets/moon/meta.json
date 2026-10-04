@@ -1,0 +1,7 @@
+{
+  "source": "procedural stand-in (scripts/prepare-moon.mjs); drop the NASA CGI Moon Kit files into scripts/source/moon/ and rerun",
+  "width": 2048,
+  "height": 1024,
+  "meanAlbedo": 0.60865,
+  "bakedRelief": 3
+}

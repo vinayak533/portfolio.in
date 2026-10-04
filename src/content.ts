@@ -1,0 +1,242 @@
+/**
+ * Every word on the site lives here. Swap freely: the layout is built to
+ * absorb short or long values (names, taglines, bullet lengths, counts).
+ */
+
+export type VisualKind = 'rag' | 'vision' | 'pipeline' | 'agents' | 'recsys'
+
+export interface Project {
+  id: string
+  title: string
+  tagline: string
+  year: string
+  role: string
+  tags: string[]
+  /** Procedural shader used for the exhibit screen when no media is supplied. */
+  visual: VisualKind
+  /** Optional: '/works/rag.mp4' or '/works/rag.webp'. Poster is used while video loads. */
+  media?: { src: string; poster?: string }
+  summary: string
+  problem: string
+  approach: string[]
+  outcomes: { value: string; label: string }[]
+  links?: { label: string; href: string }[]
+}
+
+export interface Role {
+  company: string
+  title: string
+  start: string
+  end: string
+  location: string
+  impact: [string, string]
+}
+
+export const site = {
+  name: 'Vinayak K V',
+  /** Short form used for the corner mark. */
+  mark: 'VKV',
+  role: 'AI / ML Engineer',
+  location: 'Bengaluru, India',
+  timezone: 'Asia/Kolkata',
+  timezoneLabel: 'IST',
+  intro:
+    'I build machine-learning systems that leave the notebook: retrieval, vision and agents running in production, measured in latency, cost and trust.',
+  availability: 'Open to senior ML / applied AI roles',
+  portrait: {
+    /** Background-removed cutout produced by `npm run portrait`. */
+    cutout: '/portrait/about.cutout.png',
+    /** Lighter copy for the static / reduced-motion fallback. */
+    still: '/portrait/about.cutout.webp',
+    alt: 'Portrait of Vinayak K V',
+  },
+}
+
+export const about = {
+  kicker: 'About',
+  heading: 'Models are the easy part.',
+  bio:
+    'I am an applied ML engineer who cares about the unglamorous 90%: data contracts, evaluation harnesses, latency budgets and the feedback loops that keep a model honest after launch day. Lately that means retrieval-augmented assistants, multimodal vision pipelines and agent systems that know when to ask a human.',
+  facts: [
+    { value: '5+', label: 'years shipping ML to production' },
+    { value: '40M', label: 'monthly inferences served by my systems' },
+    { value: '-63%', label: 'median p95 latency across three launches' },
+  ],
+}
+
+export const projects: Project[] = [
+  {
+    id: 'atlas-rag',
+    title: 'Atlas',
+    tagline: 'A retrieval assistant that cites every sentence it says.',
+    year: '2025',
+    role: 'Lead ML Engineer',
+    tags: ['RAG', 'Hybrid search', 'Reranking', 'LLM eval', 'pgvector'],
+    visual: 'rag',
+    summary:
+      'Enterprise knowledge assistant over 2.1M internal documents with sentence-level citations and an abstain-when-unsure policy.',
+    problem:
+      'Support engineers spent ~18 minutes per ticket hunting through wikis, runbooks and past incidents. A first chatbot hallucinated policy and lost trust in a week.',
+    approach: [
+      'Hybrid BM25 + dense retrieval with a cross-encoder reranker, chunked on document structure rather than token windows.',
+      'Answer generation constrained to retrieved spans; every claim is linked to a source sentence or the model abstains.',
+      'Offline eval harness of 1,400 graded questions gating every prompt, model and index change in CI.',
+    ],
+    outcomes: [
+      { value: '-41%', label: 'time to resolution' },
+      { value: '96.2%', label: 'citation precision' },
+      { value: '0.8s', label: 'p50 answer latency' },
+    ],
+  },
+  {
+    id: 'iris-vision',
+    title: 'Iris',
+    tagline: 'Defect detection that runs on a $90 edge board.',
+    year: '2024',
+    role: 'ML Engineer, Vision',
+    tags: ['Computer vision', 'Distillation', 'INT8', 'TensorRT', 'Active learning'],
+    visual: 'vision',
+    summary:
+      'Real-time surface-defect detection for a manufacturing line, distilled from a large teacher into an INT8 student running at the edge.',
+    problem:
+      'Manual inspection missed hairline cracks at line speed, and cloud inference added 400ms of round trip the line could not afford.',
+    approach: [
+      'Teacher-student distillation from a ViT-L detector into a compact CNN, quantised to INT8 with calibration on hard negatives.',
+      'Active-learning loop surfacing low-confidence frames to inspectors, cutting labelling cost per useful sample.',
+      'Shadow deployment for six weeks before taking over the reject gate.',
+    ],
+    outcomes: [
+      { value: '98.7%', label: 'recall on critical defects' },
+      { value: '14ms', label: 'per-frame on device' },
+      { value: '-72%', label: 'labelling cost' },
+    ],
+  },
+  {
+    id: 'conduit-pipeline',
+    title: 'Conduit',
+    tagline: 'Feature pipelines with contracts, lineage and one-click backfills.',
+    year: '2024',
+    role: 'ML Platform Engineer',
+    tags: ['Feature store', 'Airflow', 'Spark', 'Data contracts', 'MLOps'],
+    visual: 'pipeline',
+    summary:
+      'An internal ML pipeline platform: typed feature definitions, point-in-time correct training sets and reproducible backfills.',
+    problem:
+      'Twelve teams maintained bespoke training pipelines; silent schema drift broke models in production twice a quarter.',
+    approach: [
+      'Declarative feature specs compiled into batch and streaming jobs from a single definition.',
+      'Data contracts enforced at ingestion with lineage tracked down to each model version.',
+      'Point-in-time joins to eliminate label leakage in training sets.',
+    ],
+    outcomes: [
+      { value: '12', label: 'teams migrated' },
+      { value: '0', label: 'drift incidents in 3 quarters' },
+      { value: '6x', label: 'faster backfills' },
+    ],
+  },
+  {
+    id: 'relay-agents',
+    title: 'Relay',
+    tagline: 'An agent framework that knows when to hand off to a human.',
+    year: '2025',
+    role: 'Founding Engineer',
+    tags: ['Agents', 'Tool use', 'Planning', 'Guardrails', 'Tracing'],
+    visual: 'agents',
+    summary:
+      'A typed, observable agent runtime for multi-step operations workflows with budgeted tool calls and explicit escalation.',
+    problem:
+      'Prototype agents looped, overspent and failed silently; nobody could explain a bad run after the fact.',
+    approach: [
+      'Planner-executor split with typed tool contracts and per-run token and cost budgets.',
+      'Calibrated confidence gates that escalate to a human with a replayable trace instead of guessing.',
+      'Full span tracing of every thought, tool call and retry, searchable by outcome.',
+    ],
+    outcomes: [
+      { value: '71%', label: 'tickets fully automated' },
+      { value: '-58%', label: 'cost per resolved task' },
+      { value: '100%', label: 'runs replayable' },
+    ],
+  },
+  {
+    id: 'orbit-recsys',
+    title: 'Orbit',
+    tagline: 'Two-tower recommendations that learn within a session.',
+    year: '2023',
+    role: 'ML Engineer, Ranking',
+    tags: ['Recommender systems', 'Two-tower', 'ANN', 'Online learning', 'A/B testing'],
+    visual: 'recsys',
+    summary:
+      'Candidate generation and ranking for a content platform with session-aware embeddings refreshed in near real time.',
+    problem:
+      'Daily batch recommendations ignored what a user did five minutes ago, and cold-start items never surfaced.',
+    approach: [
+      'Two-tower retrieval with ANN serving and a lightweight session encoder updated on every interaction.',
+      'Exploration budget for new items with calibrated uplift estimates.',
+      'Interleaving experiments to read ranking changes in days instead of weeks.',
+    ],
+    outcomes: [
+      { value: '+9.4%', label: 'session watch time' },
+      { value: '+31%', label: 'new-item exposure' },
+      { value: '22ms', label: 'p99 retrieval' },
+    ],
+  },
+]
+
+export const experience: Role[] = [
+  {
+    company: 'Northwind Labs',
+    title: 'Senior ML Engineer, Applied AI',
+    start: '2024',
+    end: 'Present',
+    location: 'Bengaluru',
+    impact: [
+      'Led retrieval and evaluation for an assistant used by 3,200 support engineers, cutting time to resolution by 41%.',
+      'Built the agent runtime now automating 71% of tier-one operations tickets at 58% lower cost per task.',
+    ],
+  },
+  {
+    company: 'Helix Robotics',
+    title: 'ML Engineer, Perception',
+    start: '2022',
+    end: '2024',
+    location: 'Pune',
+    impact: [
+      'Shipped an INT8 edge defect detector at 98.7% recall and 14ms per frame across four factory lines.',
+      'Designed an active-learning loop that reduced labelling spend by 72% year over year.',
+    ],
+  },
+  {
+    company: 'Quanta Media',
+    title: 'Machine Learning Engineer',
+    start: '2020',
+    end: '2022',
+    location: 'Remote',
+    impact: [
+      'Rebuilt candidate generation as a two-tower model, lifting session watch time by 9.4%.',
+      'Introduced interleaving experiments that cut ranking decision time from three weeks to four days.',
+    ],
+  },
+]
+
+export const contact = {
+  heading: ["Let's build", 'something.'],
+  lede: 'Hiring for applied ML, or have a model that needs to survive production? I reply within a day.',
+  email: 'hello@vinayak.dev',
+  socials: [
+    { label: 'GitHub', href: 'https://github.com/' },
+    { label: 'LinkedIn', href: 'https://www.linkedin.com/' },
+    { label: 'X', href: 'https://x.com/' },
+    { label: 'Résumé', href: '#' },
+  ],
+  footer: 'Designed and engineered by hand. Every pixel is a shader.',
+}
+
+export const sections = [
+  { id: 'hero', label: 'Index' },
+  { id: 'about', label: 'About' },
+  { id: 'works', label: 'Works' },
+  { id: 'experience', label: 'Experience' },
+  { id: 'contact', label: 'Contact' },
+] as const
+
+export type SectionId = (typeof sections)[number]['id']
