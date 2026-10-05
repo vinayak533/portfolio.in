@@ -2,11 +2,16 @@ import { Section } from '../Section'
 import { about, site } from '../../content'
 import { signals, useStore } from '../../store/useStore'
 import { holdEnd } from '../../core/timeline'
-import { SplitLines } from '../ui/SplitLines'
+import '@fontsource-variable/space-grotesk/index.css'
+import '@fontsource/instrument-serif/latin-400.css'
+import '@fontsource/instrument-serif/latin-400-italic.css'
+import './about.css'
 
 /**
  * The copy is choreographed on the same scrubbed timeline that writes the
- * scan uniform, so each line lands exactly as the beam passes it.
+ * scan uniform, so each copy block lands as the beam passes it. The kicker
+ * ([data-a-head]) arrives with the hero's camera as
+ * it leaves the cloud bank (src/hero/transition.ts).
  */
 const SCAN_END = 0.46
 const SHIMMER_END = 0.6
@@ -20,20 +25,18 @@ export function About() {
   return (
     <Section
       id="about"
-      title="About"
+      title="About Me"
       choreography={(tl, root) => {
         const q = <T extends Element>(s: string) => Array.from(root.querySelectorAll<T>(s))
         tl.fromTo(signals, { scan: 0 }, { scan: 1, duration: SCAN_END, ease: 'none' }, 0)
         tl.fromTo(signals, { shimmer: 0 }, { shimmer: 1, duration: SHIMMER_END - SCAN_END, ease: 'none' }, SCAN_END)
 
-        const head = q('[data-a-head]')
-        tl.fromTo(head, { yPercent: 110 }, { yPercent: 0, duration: 0.07, stagger: 0.02, ease: 'power3.out' }, 0.01)
         q('[data-a-line]').forEach((el, i, all) => {
-          const at = 0.05 + (i / Math.max(all.length, 1)) * (SCAN_END - 0.1)
-          tl.fromTo(el, { yPercent: 105, opacity: 0 }, { yPercent: 0, opacity: 1, duration: 0.07, ease: 'power3.out' }, at)
+          const at = 0.05 + (i / Math.max(all.length, 1)) * (SCAN_END - 0.16)
+          tl.fromTo(el, { y: 40, opacity: 0 }, { y: 0, opacity: 1, duration: 0.08, ease: 'power3.out' }, at)
         })
         q('[data-a-fact]').forEach((el, i) => {
-          tl.fromTo(el, { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.06, ease: 'power3.out' }, SCAN_END - 0.06 + i * 0.035)
+          tl.fromTo(el, { y: 18, opacity: 0 }, { y: 0, opacity: 1, duration: 0.06, ease: 'power3.out' }, SCAN_END - 0.08 + i * 0.03)
         })
         tl.fromTo(q('[data-a-tool]'), { opacity: 0 }, { opacity: 1, duration: 0.05 }, SHIMMER_END - 0.06)
 
@@ -42,67 +45,47 @@ export function About() {
       }}
     >
       <div className="relative h-full w-full">
-        {webgl && (
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-x-0 bottom-0 h-[62%] md:hidden"
-            style={{ background: 'linear-gradient(to top, var(--base) 55%, transparent)' }}
-          />
-        )}
+        {webgl && <div aria-hidden="true" className="about-scrim" />}
         <div
           data-a-copy
-          className={
-            webgl
-              ? 'absolute inset-x-[var(--gutter)] bottom-[calc(var(--gutter)+2.5rem)] flex flex-col gap-8 md:bottom-auto md:top-1/2 md:w-[min(44vw,40rem)] md:-translate-y-1/2'
-              : 'mx-auto grid max-w-[80rem] gap-12 px-[var(--gutter)] py-[16vh] md:grid-cols-[1fr_0.9fr] md:items-center'
-          }
+          className={webgl ? 'about-layout about-layout--immersive' : 'about-layout about-layout--static'}
+          data-lenis-prevent={webgl ? '' : undefined}
         >
-          <div className="flex flex-col gap-7">
-            <div className="flex flex-col gap-5">
-              <span className="line-mask block">
-                <span data-a-head className="mono dim block">
-                  (02) {about.kicker}
-                </span>
-              </span>
-              <h2 className="display display-m">
-                <span className="line-mask block">
-                  <span data-a-head className="block">
-                    {about.heading}
-                  </span>
-                </span>
-              </h2>
-            </div>
+          <div className="about-panel">
+            <span data-a-head className="about-kicker">
+              <span aria-hidden="true" className="about-index">02</span>
+              <span aria-hidden="true" className="about-kicker-rule" />
+              {about.kicker}
+            </span>
 
-            <SplitLines text={about.bio} className="body-copy max-w-[36rem]" lineAttr="data-a-line" />
+            <h2 data-a-line className="about-heading">
+              <span className="about-heading-lead">{about.heading[0]}</span>
+              <em className="about-heading-accent">{about.heading[1]}</em>
+            </h2>
 
-            <dl className="grid max-w-[36rem] grid-cols-3 gap-5 border-t border-[var(--line)] pt-6">
-              {about.facts.map((f) => (
-                <div key={f.label} data-a-fact className="flex flex-col gap-2">
-                  <dt className="mono mono-sm dimmer order-2 normal-case tracking-[0.04em]">{f.label}</dt>
-                  <dd className="display display-s order-1">{f.value}</dd>
-                </div>
+            <p data-a-line className="about-lede">
+              I’m <strong>{site.name}</strong>, {about.lede}
+            </p>
+
+            <p data-a-line className="about-body">{about.body}</p>
+
+            <p data-a-line className="about-closing">
+              {about.closing.map((line) => (
+                <span key={line} data-a-fact>
+                  {line}
+                </span>
               ))}
-            </dl>
+            </p>
 
             {webgl && (
-              <div data-a-tool className="flex items-center gap-3">
-                <span className="mono mono-sm dimmer">Render</span>
-                <div role="group" aria-label="Portrait colour" className="flex rounded-full border border-[var(--line)] p-[3px]">
+              <div data-a-tool className="about-render">
+                <span className="about-render-label">Render</span>
+                <div role="group" aria-label="Portrait colour" className="about-toggle">
                   {[
                     { v: false, l: 'Photo' },
                     { v: true, l: 'Spectral' },
                   ].map((o) => (
-                    <button
-                      key={o.l}
-                      type="button"
-                      aria-pressed={duotone === o.v}
-                      onClick={() => set({ duotone: o.v })}
-                      className="mono mono-sm rounded-full px-3 py-1 transition-colors duration-500"
-                      style={{
-                        background: duotone === o.v ? 'rgba(124,92,255,.22)' : 'transparent',
-                        color: duotone === o.v ? 'var(--ink)' : 'var(--ink-3)',
-                      }}
-                    >
+                    <button key={o.l} type="button" aria-pressed={duotone === o.v} onClick={() => set({ duotone: o.v })}>
                       {o.l}
                     </button>
                   ))}
@@ -112,24 +95,13 @@ export function About() {
           </div>
 
           {!webgl && (
-            <figure className="relative mx-auto w-full max-w-[30rem]">
-              <div
-                aria-hidden="true"
-                className="absolute inset-[12%] rounded-full"
-                style={{ background: 'radial-gradient(closest-side, rgba(124,92,255,.38), transparent)', filter: 'blur(40px)' }}
-              />
-              <img
-                src={site.portrait.still}
-                alt={site.portrait.alt}
-                width={1054}
-                height={1066}
-                className="relative block h-auto w-full"
-                style={{
-                  maskImage: 'linear-gradient(to bottom, black 70%, transparent)',
-                  WebkitMaskImage: 'linear-gradient(to bottom, black 70%, transparent)',
-                  filter: 'drop-shadow(0 0 30px rgba(124,92,255,.25))',
-                }}
-              />
+            <figure className="about-portrait">
+              <div aria-hidden="true" className="about-portrait-glow" />
+              <img src={site.portrait.still} alt={site.portrait.alt} width={1054} height={1066} />
+              <figcaption className="about-portrait-caption">
+                <span>{site.name}</span>
+                <span>AI / ML Engineer</span>
+              </figcaption>
             </figure>
           )}
         </div>

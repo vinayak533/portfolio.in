@@ -156,18 +156,25 @@ export const heroConfig = {
   },
 
   /**
-   * F2. What the laptop shows (screen.ts): the About section, drawn at native resolution
-   * and composited in perspective at full device resolution, so it is sharp
-   * from the opening frame to the deepest zoom. Placed by transition.portal.corners.
+   * F2. What the laptop shows (screen.ts): a code editor shot (src/assets/screen/code.webp),
+   * composited in perspective at full device resolution, so it is sharp from
+   * the opening frame to the deepest zoom. Placed by `corners`.
    */
   screen: {
     enabled: true,
-    resolution: 3840, // art width px (16:10) on capable machines; Lite / small screens use 2048 (the screen peaks near 700 css px, so 3840 is ~5x oversampled)
+    resolution: 3840, // max art width px (16:10); screen.ts caps it near the shot's own resolution. Lite / small screens use 2048
     brightness: 1.12, // emission of the screen relative to the art
     glare: 0.045, // soft reflection across the glass
     bezel: 34, // black bezel around the panel, in art px (the art is 1600 wide)
     caretHz: 0.9, // text caret blink
-    launch: true, // as the portal opens, the page settles into About's bare starfield: a match cut into the real section
+    /** Laptop screen corners in source px: top-left, top-right, bottom-right, bottom-left. */
+    corners: [
+      [848.6, 375.8],
+      [879.5, 378.0],
+      [873.0, 401.1],
+      [845.5, 396.1],
+    ] as [number, number][],
+    radius: 1.5, // screen corner radius, source px
   },
 
   /**
@@ -238,58 +245,91 @@ export const heroConfig = {
   },
 
   /**
-   * J. Scroll transition (src/hero/transition.ts): the camera dives into the
-   * laptop, whose screen opens as a portal onto About. One scrubbed timeline,
-   * progress 0..1 over the pin; every value here is read live by ?debug.
+   * J. Scroll transition (src/hero/shot.ts, src/hero/transition.ts): one
+   * continuous camera move. The camera eases out of stillness and pushes toward
+   * the figure (each depth layer of the photo at its own rate); the air between
+   * camera and sky thickens, a cloud bank rolls in from the depth of the scene,
+   * over the island and past the lens; inside it the light turns from moonlight
+   * to About's indigo; the camera flies out of its far side onto About's world
+   * and settles. One scrubbed timeline, progress 0..1 over the pin; every value
+   * is read live by ?debug.
    */
   transition: {
     /** Per breakpoint. `mobile` applies in portrait or below 768 px wide. */
     desktop: {
-      target: [0.5155, 0.4122] as [number, number], // zoom target: screen centre in image uv (0,0 = photo top-left, y down)
-      maxZoom: 14, // camera zoom at the end of the dive
-      pinVh: 300, // scroll length of the pin, viewport heights
+      target: [0.5005, 0.4035] as [number, number], // what the camera pushes toward: the figure's back and the glow of the laptop, image uv (y down)
+      frame: [0.5, 0.6] as [number, number], // where that lands on screen at the end of the push (viewport uv, y down): a touch low, looking past them at the horizon
+      zoom: 2.4, // camera zoom on the figure as the bank swallows them: a push, not a crash zoom (the photo stays crisp)
+      pinVh: 380, // scroll length of the pin, viewport heights
     },
     mobile: {
-      target: [0.5155, 0.4122] as [number, number],
-      maxZoom: 10,
-      pinVh: 220,
+      target: [0.5005, 0.4035] as [number, number],
+      frame: [0.5, 0.58] as [number, number],
+      zoom: 2.0,
+      pinVh: 280,
     },
-    /** Phase ends in scroll progress: hold 0..hold, dive ..dive, portal ..portal, arrive ..1. */
-    phases: { hold: 0.15, dive: 0.6, portal: 0.85 },
-    scrub: 0.6, // seconds of scroll smoothing on the timeline
-    zoomEase: 'power3.inOut',
-    portalEase: 'power2.inOut',
-    renderUntil: 0.9, // the hero render loop stops at this progress (and restarts below it)
-    keyboardDuration: 2.2, // seconds for PageDown / Space to play the whole dive
-    /** Hold: the screen glow pulses a little harder, inviting the dive. */
+    /** Scroll progress where the idle hold ends and the camera starts to move. */
+    hold: 0.04,
+    /**
+     * The camera's speed over the move, as fractions of it: it eases in from
+     * stillness over `easeIn`, travels at one steady speed, and settles to a
+     * stop over `settle` as About arrives. Never an abrupt change of pace.
+     */
+    move: { easeIn: 0.3, settle: 0.2 },
+    scrub: 1.1, // seconds of scroll smoothing on the timeline: the camera has weight
+    renderUntil: 0.995, // the hero render loop stops at this progress (and restarts below it)
+    keyboardDuration: 3.2, // seconds for PageDown / Space to play the whole shot
+    /** Hold: the screen glow pulses a little harder, inviting the scroll. */
     cue: { pulse: 1.6, glow: 0.18 },
-    /** Depth parallax: zoom exponent per layer (laptop = 1). Far < 1 barely moves, near > 1 rushes past. */
-    parallax: { far: 0.12, near: 1.65, iterations: 3 },
-    /** Half-res lens: radial motion blur from zoom speed and depth of field away from the screen. */
-    blur: { motion: 1.0, dof: 0.006, focus: 0.16 }, // dof in viewport heights (0 = everything sharp), focus = sharp radius in viewport heights
-    vignette: 0.45, // extra vignette at full dive
-    raysFade: 1.0, // god rays and moon glow fade out as you approach
-    ambientSlow: 0.35, // clouds, grass and particles slow by this fraction at full dive
-    screenGlow: 0.3, // light spill (bloom) the screen throws as you arrive; the screen itself stays crisp
-    portalPush: 0.35, // extra zoom (fraction of maxZoom) while the portal opens
-    /** Maps hero progress onto the About stage camera (its hero-to-About push), so it lands before the portal opens. */
-    stageMap: [0.15, 0.62] as [number, number],
-    portal: {
-      /** Laptop screen corners in source px: top-left, top-right, bottom-right, bottom-left. */
-      corners: [
-        [848.6, 375.8],
-        [879.5, 378.0],
-        [873.0, 401.1],
-        [845.5, 396.1],
-      ] as [number, number][],
-      radius: 1.5, // screen corner radius, source px
-      endRadius: 28, // corner radius as the portal reaches the viewport edges, css px
-      iris: 0.3, // fraction of the portal phase spent opening from the screen centre to the screen edges
-      bloom: 1.0, // violet-white glow strength
-      glowColor: [0.84, 0.8, 1.0] as [number, number, number],
-      glowRadius: 0.16, // glow falloff outside the portal edge, viewport heights
-      aberration: 0.008, // extra chromatic aberration at the glow peak
-      settleScale: 1.08, // About starts this much larger inside the portal and settles to 1
+    /** Depth parallax: zoom exponent per layer (the figure = 1). Far < 1 barely moves, near > 1 rushes past. */
+    parallax: { far: 0.22, near: 1.45, iterations: 3 },
+    /** Half-res lens: radial motion blur from push speed and depth of field away from the figure. Kept barely there. */
+    blur: { motion: 0.55, dof: 0.008, focus: 0.26 }, // dof in viewport heights (0 = everything sharp), focus = sharp radius in viewport heights
+    vignette: 0.16, // extra vignette at the end of the push
+    raysFade: 0.85, // god rays and moon glow give way as the air between camera and sky thickens
+    ambientSlow: 0, // clouds, grass and particles slow by this fraction during the push (0 = the world keeps its pace)
+    windUp: 0.7, // the wind builds as the weather rolls in: grass and leaves move this much more under the clouds
+    screenGlow: 0.1, // light the laptop screen throws into the mist (bloom)
+    /** Maps hero progress onto About's stage (its hero-to-About handover), finishing while the camera is inside the bank. */
+    stageMap: [0.3, 0.76] as [number, number],
+    /**
+     * The weather the camera flies through (shaders/clouds.frag): real depth,
+     * not an overlay. Distances are in bank units along the view axis. The
+     * photo's depth map places every pixel at a distance (the figure at
+     * `scene.figure`, the sky at `scene.sky`), and the cloud volume is
+     * composited against it, so mist gathers in the far sky first, rolls over
+     * the back of the island, swallows the figure, then streams past the lens.
+     *
+     * Bank coordinates: the main bank spans 0 .. `bank.depth` (density ramps
+     * over `bank.ramp`); thin veils lead it and one trails it. The camera
+     * travels from `path[0]` to `path[1]` over the move.
+     */
+    atmosphere: {
+      path: [-18.6, 5.7] as [number, number],
+      scene: { figure: 3.2, spread: 2.4, sky: 12 }, // figure distance at rest, depth-map spread (exp), far cap
+      bank: { depth: 3.4, ramp: 0.9, density: 4.2 }, // optical density per unit inside the bank
+      /** Thin veils ahead of the bank and one behind it: [from, to, ramp, density] in bank coordinates. */
+      leading: [
+        [-6.4, -4.7, 0.8, 0.26],
+        [-3.4, -2.0, 0.65, 0.42],
+      ] as [number, number, number, number][],
+      trailing: [3.9, 5.1, 0.5, 0.42] as [number, number, number, number],
+      slices: 14, // depth slices the volume is integrated in (each its own cloud sheet)
+      slicesLow: 8, // on phones / Lite
+      scale: 1.6, // cloud cells per viewport height on a slice one unit away
+      softness: 0.22, // edge softness of the cloud bodies (higher = mistier)
+      structure: 0.85, // 0 smooth fog .. 1 fully billowed slices
+      silver: 1.0, // moonlight on cloud edges facing the moon
+      scatter: 1.4, // forward scattering: the mist glows when you look toward the moon
+      moonReach: 1.0, // how fast moonlight dies with depth into the bank (1 / units)
+      glowReach: 0.7, // how far About's light reaches back into the bank from its far side (1 / units)
+      ambient: [0.011, 0.015, 0.034] as [number, number, number], // moonlit mist body, linear
+      deep: [0.009, 0.008, 0.028] as [number, number, number], // the heart of the bank: cooler, toward About's indigo
+      glow: [0.03, 0.016, 0.1] as [number, number, number], // About's light seen through the far side of the bank (its accent, dimmed)
+      laptop: 0.4, // the laptop's glow diffusing in the mist around the figure
+      laptopColor: [0.32, 0.46, 1.0] as [number, number, number],
+      wind: 0.04, // lateral drift, cloud units / s (with config.wind.direction): life, never progress
+      dim: 0.45, // moonlight on the scene lost as the air thickens
     },
   },
 
@@ -321,6 +361,7 @@ export const heroConfig = {
     bigScreen: 3000, // device px (css width x DPR) from which the 8k tier is worth its memory
     swapSeconds: 0.9, // crossfade from the base photo to the sharp tier (no visible pop)
     lowPowerScale: 0.5, // multiplier on the pixel cap when the site is in Lite / low tier
+    integratedScale: 0.5, // multiplier on the base cap for integrated / mobile-class GPUs (site mid tier): ~0.9 MP, ~10 ms on Iris Xe
     /** Automatic quality: when frames run slow, the scene resolution steps down (and back up when there is headroom). */
     adaptive: true,
     targetMs: 17.5, // frame time to hold (60 fps = 16.7 ms)

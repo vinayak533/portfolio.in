@@ -50,9 +50,10 @@ export function detectQuality(): Quality {
 }
 
 export const tier = {
-  high: { particles: 46000, dust: 2600, maxDpr: 2, startDpr: 2, minDpr: 1, msaa: 4, ca: true, bloomLevels: 7 },
-  mid: { particles: 24000, dust: 1600, maxDpr: 1.25, startDpr: 1, minDpr: 0.85, msaa: 0, ca: true, bloomLevels: 5 },
-  low: { particles: 11000, dust: 900, maxDpr: 1, startDpr: 1, minDpr: 0.75, msaa: 0, ca: false, bloomLevels: 5 },
+  high: { particles: 56000, dust: 2600, maxDpr: 2, startDpr: 2, minDpr: 1, msaa: 4, ca: true, bloomLevels: 7 },
+  // Integrated GPUs share their fill rate with the hero canvas: 1x at most, no chromatic aberration (an extra full-res pass).
+  mid: { particles: 30000, dust: 1600, maxDpr: 1, startDpr: 1, minDpr: 0.85, msaa: 0, ca: false, bloomLevels: 5 },
+  low: { particles: 14000, dust: 900, maxDpr: 1, startDpr: 1, minDpr: 0.75, msaa: 0, ca: false, bloomLevels: 5 },
 } as const
 
 export function readLitePreference(): boolean {

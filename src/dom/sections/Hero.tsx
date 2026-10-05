@@ -9,8 +9,8 @@ import '../../hero/hero.css'
 /**
  * The opening frame: the night island photograph alone, brought to life by
  * the framework-free WebGL engine in src/hero. The section is a tall track
- * with a sticky stage (the pin); src/hero/transition.ts scrubs the dive into
- * the laptop and the portal onto About from it. This component only provides
+ * with a sticky stage (the pin); src/hero/transition.ts scrubs one camera move:
+ * a push toward the figure, then a flight through the clouds onto About. This component only provides
  * the containers and forwards site state (loader done, overlay pause, lite).
  */
 export function Hero() {
@@ -32,6 +32,7 @@ export function Hero() {
       handle.current = mountHero(host.current, {
         isPaused: () => signals.paused,
         lowPower: lite || quality === 'low',
+        integratedGpu: quality === 'mid',
       })
       if (loaded) handle.current.reveal()
       transition.current?.sync()

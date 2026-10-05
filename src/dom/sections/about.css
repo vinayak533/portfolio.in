@@ -1,0 +1,237 @@
+.about-layout {
+  --font-about-sans: 'Space Grotesk Variable', 'Bricolage Grotesque', sans-serif;
+  --font-about-serif: 'Instrument Serif', Georgia, serif;
+  --about-accent: rgb(204 188 255);
+  --about-accent-dim: rgb(124 92 255 / 0.55);
+  font-family: var(--font-about-sans);
+  font-synthesis: none;
+}
+
+/* Immersive: the copy owns the left column, the crystal portrait the right. */
+.about-layout--immersive {
+  position: absolute;
+  inset: calc(var(--gutter) + 4.5rem) var(--gutter) calc(var(--gutter) + 2rem);
+  display: flex;
+  align-items: safe flex-end;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.about-layout--static {
+  display: grid;
+  align-items: center;
+  gap: clamp(3rem, 6vw, 6rem);
+  max-width: 76rem;
+  margin: 0 auto;
+  padding: 16vh var(--gutter);
+}
+
+.about-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 32rem;
+}
+
+.about-panel p { margin: 0; }
+
+/* Kicker */
+.about-kicker {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  color: var(--ink-2);
+  font-size: 0.66rem;
+  font-weight: 500;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+}
+.about-index {
+  font-family: var(--font-about-serif);
+  font-size: 1.3rem;
+  font-style: italic;
+  letter-spacing: 0;
+  line-height: 1;
+  color: var(--about-accent);
+}
+.about-kicker-rule { width: 2.5rem; height: 1px; background: var(--about-accent-dim); }
+
+/* Heading */
+.about-heading {
+  margin: clamp(1.4rem, 3.4vh, 2.2rem) 0 0;
+  color: var(--ink);
+  font-weight: 500;
+}
+.about-heading-lead {
+  display: block;
+  font-size: clamp(1.45rem, 2.2vw, 2.15rem);
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: -0.045em;
+}
+.about-heading-accent {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  padding: 0 0.08em 0.06em 0;
+  font-family: var(--font-about-serif);
+  font-size: clamp(2.9rem, 5.4vw, 5.25rem);
+  font-weight: 400;
+  font-style: italic;
+  line-height: 0.95;
+  letter-spacing: -0.035em;
+  color: var(--about-accent);
+}
+
+/* Lede */
+.about-lede {
+  max-width: 29rem;
+  margin-top: clamp(1.3rem, 3vh, 1.9rem) !important;
+  color: var(--ink-2);
+  font-size: clamp(0.98rem, 1.05vw, 1.08rem);
+  line-height: 1.62;
+  letter-spacing: -0.012em;
+  text-wrap: pretty;
+}
+.about-lede strong { color: var(--ink); font-weight: 500; white-space: nowrap; }
+
+/* Body */
+.about-body {
+  max-width: 29rem;
+  margin-top: 1rem !important;
+  color: var(--ink-3);
+  font-size: clamp(0.9rem, 0.95vw, 0.98rem);
+  line-height: 1.62;
+  letter-spacing: -0.008em;
+  text-wrap: pretty;
+}
+
+/* Closing statement */
+.about-closing {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-width: 29rem;
+  margin-top: clamp(1.6rem, 4vh, 2.5rem) !important;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+.about-closing span:first-child {
+  color: var(--ink-2);
+  font-size: 0.66rem;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+.about-closing span:last-child {
+  font-family: var(--font-about-serif);
+  font-size: clamp(1.3rem, 1.7vw, 1.6rem);
+  font-style: italic;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  color: var(--about-accent);
+  text-wrap: balance;
+}
+
+/* Render toggle */
+.about-render {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-top: clamp(1.4rem, 3.4vh, 2.2rem);
+}
+.about-render-label {
+  color: var(--ink-3);
+  font-size: 0.62rem;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+.about-toggle {
+  display: flex;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+.about-toggle button {
+  padding: 0.3rem 0.85rem;
+  border-radius: 999px;
+  color: var(--ink-3);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  transition: color 0.4s, background-color 0.4s;
+}
+.about-toggle button:hover { color: var(--ink-2); }
+.about-toggle button[aria-pressed='true'] { background: rgb(124 92 255 / 0.2); color: var(--ink); }
+
+/* Narrow screens: the portrait sits above, so the copy needs a scrim. */
+.about-scrim {
+  position: absolute;
+  inset: auto 0 0;
+  height: 68%;
+  pointer-events: none;
+  background: linear-gradient(to top, var(--base) 58%, transparent);
+}
+
+/* Static fallback portrait */
+.about-portrait {
+  position: relative;
+  width: 100%;
+  max-width: 26rem;
+  margin: 0 auto;
+}
+.about-portrait-glow {
+  position: absolute;
+  inset: 8% 6% 18%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgb(124 92 255 / 0.32), transparent);
+  filter: blur(44px);
+}
+.about-portrait img {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: auto;
+  mask-image: radial-gradient(120% 92% at 46% 30%, black 58%, transparent 82%);
+  -webkit-mask-image: radial-gradient(120% 92% at 46% 30%, black 58%, transparent 82%);
+}
+.about-portrait-caption {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.4rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--line);
+  color: var(--ink-3);
+  font-size: 0.62rem;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+@media (min-width: 48rem) {
+  .about-layout--immersive { right: auto; width: min(46vw, 36rem); align-items: safe center; }
+  .about-scrim { display: none; }
+  .about-layout--static { grid-template-columns: 1.05fr 0.95fr; }
+  .about-portrait { margin: 0 0 0 auto; }
+}
+
+@media (max-height: 44rem) and (min-width: 48rem) {
+  .about-layout--immersive .about-heading-accent { font-size: clamp(2.6rem, 4.6vw, 4.2rem); }
+  .about-layout--immersive .about-closing { margin-top: 1.4rem !important; }
+}
+
+@media (max-height: 36rem) and (min-width: 48rem) {
+  .about-layout--immersive { top: calc(var(--gutter) + 3.5rem); bottom: var(--gutter); }
+  .about-layout--immersive .about-heading { margin-top: 1rem; }
+  .about-layout--immersive .about-heading-accent { font-size: clamp(2.2rem, 4vw, 3.4rem); }
+  .about-layout--immersive .about-lede { margin-top: 1rem !important; font-size: 0.92rem; }
+  .about-layout--immersive .about-body { margin-top: 0.7rem !important; font-size: 0.86rem; }
+  .about-layout--immersive .about-closing { margin-top: 1rem !important; padding-top: 0.7rem; }
+  .about-layout--immersive .about-render { margin-top: 1rem; }
+}
+
+@media (max-width: 24rem) {
+  .about-heading-accent { font-size: 2.6rem; }
+  .about-closing span:last-child { font-size: 1.2rem; }
+}

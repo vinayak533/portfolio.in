@@ -69,5 +69,7 @@ export const signals = {
   shatter: experience.map(() => ({ p: 0 })),
   /** True while a full-screen overlay hides the canvas: rendering is skipped. */
   paused: false,
+  /** True while the opaque hero photo covers the whole viewport: the fixed stage behind it is skipped. */
+  heroCovers: false,
   pointer: { x: 0, y: 0, nx: 0, ny: 0, vx: 0, vy: 0, lastMove: 0, active: false },
 }

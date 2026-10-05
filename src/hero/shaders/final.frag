@@ -2,10 +2,10 @@
 // a highlight shoulder that rolls off instead of clipping, sRGB encode,
 // animated grain, fade from black. The laptop screen is composited here, at
 // full device resolution and in true perspective, so it is sharp at any zoom.
-// During the scroll transition it also
-// blends the half-res dive lens, tightens the vignette and cuts the portal:
-// alpha goes to 0 inside the laptop-screen shape so About shows through, and
-// a violet-white glow blooms from it. Output is premultiplied alpha.
+// During the scroll transition it also blends the half-res push lens, tightens
+// the vignette and lays the cloud bank over everything; once the bank has
+// closed the photo is gone and alpha follows the clouds alone, so About shows
+// through as they part. Output is premultiplied alpha.
 #include "./common.glsl"
 
 uniform sampler2D uScene;
@@ -34,11 +34,9 @@ uniform float uLensOn;
 uniform vec4 uLens;        // anchor uv (y up), motion fraction, dof (viewport heights)
 uniform float uLensFocus;  // sharp radius, viewport heights
 
-uniform float uPortalOn;
-uniform vec2 uPortalC;     // centre, device px (y up)
-uniform mat2 uPortalInv;   // device px offset -> frame unit coords
-uniform vec2 uPortalLen;   // frame edge lengths, device px
-uniform float uPortalR;    // corner radius, device px
+uniform float uCloudOn;
+uniform sampler2D uClouds; // linear, premultiplied (light, coverage), half res
+uniform float uSceneVis;   // 1 while the photo is behind the clouds, 0 once the bank has closed
 uniform float uScreenOn;
 uniform sampler2D uScreenTex; // the screen art, sRGB, mipmapped
 uniform mat3 uScreenH;     // device px (y up) -> screen uv (0,0 top-left), a homography
@@ -47,16 +45,12 @@ uniform float uScreenRad;  // corner radius, design px
 uniform float uBezel;      // black bezel width around the panel, design px
 uniform float uScreenBright;
 uniform float uScreenGlare;
-uniform float uScreenLaunch; // 0 the UI .. 1 About's starfield (the match cut into the portal)
 uniform vec4 uCaret;       // uv rect
 uniform float uCaretOn;    // 0 / 1 blink
 uniform float uVideoOn;    // K. the screen shows the video instead of the art
 uniform sampler2D uVideoTex; // display-encoded frames, mipmapped (shown as they are)
 uniform vec2 uVideoCover;  // cover fit: screen uv -> video uv scale about the centre
 uniform float uVideoBright; // emission relative to the file
-
-uniform vec4 uGlow;        // display colour, strength
-uniform vec2 uGlowShape;   // falloff outside the edge (device px), wash inside the opening (0..1)
 
 varying vec2 vUv;
 
@@ -72,23 +66,6 @@ vec3 shoulder(vec3 c, float knee) {
 vec3 toSRGB(vec3 c) {
   c = max(c, 0.0);
   return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
-}
-
-// About's first frame, drawn on the screen: the deep void, a violet bloom, crisp stars.
-vec3 aboutVoid(vec2 su, float pxPerDesign) {
-  vec3 c = vec3(0.027, 0.027, 0.05);
-  c += vec3(0.1, 0.08, 0.3) * exp(-length((su - vec2(0.42, -0.05)) * vec2(1.0, 1.4)) * 2.4);
-  vec2 dp = su * uScreenDesign / 11.0;
-  vec2 cell = floor(dp);
-  float h = hash12(cell);
-  if (h > 0.86) {
-    vec2 sp = vec2(hash12(cell + 3.1), hash12(cell + 7.7)) * 0.8 + 0.1;
-    float d = length(fract(dp) - sp) * 11.0;
-    float r = mix(0.5, 1.4, hash12(cell + 1.7));
-    float aa = max(0.75 / max(pxPerDesign, 1e-3), 0.05);
-    c += vec3(0.78, 0.8, 1.0) * (1.0 - smoothstep(r - aa, r + aa, d)) * mix(0.35, 1.0, hash12(cell + 9.1));
-  }
-  return c;
 }
 
 // Contrast-adaptive sharpening (after AMD FidelityFX CAS): sharpens low-contrast
@@ -187,35 +164,30 @@ void main() {
         vec2 cq = (su - uCaret.xy) / uCaret.zw;
         sc = mix(sc, vec3(0.86, 0.82, 1.0), uCaretOn * step(0.0, cq.x) * step(cq.x, 1.0) * step(0.0, cq.y) * step(cq.y, 1.0));
       }
-      if (uScreenLaunch > 0.0) sc = mix(sc, aboutVoid(su, 1.0 / max(length(sdx * uScreenDesign), 1e-4)), uScreenLaunch);
       // Glass: a soft diagonal sheen and the faint falloff of a real panel.
       float sheen = 1.0 - smoothstep(0.0, 0.32, abs(su.x * 0.7 + su.y - 0.62));
-      sc += vec3(0.88, 0.9, 1.0) * sheen * uScreenGlare * (1.0 - uScreenLaunch);
+      sc += vec3(0.88, 0.9, 1.0) * sheen * uScreenGlare;
       sc *= 1.0 - 0.2 * dot(su - 0.5, su - 0.5);
       col = mix(col, sc * (uVideoOn > 0.5 ? uVideoBright : uScreenBright) * mix(1.0, vig, 0.6), inside);
     }
   }
 
+  // The atmosphere, over everything. Toned like the scene, a little vignetted.
+  // Premultiplied from here on: once the camera is inside the bank the photo is
+  // gone for good (uSceneVis), whether or not any cloud is left in front.
+  float alpha = uSceneVis;
+  col *= uSceneVis;
+  if (uCloudOn > 0.5) {
+    vec4 cl = texture(uClouds, uv);
+    vec3 cc = cl.a > 1e-4 ? toSRGB(shoulder(cl.rgb / cl.a, uKnee)) * mix(1.0, vig, 0.5) : vec3(0.0);
+    col = col * (1.0 - cl.a) + cc * cl.a;
+    alpha = cl.a + uSceneVis * (1.0 - cl.a);
+  }
+
   // Triangular grain, stronger in the shadows, refreshed at 24 fps for a film cadence.
   vec2 fc = gl_FragCoord.xy + uSeed * vec2(113.7, 71.3);
   float n = hash12(fc) + hash12(fc + 19.19) - 1.0;
-  col += n * uGrain * (1.0 - 0.6 * luma(col));
-  col *= uFade;
-
-  if (uPortalOn < 0.5) {
-    gl_FragColor = vec4(col, 1.0);
-    return;
-  }
-
-  // Portal: a rounded parallelogram (the screen in perspective) growing to the viewport.
-  vec2 q = uPortalInv * (gl_FragCoord.xy - uPortalC);
-  float d = frameDist(q, uPortalLen, uPortalR);
-  float aa = max(fwidth(d), 1e-3) * 0.75;
-  float hole = 1.0 - smoothstep(-aa, aa, d);
-  float alpha = 1.0 - hole;
-  float glow = uGlow.a * exp(-max(d, 0.0) / uGlowShape.x);
-  // Outside: light added to the scene. Inside: a translucent wash over About.
-  col = clamp(col + uGlow.rgb * glow, 0.0, 1.0);
-  float wash = clamp(uGlow.a * uGlowShape.y + glow * 0.5, 0.0, 1.0) * hole;
-  gl_FragColor = vec4(col * alpha + uGlow.rgb * wash, alpha + wash);
+  col += n * uGrain * (1.0 - 0.6 * luma(col)) * alpha;
+  col = clamp(col, 0.0, alpha) * uFade;
+  gl_FragColor = vec4(col, alpha * uFade + (1.0 - uFade) * uSceneVis);
 }

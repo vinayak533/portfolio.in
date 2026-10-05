@@ -28,12 +28,12 @@ import {
   ZeroFactor,
   type IUniform,
 } from 'three'
-import { gsap } from 'gsap'
 import heroUrl from '../assets/hero.jpg'
 import moonAlbedoUrl from '../assets/moon/albedo.png'
 import moonNormalUrl from '../assets/moon/normal.png'
 import moonMeta from '../assets/moon/meta.json'
 import { heroConfig as cfg, transitionProfile } from './config'
+import { atmosphereBands, opticalDepth, shotAt } from './shot'
 import { buildFallbackMaps, loadImage, MAP_NAMES, suppliedMapUrl, type MapName } from './maps'
 import { smoothstep, wispField } from './noise'
 import { createInput } from './input'
@@ -45,6 +45,7 @@ import raysFrag from './shaders/rays.frag'
 import blurFrag from './shaders/blur.frag'
 import finalFrag from './shaders/final.frag'
 import lensFrag from './shaders/dive.frag'
+import cloudsFrag from './shaders/clouds.frag'
 import particlesVert from './shaders/particles.vert'
 import particlesFrag from './shaders/particles.frag'
 
@@ -53,13 +54,15 @@ export interface HeroOptions {
   isPaused?: () => boolean
   /** Lite / low tier: lower resolution caps and fewer particles. */
   lowPower?: boolean
+  /** Integrated / mobile-class GPU (the site's mid tier): the scene pass keeps a smaller pixel budget. */
+  integratedGpu?: boolean
 }
 
 export interface HeroHandle {
   /** Start the fade from black (call when the page is ready to be seen). */
   reveal(): void
   setLowPower(v: boolean): void
-  /** Scroll-transition progress 0..1 (hold, dive, portal, arrive); see config.transition. */
+  /** Scroll-transition progress 0..1 (hold, push, clouds, parting); see config.transition. */
   setProgress(p: number): void
   /** Start or stop the render loop (the transition stops it once About has taken over). */
   setRendering(on: boolean): void
@@ -102,15 +105,6 @@ export const heroDebugApi = {
 }
 
 const remap = (v: number, a: number, b: number) => Math.min(1, Math.max(0, (v - a) / (b - a || 1e-6)))
-const easeCache = new Map<string, (t: number) => number>()
-function getEase(name: string) {
-  let fn = easeCache.get(name)
-  if (!fn) {
-    fn = (gsap.parseEase(name) as ((t: number) => number) | undefined) ?? ((t: number) => t)
-    easeCache.set(name, fn)
-  }
-  return fn
-}
 
 /** Centre and edge vectors of a quad given as top-left, top-right, bottom-right, bottom-left. */
 function quadFrame(q: [number, number][]) {
@@ -246,7 +240,7 @@ export function mountHero(container: HTMLElement, opts: HeroOptions = {}): HeroH
 
   let renderer: WebGLRenderer
   try {
-    // alpha: the portal cuts a hole through this canvas onto About (output is premultiplied).
+    // alpha: the parting cloud bank opens this canvas onto About (output is premultiplied).
     renderer = new WebGLRenderer({ canvas, antialias: false, alpha: true, premultipliedAlpha: true, depth: false, stencil: false, powerPreference: 'high-performance' })
   } catch {
     canvas.remove()
@@ -274,6 +268,7 @@ export function mountHero(container: HTMLElement, opts: HeroOptions = {}): HeroH
   const bloomA = target()
   const bloomB = target()
   const lensRT = target()
+  const cloudRT = target()
 
   const tri = new BufferGeometry()
   tri.setAttribute('position', new BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3))
@@ -395,6 +390,34 @@ export function mountHero(container: HTMLElement, opts: HeroOptions = {}): HeroH
     uDof: { value: 0 },
     uFocus: { value: 0.16 },
   })
+  const cloudMat = pass(cloudsFrag, {
+    uAspect: { value: 1 },
+    uCentre: { value: new Vector2(0.5, 0.5) },
+    uCamX: { value: 0 },
+    uBands: { value: [new Vector4(), new Vector4(), new Vector4(), new Vector4()] },
+    uDensMax: { value: 1 },
+    uSlices: { value: 8 },
+    uTime: { value: 0 },
+    uWind: { value: new Vector2() },
+    uMoon: { value: new Vector2() },
+    uMoonCol: { value: new Vector3() },
+    uAmbient: { value: new Vector3() },
+    uDeep: { value: new Vector3() },
+    uGlow: { value: new Vector3() },
+    uLaptop: { value: new Vector4() },
+    uLaptopCol: { value: new Vector3() },
+    uShape: { value: new Vector4() },
+    uLight: { value: new Vector4() },
+    // The scene's depth, through the same camera (shared uniform objects, so maps and moves stay in step).
+    uDepth: sceneMat.uniforms.uDepth,
+    uProtect: sceneMat.uniforms.uProtect,
+    uCover,
+    uDive: sceneMat.uniforms.uDive,
+    uDiveTarget: sceneMat.uniforms.uDiveTarget,
+    uPersonDepth: sceneMat.uniforms.uPersonDepth,
+    uDist: { value: new Vector3() },
+    uFigure: { value: 1 },
+  })
   const finalMat = pass(finalFrag, {
     uScene: { value: sceneRT.texture },
     uRays: { value: raysRT.texture },
@@ -420,11 +443,9 @@ export function mountHero(container: HTMLElement, opts: HeroOptions = {}): HeroH
     uLensOn: { value: 0 },
     uLens: { value: new Vector4(0.5, 0.5, 0, 0) },
     uLensFocus: { value: 0.16 },
-    uPortalOn: { value: 0 },
-    uPortalC: { value: new Vector2() },
-    uPortalInv: { value: [1, 0, 0, 1] },
-    uPortalLen: { value: new Vector2(1, 1) },
-    uPortalR: { value: 0 },
+    uCloudOn: { value: 0 },
+    uClouds: { value: cloudRT.texture },
+    uSceneVis: { value: 1 },
     uScreenOn: { value: 0 },
     uScreenTex: { value: null },
     uScreenH: { value: new Matrix3() },
@@ -433,15 +454,12 @@ export function mountHero(container: HTMLElement, opts: HeroOptions = {}): HeroH
     uBezel: { value: 0 },
     uScreenBright: { value: 1 },
     uScreenGlare: { value: 0 },
-    uScreenLaunch: { value: 0 },
     uCaret: { value: new Vector4() },
     uCaretOn: { value: 0 },
     uVideoOn: { value: 0 },
     uVideoTex: { value: null },
     uVideoCover: { value: new Vector2(1, 1) },
     uVideoBright: { value: 1 },
-    uGlow: { value: new Vector4() },
-    uGlowShape: { value: new Vector2(1, 0) },
   })
 
   const quad = new Mesh(tri, sceneMat)
@@ -558,7 +576,10 @@ export function mountHero(container: HTMLElement, opts: HeroOptions = {}): HeroH
     const fw = Math.round(cssW * dpr)
     const fh = Math.round(cssH * dpr)
     // The heavy scene pass is capped near the photo's own detail: low for the 1672 px base, high once 4K / 8K is in.
-    const cap = (hiRes ? cfg.perf.maxScenePixelsHi : cfg.perf.maxScenePixels) * (lowPower ? cfg.perf.lowPowerScale : 1) * qScale
+    // Integrated GPUs keep the base cap even once the sharp photo is in: the scene pass is fill-rate bound.
+    const integrated = !!opts.integratedGpu
+    const base = hiRes && !integrated ? cfg.perf.maxScenePixelsHi : cfg.perf.maxScenePixels
+    const cap = base * (lowPower ? cfg.perf.lowPowerScale : integrated ? cfg.perf.integratedScale : 1) * qScale
     const k = Math.min(1, Math.sqrt(cap / (fw * fh)))
     sceneW = Math.max(1, Math.round(fw * k))
     sceneH = Math.max(1, Math.round(fh * k))
@@ -567,6 +588,7 @@ export function mountHero(container: HTMLElement, opts: HeroOptions = {}): HeroH
     bloomA.setSize(Math.ceil(sceneW / 4), Math.ceil(sceneH / 4))
     bloomB.setSize(Math.ceil(sceneW / 4), Math.ceil(sceneH / 4))
     lensRT.setSize(Math.ceil(sceneW / 2), Math.ceil(sceneH / 2))
+    cloudRT.setSize(Math.ceil(sceneW / 2), Math.ceil(sceneH / 2))
     finalMat.uniforms.uRes.value.set(fw, fh)
     finalMat.uniforms.uSceneTexel.value.set(1 / sceneW, 1 / sceneH)
     heroDebug.scene = `${sceneW}x${sceneH} of ${fw}x${fh}`
@@ -599,6 +621,7 @@ export function mountHero(container: HTMLElement, opts: HeroOptions = {}): HeroH
   let screenReady = false
   let hasCaret = false
   const smallScreen = Math.min(window.screen.width, window.screen.height) < 700
+  const compact = smallScreen || window.matchMedia('(pointer: coarse)').matches
   const artWidth = Math.min(renderer.capabilities.maxTextureSize, lowPower || smallScreen ? 2048 : cfg.screen.resolution)
   buildScreenArt(artWidth)
     .then(({ canvas: art, caret }) => {
@@ -787,6 +810,12 @@ export function mountHero(container: HTMLElement, opts: HeroOptions = {}): HeroH
   let lensOn = false
   let lastLogZ = NaN
   let zoomVel = 0
+  // The atmosphere's own life (billows morph, a slow lateral wind): unwrapped clocks, so it never jumps.
+  // It never advances the shot: that is the scroll's alone.
+  let cloudClock = 0
+  let cloudWind = 0
+  let cloudOn = false
+  let sceneOn = true
 
   /** How much the wisps cover the moon (centre and six points near the limb), from the same field the shader draws. */
   function moonCoverage(): number {
@@ -862,19 +891,15 @@ export function mountHero(container: HTMLElement, opts: HeroOptions = {}): HeroH
     const W = Math.max(60, cfg.loop.seconds)
     const wind = cfg.wind.direction < 0 ? -1 : 1
 
-    // ---- J. transition phases: every value below is a pure function of progress
+    // ---- J. the shot: every value below is a pure function of progress (src/hero/shot.ts)
     const T = cfg.transition
     const prof = transitionProfile()
-    const ph = T.phases
-    const cueW = remap(progress, 0, ph.hold)
-    const diveT = remap(progress, ph.hold, ph.dive)
-    const e = getEase(T.zoomEase)(diveT)
-    const portalT = remap(progress, ph.dive, ph.portal)
-    const pe = getEase(T.portalEase)(portalT)
-    // Exponential zoom so the eased push reads as a constant speed of approach.
-    const Z = Math.pow(Math.max(1, prof.maxZoom), e) * (1 + T.portalPush * pe)
-    const logZ = Math.log(Z)
-    // Ambient motion keeps running but eases off so the eye settles on the laptop.
+    const shot = shotAt(progress)
+    const cueW = remap(progress, 0, T.hold)
+    // One camera move: the push lands as the camera enters the bank (e), the air
+    // between camera and sky thickens as it goes (veil).
+    const e = shot.push
+    const veil = shot.veil
     const mdt = heroDebug.pauseTime ? 0 : dt * (1 - T.ambientSlow * e)
 
     if (motion) {
@@ -900,7 +925,7 @@ export function mountHero(container: HTMLElement, opts: HeroOptions = {}): HeroH
     const wave = 0.7 * Math.sin(TAU * hz * breathClock) + 0.3 * Math.sin(TAU * hz * 0.37 * breathClock + 1.3)
     const breathGlow = 1 + M.breathAmount * wave
     const breath = 1 + (M.breathAmount / 3) * wave
-    const lightRel = ((1 - M.response * moonCover) * breath) / M.baseline
+    const lightRel = (((1 - M.response * moonCover) * breath) / M.baseline) * (1 - T.atmosphere.dim * veil)
     const diskI = (breath / M.baseline) * M.lightBrightness
     const hue = moonHue(M)
     // The light it throws: its own warm silver, half folded into the scene's cool skylight; warmer under cloud.
@@ -932,12 +957,15 @@ export function mountHero(container: HTMLElement, opts: HeroOptions = {}): HeroH
     const ay0 = sy / zoom
     const bxRest = fx + (bx0 - fx) / zoom
     const byRest = fy + (by0 - fy) / zoom
-    // J. dive: zoom toward the target while it drifts to the centre of the frame.
+    // J. push: exponential in the camera's travel, so it reads as a steady approach; the
+    // figure glides from where it sits in the wide shot to its place in the frame.
+    const logZ = shot.logZ
+    const Z = Math.exp(logZ)
     const [tx, ty] = prof.target
     const restX = (tx - bxRest) / ax0
     const restY = (ty - byRest) / ay0
-    const anchorX = restX + (0.5 - restX) * e
-    const anchorY = restY + (0.5 - restY) * e
+    const anchorX = restX + (prof.frame[0] - restX) * e
+    const anchorY = restY + (prof.frame[1] - restY) * e
     const ax = ax0 / Z
     const ay = ay0 / Z
     const bx = tx - anchorX * ax
@@ -1003,12 +1031,14 @@ export function mountHero(container: HTMLElement, opts: HeroOptions = {}): HeroH
     u.uHaloOpt.value.set(H.haze, H.occlusion, H.skyColor)
     u.uHaloSoft.value = 1 + M.soften * moonCover
     // Glow: flares in a clear gap, dims under thick cloud, breathes slowly, fades as the camera dives away.
-    u.uMoonGlow.value = M.glow * (1 + M.flare + (-M.dim - M.flare) * moonCover) * breathGlow * (1 - 0.8 * T.raysFade * e)
+    u.uMoonGlow.value = M.glow * (1 + M.flare + (-M.dim - M.flare) * moonCover) * breathGlow * (1 - 0.8 * T.raysFade * veil)
     u.uWispTint.value = M.wispTint
     u.uKnee.value = cfg.film.knee
     u.uSceneResp.value = cfg.light.sceneResponse
     u.uRimGain.value = cfg.light.rim
-    u.uGrass.value.set(cfg.grass.amplitude, cfg.grass.frequency, cfg.grass.gust, cfg.grass.gustSpeed)
+    // The wind builds as the weather rolls in (amplitudes only: a frequency change would jump the phase).
+    const windUp = 1 + T.windUp * veil
+    u.uGrass.value.set(cfg.grass.amplitude * windUp, cfg.grass.frequency, cfg.grass.gust * windUp, cfg.grass.gustSpeed)
     u.uWindDir.value.set(wind, 0)
     u.uLaptop.value.set(cfg.laptop.pos[0] / r0, cfg.laptop.pos[1] / r1, cfg.laptop.size[0] / 2 / r1, cfg.laptop.size[1] / 2 / r1)
     // ---- F. laptop: its own rhythm, unrelated to the moon. J. hold: it pulses a little harder.
@@ -1055,25 +1085,25 @@ export function mountHero(container: HTMLElement, opts: HeroOptions = {}): HeroH
     u.uExposure.value = cfg.image.exposure
     u.uView.value = heroDebug.view
 
-    // ---- J. dive parallax and the screen turning to light
+    // ---- J. push parallax and the screen's light in the mist
     const { far: kFar, near: kNear, iterations } = T.parallax
     u.uDive.value.set(logZ, kFar, kNear, -0.5 * e) // a crisper depth lookup as the zoom deepens keeps silhouettes clean
     u.uDiveTarget.value.set(tx, ty)
     u.uDiveIter.value = iterations
-    const sf = quadFrame(T.portal.corners)
+    const sf = quadFrame(cfg.screen.corners)
     // K. With the video on, the screen is wherever its four corners say (image uv -> source px).
     const vTex = cfg.video.enabled ? (video?.texture ?? null) : null
     const videoOn = !!vTex
     heroDebug.video = !video ? 'off' : video.failed ? 'missing (public/video/screen.mp4)' : videoOn ? 'playing' : 'loading'
-    const screenPx = videoOn ? cfg.video.corners.map(([cu, cv]) => [cu * r0, cv * r1] as [number, number]) : T.portal.corners
+    const screenPx = videoOn ? cfg.video.corners.map(([cu, cv]) => [cu * r0, cv * r1] as [number, number]) : cfg.screen.corners
     const ssf = videoOn ? quadFrame(screenPx) : sf
     u.uScreenC.value.set(ssf.cx, ssf.cy)
     frameInverse(u.uScreenInv.value as number[], ssf.xx, ssf.xy, ssf.yx, ssf.yy)
     u.uScreenLen.value.set(Math.hypot(ssf.xx, ssf.xy), Math.hypot(ssf.yx, ssf.yy))
-    u.uScreenR.value = T.portal.radius
-    const [gr, gg, gb] = T.portal.glowColor
-    // Linear HDR (the colour is given in display terms) so the screen blooms.
-    u.uScreenGlow.value.set(gr * gr * 1.6, gg * gg * 1.6, gb * gb * 1.6, Math.min(1, T.screenGlow * smoothstep(0.55, 1, diveT)))
+    u.uScreenR.value = cfg.screen.radius
+    const [gr, gg, gb] = T.atmosphere.laptopColor
+    // Linear HDR so the screen blooms into the rising mist.
+    u.uScreenGlow.value.set(gr * 1.6, gg * 1.6, gb * 1.6, Math.min(1, T.screenGlow * smoothstep(0.3, 1, e)))
     // K. The video's colour: its emission for the bloom, and the light it spills.
     const avg = video?.average ?? [0, 0, 0]
     const V = cfg.video
@@ -1120,14 +1150,60 @@ export function mountHero(container: HTMLElement, opts: HeroOptions = {}): HeroH
     lu.uDof.value = dof
     lu.uFocus.value = T.blur.focus
 
-    // ---- J. portal: the screen shape opens from its centre, then grows to the viewport
-    const P = T.portal
+    // ---- J. the atmosphere: a cloud volume composited against the photo's depth (shaders/clouds.frag)
+    const AT = T.atmosphere
+    if (motion) {
+      cloudClock += dt
+      cloudWind += AT.wind * wind * dt
+    }
+    const bands = atmosphereBands()
+    const reach = shot.camX + AT.scene.sky
+    cloudOn = bands.some(([from, to, , s]) => s > 0 && reach > from && shot.camX < to)
+    sceneOn = shot.sceneVis > 0
+    if (cloudOn) {
+      const cu = cloudMat.uniforms
+      cu.uAspect.value = cssW / cssH
+      cu.uCentre.value.set(anchorX, 1 - anchorY)
+      cu.uCamX.value = shot.camX
+      const ub = cu.uBands.value as Vector4[]
+      for (let i = 0; i < 4; i++) {
+        const bd = bands[i]
+        if (bd) ub[i].set(bd[0], bd[1], bd[2], bd[3])
+        else ub[i].set(0, 1, 0.5, 0)
+      }
+      cu.uDensMax.value = AT.bank.density
+      // Phones, tablets, Lite and integrated GPUs integrate fewer slices: the same shot, lighter billows.
+      const light = lowPower || compact || opts.integratedGpu
+      cu.uSlices.value = Math.min(16, Math.max(2, Math.round(light ? AT.slicesLow : AT.slices)))
+      cu.uTime.value = cloudClock
+      cu.uWind.value.set(cloudWind, 0)
+      cu.uMoon.value.copy(ru.uMoon.value)
+      cu.uMoonCol.value.copy(tint).multiplyScalar(0.6 * Math.max(0.2, lightRel))
+      cu.uAmbient.value.set(...AT.ambient)
+      cu.uDeep.value.set(...AT.deep)
+      cu.uGlow.value.set(...AT.glow)
+      const lx = (cfg.laptop.pos[0] / r0 - bx) / ax
+      const ly = 1 - (cfg.laptop.pos[1] / r1 - by) / ay
+      // Its glow is seen through whatever cloud already lies between camera and figure,
+      // and is left behind with the photo once the camera is through.
+      const figure = AT.scene.figure / Z
+      const seen = Math.exp(-opticalDepth(shot.camX, shot.camX + figure * 0.7)) * shot.sceneVis
+      cu.uLaptop.value.set(lx, ly, 0.06 * Math.sqrt(Z), AT.laptop * seen)
+      cu.uLaptopCol.value.set(...AT.laptopColor)
+      cu.uShape.value.set(AT.scale, AT.softness, AT.structure, AT.bank.depth)
+      cu.uLight.value.set(AT.silver, AT.scatter, AT.moonReach, AT.glowReach)
+      cu.uDist.value.set(AT.scene.figure, AT.scene.spread, AT.scene.sky)
+      cu.uFigure.value = figure
+    }
+
     const fu = finalMat.uniforms
     const fw = fu.uRes.value.x
     const fh = fu.uRes.value.y
+    fu.uCloudOn.value = cloudOn ? 1 : 0
+    fu.uSceneVis.value = shot.sceneVis
     // Screen corners on the laptop plane, in device px (y up), mouse parallax included.
     const lift = cfg.scene.personDepth - cfg.parallax.focus
-    const dev = P.corners.map(
+    const dev = cfg.screen.corners.map(
       ([x, y]) => [((x / r0 - uParallax.value.x * lift - bx) / ax) * fw, (1 - (y / r1 - uParallax.value.y * lift - by) / ay) * fh] as [number, number],
     )
 
@@ -1149,34 +1225,12 @@ export function mountHero(container: HTMLElement, opts: HeroOptions = {}): HeroH
         ? screenPx.map(([x, y]) => [((x / r0 - uParallax.value.x * lift - bx) / ax) * fw, (1 - (y / r1 - uParallax.value.y * lift - by) / ay) * fh] as [number, number])
         : dev
       quadToUnit(fu.uScreenH.value, quad)
-      fu.uScreenRad.value = (P.radius / Math.max(1e-3, Math.hypot(ssf.xx, ssf.xy))) * DESIGN[0]
+      fu.uScreenRad.value = (S.radius / Math.max(1e-3, Math.hypot(ssf.xx, ssf.xy))) * DESIGN[0]
       fu.uScreenBright.value = S.brightness * (motion ? 1 + (u.uLaptopPulse.value - 1) * 0.5 : 1)
       fu.uScreenGlare.value = S.glare
       fu.uBezel.value = S.bezel
-      fu.uScreenLaunch.value = S.launch ? smoothstep(0, Math.max(0.01, P.iris), portalT) : 0
       fu.uCaretOn.value = !hasCaret ? 0 : motion ? (Math.floor(clock * S.caretHz * 2) % 2 === 0 ? 1 : 0) : 1
     }
-    const iris = smoothstep(0, Math.max(0.01, P.iris), portalT)
-    const grow = getEase(T.portalEase)(remap(portalT, P.iris, 1))
-    const glow = iris * (1 - smoothstep(P.iris * 0.8, 1, portalT))
-    const portalOn = portalT > 0 && iris > 0.002
-    if (portalOn) {
-      const f0 = quadFrame(dev)
-      const endR = P.endRadius * (fw / cssW)
-      const startR = P.radius * (Math.hypot(f0.xx, f0.xy) / Math.max(1e-3, Math.hypot(sf.xx, sf.xy)))
-      const mix = (a: number, b: number) => a + (b - a) * grow
-      const xx = mix(f0.xx * iris, fw + 2 * endR)
-      const xy = mix(f0.xy * iris, 0)
-      const yx = mix(f0.yx * iris, 0)
-      const yy = mix(f0.yy * iris, -(fh + 2 * endR)) // device px are y up; the frame's Y edge points down
-      fu.uPortalC.value.set(mix(f0.cx, fw / 2), mix(f0.cy, fh / 2))
-      frameInverse(fu.uPortalInv.value as number[], xx, xy, yx, yy)
-      fu.uPortalLen.value.set(Math.hypot(xx, xy), Math.hypot(yx, yy))
-      fu.uPortalR.value = mix(startR * iris, endR)
-      fu.uGlow.value.set(gr, gg, gb, P.bloom * glow)
-      fu.uGlowShape.value.set(Math.max(1, P.glowRadius * fh), 0.85 * (1 - smoothstep(P.iris * 0.5, 0.9, portalT)))
-    }
-    fu.uPortalOn.value = portalOn ? 1 : 0
     fu.uLensOn.value = lensOn ? 1 : 0
     fu.uLens.value.set(anchorX, 1 - anchorY, streak, dof)
     fu.uLensFocus.value = T.blur.focus
@@ -1191,18 +1245,18 @@ export function mountHero(container: HTMLElement, opts: HeroOptions = {}): HeroH
       heroDebugApi.moon = () => ({ x: mx, y: my, r: mr * cssH })
     }
 
-    // ---- I. film (J: rays fade, vignette tightens, the glow peak adds bloom and aberration)
+    // ---- I. film (J: rays fade under the clouds, vignette tightens with the push, speed adds aberration)
     if (revealed && fadeStart < 0) fadeStart = now
     const fade = fadeStart < 0 ? 0 : smoothstep(0, 1, (now - fadeStart) / 1000 / Math.max(0.01, cfg.film.fadeIn))
-    fu.uRayColor.value.copy(tint).multiplyScalar(cfg.rays.strength * lightRel * (1 - T.raysFade * e))
-    fu.uBloomStrength.value = cfg.film.bloom + P.bloom * glow * 0.5
+    fu.uRayColor.value.copy(tint).multiplyScalar(cfg.rays.strength * lightRel * (1 - T.raysFade * veil))
+    fu.uBloomStrength.value = cfg.film.bloom
     fu.uVignette.value = Math.min(0.95, cfg.film.vignette + T.vignette * e)
     fu.uVigTight.value = e
     fu.uGrain.value = cfg.film.grain
     fu.uSharpen.value = cfg.film.sharpen
     fu.uClarity.value = cfg.film.clarity
-    fu.uAberration.value = cfg.film.aberration + P.aberration * glow
-    fu.uCaSpread.value = glow
+    fu.uAberration.value = cfg.film.aberration + streak * 0.02
+    fu.uCaSpread.value = Math.min(1, streak * 4)
     fu.uKnee.value = cfg.film.knee
     fu.uStreak.value = cfg.film.streak
     fu.uToe.value = cfg.film.toe
@@ -1212,25 +1266,34 @@ export function mountHero(container: HTMLElement, opts: HeroOptions = {}): HeroH
   }
 
   function render() {
-    quad.material = sceneMat
-    renderer.setRenderTarget(sceneRT)
-    renderer.render(quadScene, camera)
-    if (points && !reduced && heroDebug.view === 0) renderer.render(particleScene, camera)
+    // Once the bank has closed the photo is hidden for good: only the clouds are drawn.
+    if (sceneOn) {
+      quad.material = sceneMat
+      renderer.setRenderTarget(sceneRT)
+      renderer.render(quadScene, camera)
+      if (points && !reduced && heroDebug.view === 0) renderer.render(particleScene, camera)
 
-    quad.material = raysMat
-    renderer.setRenderTarget(raysRT)
-    renderer.render(quadScene, camera)
+      quad.material = raysMat
+      renderer.setRenderTarget(raysRT)
+      renderer.render(quadScene, camera)
 
-    quad.material = blurH
-    renderer.setRenderTarget(bloomA)
-    renderer.render(quadScene, camera)
-    quad.material = blurV
-    renderer.setRenderTarget(bloomB)
-    renderer.render(quadScene, camera)
+      quad.material = blurH
+      renderer.setRenderTarget(bloomA)
+      renderer.render(quadScene, camera)
+      quad.material = blurV
+      renderer.setRenderTarget(bloomB)
+      renderer.render(quadScene, camera)
 
-    if (lensOn) {
-      quad.material = lensMat
-      renderer.setRenderTarget(lensRT)
+      if (lensOn) {
+        quad.material = lensMat
+        renderer.setRenderTarget(lensRT)
+        renderer.render(quadScene, camera)
+      }
+    }
+
+    if (cloudOn) {
+      quad.material = cloudMat
+      renderer.setRenderTarget(cloudRT)
       renderer.render(quadScene, camera)
     }
 
@@ -1363,6 +1426,32 @@ export function mountHero(container: HTMLElement, opts: HeroOptions = {}): HeroH
   canvas.addEventListener('webglcontextrestored', onRestored)
 
   // ---------------------------------------------------------------- debug
+  if (import.meta.env.DEV) {
+    // Dev-only probe: GPU time of one hero frame at progress p, independent of rAF (works in a hidden tab).
+    ;(window as unknown as Record<string, unknown>).__heroProbe = async (p: number, frames = 20) => {
+      const gl = renderer.getContext() as WebGL2RenderingContext
+      const ext = gl.getExtension('EXT_disjoint_timer_query_webgl2')
+      if (!ext || !ready) return 'unavailable'
+      const keep = progress
+      progress = p
+      const times: number[] = []
+      let now = performance.now()
+      for (let i = 0; i < frames; i++) {
+        const q = gl.createQuery()!
+        gl.beginQuery(ext.TIME_ELAPSED_EXT, q)
+        now += 1000 / 60
+        update(1 / 60, now)
+        render()
+        gl.endQuery(ext.TIME_ELAPSED_EXT)
+        while (!gl.getQueryParameter(q, gl.QUERY_RESULT_AVAILABLE)) await new Promise((r) => setTimeout(r, 1))
+        if (!gl.getParameter(ext.GPU_DISJOINT_EXT)) times.push(gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6)
+        gl.deleteQuery(q)
+      }
+      progress = keep
+      times.sort((a, b) => a - b)
+      return { median: +times[times.length >> 1].toFixed(2), scene: heroDebug.scene, cloud: cloudOn }
+    }
+  }
   let detachDebug: (() => void) | null = null
   if (debugOn) {
     import('./debug')
@@ -1404,8 +1493,8 @@ export function mountHero(container: HTMLElement, opts: HeroOptions = {}): HeroH
       detachDebug?.()
       heroDebugApi.afterRender = null
       textures.forEach((t) => t.dispose())
-      for (const m of [sceneMat, raysMat, blurH, blurV, lensMat, finalMat, particleMat]) m.dispose()
-      for (const rt of [sceneRT, raysRT, bloomA, bloomB, lensRT]) rt.dispose()
+      for (const m of [sceneMat, raysMat, blurH, blurV, lensMat, cloudMat, finalMat, particleMat]) m.dispose()
+      for (const rt of [sceneRT, raysRT, bloomA, bloomB, lensRT, cloudRT]) rt.dispose()
       tri.dispose()
       points?.geometry.dispose()
       renderer.dispose()

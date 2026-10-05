@@ -6,6 +6,9 @@ import {
   InstancedBufferGeometry,
   PlaneGeometry,
   ShaderMaterial,
+  SRGBColorSpace,
+  Texture,
+  Vector2,
   Vector3,
   type Mesh,
   type PerspectiveCamera,
@@ -67,6 +70,8 @@ export function PortraitScan() {
           uOpacity: { value: 1 },
           uAccent: { value: colors.accent },
           uInk: { value: colors.ink },
+          uPhoto: { value: null as Texture | null },
+          uPhotoSize: { value: new Vector2(1, 1) },
         },
       }),
     [],
@@ -84,9 +89,21 @@ export function PortraitScan() {
     g.setAttribute('aDust', new InstancedBufferAttribute(sample.dust, 3))
     g.setAttribute('aColor', new InstancedBufferAttribute(sample.color, 3))
     g.setAttribute('aData', new InstancedBufferAttribute(sample.data, 4))
+    g.setAttribute('aScale', new InstancedBufferAttribute(sample.scale, 1))
     g.instanceCount = sample.count
     material.uniforms.uSize.value = sample.spacing * 0.74
+    material.uniforms.uPhotoSize.value.set(sample.width, sample.height)
     return g
+  }, [sample, material])
+
+  // Settled crystals sample the full-resolution cutout, so the assembled portrait is the photo.
+  useEffect(() => {
+    if (!sample) return
+    const photo = new Texture(sample.image)
+    photo.colorSpace = SRGBColorSpace
+    photo.needsUpdate = true
+    material.uniforms.uPhoto.value = photo
+    return () => photo.dispose()
   }, [sample, material])
 
   const beam = useMemo(() => {
@@ -123,12 +140,13 @@ export function PortraitScan() {
     u.uIdle.value = smoothstep(0.85, 1, signals.scan)
     u.uOpacity.value = 0.25 + 0.75 * presence.current
 
-    // Layout: right of the copy on wide screens, above it on narrow ones.
+    // Layout: centred in the right half on wide screens, with headroom under the
+    // nav; on narrow ones it sits in the top third, copy below it on a scrim.
     const aspect = camera.aspect
     const wide = aspect > 1.05
-    // Narrow: portrait sits in the top third, copy below it on a scrim.
-    g.position.set(wide ? Math.min(3.3, 1.6 * aspect - 0.2) : 0, wide ? -0.05 : 2.8, world.about.center.z)
-    g.scale.setScalar(wide ? 1 : 0.58)
+    const halfH = Math.tan((38 * Math.PI) / 360) * 11.5 // About pose: fov 38, 11.5 back (cameraPath.ts)
+    g.position.set(wide ? halfH * aspect * 0.5 : 0, wide ? -0.32 : 2.8, world.about.center.z)
+    g.scale.setScalar(wide ? 0.8 : 0.58)
 
     // Pointer onto the portrait plane, in local space, spring-damped.
     const pr = signals.pointer
@@ -155,7 +173,7 @@ export function PortraitScan() {
 
   if (!sample || !geometry) return <group ref={ref} />
 
-  const beamY = (0.5 - (signals.scan * 1.3 - 0.12)) * sample.height
+  const beamY = (0.5 - (signals.scan * 1.42 - 0.12)) * sample.height
   return (
     <group ref={ref}>
       <mesh geometry={geometry} material={material} frustumCulled={false} />
@@ -191,7 +209,7 @@ function useBeamFollow(sample: PortraitSample) {
   const ref = useRef<Mesh>(null)
   useFrame(() => {
     if (!ref.current) return
-    const b = signals.scan * 1.3 - 0.12
+    const b = signals.scan * 1.42 - 0.12
     ref.current.position.y = (0.5 - b) * sample.height
     ref.current.visible = signals.scan > 0.001 && signals.scan < 0.999
   })

@@ -25,7 +25,7 @@ if (!existsSync(input)) {
 }
 mkdirSync(outDir, { recursive: true })
 
-const MAX_SIDE = 1100
+const MAX_SIDE = 1254
 
 const { data, info } = await sharp(input)
   .rotate()
@@ -85,6 +85,35 @@ while (sp > 0) {
   if (y < H - 1) seed(i + W)
 }
 
+const near = new Uint8Array(N)
+// 2b. Backdrop showing through gaps in curly hair is enclosed, so the flood fill never reaches
+//     it. Near the silhouette (never deep inside, so eye whites are safe), treat any pixel that
+//     is close to the backdrop colour as backdrop too.
+{
+  const NEAR = Math.round(Math.max(W, H) * 0.035)
+  const rows = new Uint8Array(N)
+  for (let y = 0; y < H; y++) {
+    let last = -1e9
+    for (let x = 0; x < W; x++) { if (flooded[y * W + x]) last = x; if (x - last <= NEAR) rows[y * W + x] = 1 }
+    last = 1e9
+    for (let x = W - 1; x >= 0; x--) { if (flooded[y * W + x]) last = x; if (last - x <= NEAR) rows[y * W + x] = 1 }
+  }
+  for (let x = 0; x < W; x++) {
+    let last = -1e9
+    for (let y = 0; y < H; y++) { if (rows[y * W + x]) last = y; if (y - last <= NEAR) near[y * W + x] = 1 }
+    last = 1e9
+    for (let y = H - 1; y >= 0; y--) { if (rows[y * W + x]) last = y; if (last - y <= NEAR) near[y * W + x] = 1 }
+  }
+  let holes = 0
+  for (let i = 0; i < N; i++) {
+    if (flooded[i] || !near[i]) continue
+    const [r, g, b] = px(i)
+    const sat = Math.max(r, g, b) - Math.min(r, g, b)
+    if (dist(r, g, b) < 0.14 && sat < 0.1 && lum(r, g, b) > bgL - 0.18) { flooded[i] = 1; holes++ }
+  }
+  console.log(`[portrait] cleared ${holes} backdrop pixels between hair strands`)
+}
+
 // 3. Soft matte: full alpha inside, colour-distance alpha in a thin band around the
 //    subject edge (keeps curly hair fringe semi-transparent instead of jagged).
 const alpha = new Float32Array(N)
@@ -108,6 +137,32 @@ for (let y = 0; y < H; y++) {
     const [r, g, b] = px(i)
     const soft = smooth(0.05, 0.3, dist(r, g, b))
     alpha[i] = flooded[i] ? soft * 0.85 : Math.max(soft, 0.35)
+  }
+}
+
+// 3a. Luminance key on the outline band: curl edges blended with the light wall are grey,
+//     not hair. Unsaturated pixels there get alpha from how far they sit between the hair
+//     and the backdrop, and the despill below turns what is left back into dark hair.
+for (let i = 0; i < N; i++) {
+  if (!near[i] || alpha[i] === 0) continue
+  const [r, g, b] = px(i)
+  const sat = Math.max(r, g, b) - Math.min(r, g, b)
+  if (sat > 0.12) continue
+  // Only pixels clearly lighter than hair are touched, so eyebrows and beard stay intact.
+  const key = 1 - smooth(0.36, bgL - 0.04, lum(r, g, b))
+  alpha[i] = Math.min(alpha[i], key)
+}
+
+// 3b. Pull the matte in by a pixel: the outermost ring of subject pixels is blended with the
+//     light backdrop and reads as a white rim once the portrait sits on a dark page.
+{
+  const src = alpha.slice()
+  for (let y = 1; y < H - 1; y++) {
+    for (let x = 1; x < W - 1; x++) {
+      const i = y * W + x
+      const m = Math.min(src[i - 1], src[i + 1], src[i - W], src[i + W])
+      alpha[i] = Math.min(src[i], m + 0.25)
+    }
   }
 }
 
@@ -141,12 +196,8 @@ const top = Math.max(0, minY - pad)
 const width = Math.min(W, maxX + pad) - left
 const height = Math.min(H, maxY + pad) - top
 
-// 5. Gentle contrast + clarity on colour only (alpha passes through untouched).
-const cut = sharp(out, { raw: { width: W, height: H, channels: 4 } })
-  .extract({ left, top, width, height })
-  .linear([1.08, 1.08, 1.08, 1], [-8, -8, -8, 0])
-  .modulate({ saturation: 1.04 })
-  .sharpen({ sigma: 0.6 })
+// 5. No grade: the portrait is shown as the real photo, so colours stay true to the source.
+const cut = sharp(out, { raw: { width: W, height: H, channels: 4 } }).extract({ left, top, width, height })
 
 await cut.clone().png({ compressionLevel: 9 }).toFile(resolve(outDir, 'about.cutout.png'))
 await cut.clone().webp({ quality: 90, alphaQuality: 90 }).toFile(resolve(outDir, 'about.cutout.webp'))

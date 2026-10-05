@@ -12,6 +12,7 @@ src/hero/
   maps.ts           loads your maps, or builds temporary ones from the photo
   noise.ts          CPU twin of the shader noise (moon cloud density)
   input.ts          mouse + gyroscope parallax
+  shot.ts           the hero -> About camera move as a pure function of scroll progress
   debug.ts          lil-gui panel, moon split view, video corner handles; only with ?debug
   video.ts          the laptop screen's video (hidden <video> -> texture, autoplay unlock, colour sampling)
   hero.css          scoped styles (.hero-cinematic)
@@ -21,7 +22,8 @@ src/hero/
     scene.frag      layers: sky drift, veil, stars, moon, light grading, grass, laptop
     rays.frag       half-res god rays
     blur.frag       quarter-res bloom
-    final.frag      CA, vignette, tone shoulder, grain, fade
+    clouds.frag     the transition's atmosphere: a cloud volume composited against the photo's depth (half res)
+    final.frag      CA, vignette, tone shoulder, grain, fade, clouds over all
     particles.vert/.frag
 ```
 
@@ -127,7 +129,11 @@ twinkle, a rare shooting star crosses the dark upper sky (`stars.meteor`;
 ## Performance
 
 Scene pass capped by `perf.maxScenePixels(Hi)`, DPR <= 2, rays at 1/2, bloom
-at 1/4. With `perf.adaptive` the scene resolution steps down 20% at a time
+at 1/4. Integrated GPUs (the site's mid tier) keep the base cap times
+`perf.integratedScale` even once the 4K / 8K photo is in, and integrate the
+cloud bank in `atmosphere.slicesLow` slices: the scene pass costs ~10 ms per
+megapixel on an Iris Xe. While the photo covers the viewport, the fixed
+WebGL stage behind it is not rendered at all. With `perf.adaptive` the scene resolution steps down 20% at a time
 (to `minScale`) while frames run over `targetMs`, and back up after a long
 stretch of headroom; if a step does not help (a throttled display, not the
 GPU) it is undone and adaptation stops. `?debug` > Info shows frame ms and the
@@ -217,18 +223,38 @@ reference. In the console, `__hero.cfg` is the live config.
 
 `transition.ts` owns one scrubbed ScrollTrigger over the hero track (a tall
 section with a sticky stage; About starts exactly where the pin releases).
-Progress 0..1 drives everything, so scrolling back replays it:
+Progress 0..1 drives everything through `shot.ts`, a pure function of
+progress shared by the engine and the DOM, so scrolling back replays it and
+nothing keeps moving once the scroll settles. It is shot as one camera move,
+with no cuts:
 
-| Progress | Phase | What happens |
-|---|---|---|
-| 0 to `hold` | Hold | Idle hero; the screen glow pulses a little harder |
-| to `dive` | Dive | Shader zoom to `maxZoom` toward `target`; each depth layer zooms by its own power (sky barely, near rock fastest); half-res radial motion blur + DOF; vignette tightens, rays fade |
-| to `portal` | Portal | The screen opens from its centre in its own perspective, then grows to the viewport; the canvas is transparent there, so About's world shows through, settling from `settleScale` to 1 |
-| to 1 | Arrive | The stage fades out, the render loop stops at `renderUntil`, the pin releases onto About |
+| Beat | What happens |
+|---|---|
+| Stillness | 0 to `hold`: the idle hero; the screen glow pulses a little harder |
+| Movement | The camera eases out of rest (`move.easeIn`): no lurch |
+| Push | It travels toward the figure; each depth layer of the photo zooms by its own power (sky barely, near grass fastest), with a barely-there radial blur and depth of field |
+| Depth | The air between camera and sky thickens: the far sky hazes first and the moon dims to a glow in the mist, while the island stays crisp in front of it; thin veils drift in from the depth and past the lens |
+| Passage | The bank rolls over the back of the island, swallows the figure (the laptop's light diffuses in it, then fades behind the fog), and the camera flies into it; the photo is gone |
+| Transformation | Inside, moonlight dies with depth and About's indigo glows through the bank's far side |
+| Reveal | The camera leaves the bank; its last layers stream past onto About's world, and the camera settles (`move.settle`). About's page is held still in frame the whole time (lifted by exactly the distance it still sits below the fold), so it is discovered in place, never scrolled in; its kicker and heading rise in with the camera's settle |
+
+**Why it reads as space, not an overlay.** `clouds.frag` knows how far away
+the scene is along every pixel: the depth map, through the same dive the scene
+pass draws, places the figure `atmosphere.scene.figure` units away and the sky
+`scene.sky`. The atmosphere is a density profile along the view axis (the main
+bank, thin leading veils, one trailing veil, in bank coordinates), integrated
+analytically from the camera to that distance, so mist only covers what lies
+behind it. The integral is split into depth slices fixed in the cloud world,
+each a sheet of billows seen in perspective: far slices are fine texture,
+near ones swell and stream past the frame edges, and the one being crossed
+thins to nothing, because its opacity comes from the (continuous) integral.
 
 Tune with `?debug` > **J. Scroll transition**: tick *freeze frame* and drag
-*progress* to inspect any frame. `zoom target` is image uv with y down (the
-laptop screen is at 0.516, 0.412). The portal shape is the four screen corners
-in source px (`transition.portal.corners`).
+*progress* to inspect any frame. `target` is image uv with y down (the figure's
+back is near 0.50, 0.40); `frame` is where it lands on screen. **Timing** holds
+the camera's ease-in and settle; **Atmosphere** the camera path through the
+bank, the distances, density, light and colour.
 
-Reduced motion (and `?static`) skips the dive: a 400 ms crossfade instead.
+Phones, tablets and Lite integrate fewer slices (`atmosphere.slicesLow`) and
+push less (`mobile.zoom`). Reduced motion (and `?static`) skips the shot: a
+400 ms crossfade instead.

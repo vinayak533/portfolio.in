@@ -54,14 +54,11 @@ export const site = {
 
 export const about = {
   kicker: 'About',
-  heading: 'Models are the easy part.',
-  bio:
-    'I am an applied ML engineer who cares about the unglamorous 90%: data contracts, evaluation harnesses, latency budgets and the feedback loops that keep a model honest after launch day. Lately that means retrieval-augmented assistants, multimodal vision pipelines and agent systems that know when to ask a human.',
-  facts: [
-    { value: '5+', label: 'years shipping ML to production' },
-    { value: '40M', label: 'monthly inferences served by my systems' },
-    { value: '-63%', label: 'median p95 latency across three launches' },
-  ],
+  heading: ['Building AI that goes', 'beyond the demo'],
+  /** Rendered as: "I'm <name>, <lede>" */
+  lede: 'an AI/ML Engineer focused on building intelligent systems that solve real problems.',
+  body: 'My work spans Generative AI, agentic systems, RAG, and AI backend engineering — connecting models, data, APIs, and production systems into products that actually work.',
+  closing: ['AI is the foundation.', 'Building intelligence that creates real impact is the goal.'],
 }
 
 export const projects: Project[] = [

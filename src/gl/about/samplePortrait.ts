@@ -13,10 +13,14 @@ export interface PortraitSample {
   color: Float32Array
   /** lum, seedA, seedB, v (0 = top of photo, 1 = bottom). */
   data: Float32Array
+  /** Per-crystal size factor that keeps coverage even where sampling is denser. */
+  scale: Float32Array
   width: number
   height: number
   /** Average spacing between particles in world units (drives crystal size). */
   spacing: number
+  /** The cutout itself: settled crystals sample it so the assembled portrait is the real photo. */
+  image: HTMLImageElement
 }
 
 const srgbToLinear = (c: number) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4))
@@ -55,6 +59,9 @@ function boxBlur(src: Float32Array, w: number, h: number, r: number) {
   return out
 }
 
+/** Face centre and spread in normalised photo coordinates (public/portrait/about.cutout.png). */
+const FACE = { x: 0.46, y: 0.37, sx: 0.13, sy: 0.17, boost: 2.0 }
+
 export async function samplePortrait(src: string, count: number, worldHeight = 6.6): Promise<PortraitSample> {
   const img = await loadImage(src)
   const aspect = img.naturalWidth / img.naturalHeight
@@ -69,25 +76,44 @@ export async function samplePortrait(src: string, count: number, worldHeight = 6
 
   const alpha = new Float32Array(W * H)
   const weight = new Float32Array(W * H)
+  const boost = new Float32Array(W * H)
   let total = 0
   for (let i = 0; i < W * H; i++) {
     const a = px[i * 4 + 3] / 255
     alpha[i] = a
+    const x = (i % W) / W
     const y = Math.floor(i / W) / H
     const l = (0.2126 * px[i * 4] + 0.7152 * px[i * 4 + 1] + 0.0722 * px[i * 4 + 2]) / 255
-    // Bottom of the frame dissolves into dust instead of ending on a hard crop.
-    const fade = 1 - smooth(0.7, 1.0, y)
-    const w = Math.pow(a, 1.6) * fade * (0.55 + l * 1.1)
+    // Oval vignette around head and shoulders: the cropped shoulders and the
+    // bottom edge thin out into loose crystals instead of ending on hard crops.
+    const vx = (x - FACE.x) / 0.56
+    const vy = (y - 0.4) / 0.66
+    const fade = (1 - smooth(0.72, 1.0, Math.hypot(vx, vy))) * (1 - smooth(0.84, 1.0, y))
+    // Extra density where the likeness lives (eyes, nose, mouth); those crystals
+    // shrink by 1/sqrt(boost) so the surface stays evenly covered.
+    const fx = (x - FACE.x) / FACE.sx
+    const fy = (y - FACE.y) / FACE.sy
+    const b = 1 + FACE.boost * Math.exp(-0.5 * (fx * fx + fy * fy))
+    boost[i] = b
+    // Near-uniform density so dark hair, beard and shirt keep enough crystals to read as form.
+    const w = Math.pow(a, 1.6) * fade * (0.85 + l * 0.3) * b
     weight[i] = w
     total += w
   }
   const relief = boxBlur(alpha, W, H, 14)
+  // Average colour of the nearby solid interior, used to clean up the matte edge.
+  const solid = [0, 1, 2, 3].map((c) => {
+    const ch = new Float32Array(W * H)
+    for (let i = 0; i < W * H; i++) if (alpha[i] > 0.98) ch[i] = c === 3 ? 1 : px[i * 4 + c] / 255
+    return boxBlur(ch, W, H, 5)
+  })
 
   const worldWidth = worldHeight * aspect
   const target = new Float32Array(count * 3)
   const dust = new Float32Array(count * 3)
   const color = new Float32Array(count * 3)
   const data = new Float32Array(count * 4)
+  const scale = new Float32Array(count)
 
   // Stratified sampling: walk the cumulative weight with an even stride + jitter.
   const stride = total / count
@@ -99,15 +125,24 @@ export async function samplePortrait(src: string, count: number, worldHeight = 6
     while (run >= acc && n < count) {
       const x = (i % W) + Math.random()
       const yy = Math.floor(i / W) + Math.random()
-      const r = px[i * 4] / 255
-      const g = px[i * 4 + 1] / 255
-      const b = px[i * 4 + 2] / 255
+      let r = px[i * 4] / 255
+      let g = px[i * 4 + 1] / 255
+      let b = px[i * 4 + 2] / 255
+      // Semi-transparent hair fringe still carries the light studio backdrop and would
+      // read as white glitter on the outline: pull it toward the solid colour next to it.
+      const sw = solid[3][i]
+      if (alpha[i] < 0.98 && sw > 1e-3) {
+        const t = smooth(0.5, 0.98, alpha[i])
+        r = solid[0][i] / sw + (r - solid[0][i] / sw) * t
+        g = solid[1][i] / sw + (g - solid[1][i] / sw) * t
+        b = solid[2][i] / sw + (b - solid[2][i] / sw) * t
+      }
       const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b
       const v = yy / H
 
       target[n * 3] = (x / W - 0.5) * worldWidth
       target[n * 3 + 1] = (0.5 - v) * worldHeight
-      target[n * 3 + 2] = relief[i] * 0.85 + (lum - 0.35) * 0.55 + (Math.random() - 0.5) * 0.05
+      target[n * 3 + 2] = relief[i] * 0.85 + (lum - 0.35) * 0.05 + (Math.random() - 0.5) * 0.01
 
       // Dust: a wide, deep cloud, biased toward the camera so assembly reads as arrival.
       const rr = 3 + Math.pow(Math.random(), 0.6) * 9
@@ -124,6 +159,7 @@ export async function samplePortrait(src: string, count: number, worldHeight = 6
       data[n * 4 + 1] = Math.random()
       data[n * 4 + 2] = Math.random()
       data[n * 4 + 3] = v
+      scale[n] = 1 / Math.sqrt(boost[i])
       n++
       acc += stride
     }
@@ -138,9 +174,11 @@ export async function samplePortrait(src: string, count: number, worldHeight = 6
     dust: dust.subarray(0, n * 3),
     color: color.subarray(0, n * 3),
     data: data.subarray(0, n * 4),
+    scale: scale.subarray(0, n),
     width: worldWidth,
     height: worldHeight,
     spacing,
+    image: img,
   }
 }
 

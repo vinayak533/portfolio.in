@@ -24,7 +24,7 @@ function Driver() {
   useEffect(
     () =>
       onTick((time) => {
-        if (signals.paused || document.hidden) return
+        if (signals.paused || signals.heroCovers || document.hidden) return
         advance(time)
       }, 100),
     [advance],

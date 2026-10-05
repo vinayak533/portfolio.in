@@ -55,8 +55,8 @@
   width: 100%;
 }
 
-/* The canvas is transparent where the laptop screen opens onto About. */
-.hero-cinematic.is-portal {
+/* The canvas turns transparent where the cloud bank parts onto About. */
+.hero-cinematic.is-parting {
   background: transparent;
 }
 

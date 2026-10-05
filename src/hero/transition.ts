@@ -1,25 +1,26 @@
 /**
  * Hero -> About scroll transition controller.
  *
- * One scrubbed ScrollTrigger (one master timeline) owns the whole sequence.
- * The hero track is a tall section with a sticky stage (the "pin"); About is
- * laid out so its top sits exactly where the pin releases, underneath the
- * stage. Progress 0..1 drives everything, so scrolling back replays it:
+ * One scrubbed ScrollTrigger (one master timeline) owns the whole sequence,
+ * shot as a single camera move (src/hero/shot.ts has the beats). The hero
+ * track is a tall section with a sticky stage (the "pin"); About is laid out so
+ * its top sits exactly where the pin releases, underneath the stage. Progress
+ * 0..1 drives everything, so scrolling back replays it, and nothing moves once
+ * the scroll (and its smoothing) comes to rest.
  *
- *   0 .. hold     HOLD    idle hero, the screen glow pulses a little harder
- *   .. dive       DIVE    shader zoom into the laptop with depth parallax
- *   .. portal     PORTAL  the screen opens; the canvas turns transparent there
- *                         and About's own world shows through, settling to scale 1
- *   .. 1          ARRIVE  the stage fades out, the render loop stops, pin releases
- *
- * The visuals live in the engine (engine.ts reads config.transition); this file
- * only does scroll, DOM and loop control. Reduced motion / static mode gets a
- * 400 ms crossfade instead.
+ * The visuals live in the engine; this file only does scroll, DOM and loop
+ * control: the canvas turns transparent once the camera is inside the bank,
+ * About's world (the fixed stage behind) finishes its handover there, and
+ * About's page is held still in frame while the last cloud layers stream past,
+ * so it is discovered in place, never scrolled in. Its first lines rise into
+ * place with the camera's settle. Reduced motion / static mode gets a 400 ms
+ * crossfade instead.
  */
 import { gsap, ScrollTrigger, easeInOutCubic, onTick, remap, smoothstep } from '../core/clock'
 import { getLenis } from '../core/scroll'
 import { signals, useStore } from '../store/useStore'
 import { heroConfig as cfg, MOBILE_QUERY, transitionProfile } from './config'
+import { shotAt } from './shot'
 import type { HeroHandle } from './engine'
 
 /** Live state for the ?debug panel: `freeze` holds the transition at `progress`. */
@@ -71,78 +72,70 @@ function webglTransition(o: TransitionOptions): TransitionHandle {
   let raw = 0
   let p = 0
   let tl: gsap.core.Timeline | null = null
-  let stageCanvas: HTMLElement | null = null
 
   const setPin = () => section.style.setProperty('--hero-pin', `${transitionProfile().pinVh}vh`)
   setPin()
 
-  /** The About world is the fixed WebGL stage behind <main>: its canvas is the one outside main. */
-  const findStageCanvas = () => {
-    if (stageCanvas?.isConnected) return stageCanvas
-    stageCanvas = Array.from(document.querySelectorAll('canvas')).find((c) => !c.closest('main')) ?? null
-    return stageCanvas
-  }
+  /** About's opening lines (kicker, heading): revealed by the shot, not by About's own scroll. */
+  const heads = () => Array.from(o.about()?.querySelectorAll<HTMLElement>('[data-a-head]') ?? [])
 
   function apply(pv: number) {
     p = pv
     transitionDebug.live = +pv.toFixed(4)
     transitionDebug.raw = +raw.toFixed(4)
     const T = cfg.transition
-    const ph = T.phases
+    const shot = shotAt(pv)
 
     // Engine: visuals are a pure function of p; the loop only runs while the hero can be seen.
     const eng = o.engine()
     eng?.setProgress(pv)
     eng?.setRendering(pv < T.renderUntil)
 
-    // About's world (the fixed stage camera) completes its hero-to-About push
-    // behind the opaque hero, so the portal opens onto About's real first frame.
+    // About's world (the fixed stage behind) finishes its hero-to-About handover
+    // while the camera is inside the bank, so the clouds open onto its real first frame.
     signals.progress.hero = remap(pv, T.stageMap[0], T.stageMap[1])
 
-    // The canvas has transparent pixels from the moment the portal can open.
-    const opening = pv > ph.dive - 0.005
-    host.classList.toggle('is-portal', opening)
-    stage.style.pointerEvents = opening ? 'none' : ''
+    // The canvas has transparent pixels from the moment the photo is gone.
+    const parting = shot.sceneVis < 1
+    host.classList.toggle('is-parting', parting)
+    stage.style.pointerEvents = parting ? 'none' : ''
     stage.style.setProperty('--hero-cue', String(1 - smoothstep(0, 0.05, pv)))
 
-    // ARRIVE: fade the stage out. Raw scroll wins so a fast fling never leaves it behind.
-    const out = remap(Math.max(pv, raw), ph.portal, 1)
+    // The clouds clear the canvas themselves; the stage only steps aside at the very
+    // end. Raw scroll wins so a fast fling never leaves a wisp behind.
+    const out = remap(Math.max(pv, raw), 0.97, 1)
     stage.style.opacity = out > 0 ? String(1 - out) : ''
     stage.style.visibility = out >= 1 ? 'hidden' : ''
     stage.style.willChange = out > 0 && out < 1 ? 'opacity' : ''
+    // Until the photo starts to part, nothing of the fixed stage behind can be seen.
+    signals.heroCovers = !parting && out === 0
 
-    // About's DOM slides in beneath the stage during the last screen of the pin;
-    // keep it out of the portal until the arrival, then let it land in place.
     const about = o.about()
-    if (about) {
-      const a = raw >= 1 ? 1 : smoothstep(ph.portal, 1, Math.max(pv, raw))
-      about.style.opacity = a >= 1 ? '' : String(a)
-      about.style.willChange = a > 0 && a < 1 ? 'opacity' : ''
-    }
+    if (!about) return
+    const done = raw >= 1 && pv >= 0.999
+    // The page arrives through the last of the clouds...
+    const a = done ? 1 : smoothstep(0, 0.45, Math.max(shot.arrive, shotAt(raw).arrive))
+    about.style.opacity = a >= 1 ? '' : String(a)
+    // ...held still in frame: while the pin runs, About's top is still below the
+    // fold, so it is lifted by exactly that much. It is discovered, not scrolled in.
+    const st = tl?.scrollTrigger
+    const below = st && raw < 1 ? (1 - raw) * (st.end - st.start) : 0
+    about.style.transform = a > 0 && below > 0.5 ? `translate3d(0, ${(-below).toFixed(1)}px, 0)` : ''
+    about.style.willChange = a > 0 && a < 1 ? 'opacity, transform' : ''
 
-    // PORTAL: About arrives slightly large and settles to 1 (origin = the screen,
-    // which the dive has brought to the centre of the frame).
-    const sc = findStageCanvas()
-    if (sc) {
-      const s = T.portal.settleScale
-      const active = s !== 1 && pv > ph.dive - 0.01 && pv < ph.portal
-      if (active) {
-        const k = 1 - Math.pow(1 - remap(pv, ph.dive, ph.portal), 3)
-        sc.style.transform = `scale(${(s + (1 - s) * k).toFixed(5)})`
-        sc.style.transformOrigin = '50% 50%'
-        sc.style.willChange = 'transform'
-      } else if (sc.style.transform) {
-        sc.style.transform = ''
-        sc.style.transformOrigin = ''
-        sc.style.willChange = ''
-      }
-    }
+    // Kicker, then heading: a short rise and a soft arrival, staggered, settling with the camera.
+    heads().forEach((el, i) => {
+      const t = done ? 1 : smoothstep(0.3 + i * 0.14, 0.86 + i * 0.12, shot.arrive)
+      const k = 1 - (1 - t) * (1 - t)
+      el.style.opacity = t >= 1 ? '' : String(t * t)
+      el.style.transform = t >= 1 ? '' : `translate3d(0, ${((1 - k) * 0.42).toFixed(4)}em, 0)`
+      el.style.willChange = t > 0 && t < 1 ? 'opacity, transform' : ''
+    })
   }
 
   function build() {
     tl?.scrollTrigger?.kill()
     tl?.kill()
-    const ph = cfg.transition.phases
     tl = gsap.timeline({
       defaults: { ease: 'none' },
       scrollTrigger: {
@@ -172,9 +165,7 @@ function webglTransition(o: TransitionOptions): TransitionHandle {
         },
       },
     )
-      .addLabel('dive', ph.hold)
-      .addLabel('portal', ph.dive)
-      .addLabel('arrive', ph.portal)
+      .addLabel('move', cfg.transition.hold)
   }
   build()
 
@@ -186,7 +177,7 @@ function webglTransition(o: TransitionOptions): TransitionHandle {
     wasFrozen = transitionDebug.freeze
   })
 
-  // PageDown / Space inside the pin play the whole dive and land on the end
+  // PageDown / Space inside the pin play the whole shot and land on the end
   // state; PageUp / Shift+Space from there play it back. Never stuck halfway.
   const onKey = (ev: KeyboardEvent) => {
     if (ev.defaultPrevented || ev.altKey || ev.ctrlKey || ev.metaKey) return
@@ -219,6 +210,13 @@ function webglTransition(o: TransitionOptions): TransitionHandle {
   }
   mq.addEventListener('change', onBreakpoint)
 
+  // About's hold-still lift is a transform on an ancestor of its section: lift it while
+  // ScrollTrigger measures, so every trigger below is laid out where it really is.
+  const unlift = () => o.about()?.style.removeProperty('transform')
+  const relift = () => apply(transitionDebug.freeze ? transitionDebug.progress : p)
+  ScrollTrigger.addEventListener('refreshInit', unlift)
+  ScrollTrigger.addEventListener('refresh', relift)
+
   apply(0)
 
   return {
@@ -230,19 +228,19 @@ function webglTransition(o: TransitionOptions): TransitionHandle {
     },
     destroy() {
       stopTick()
+      signals.heroCovers = false
+      ScrollTrigger.removeEventListener('refreshInit', unlift)
+      ScrollTrigger.removeEventListener('refresh', relift)
       window.removeEventListener('keydown', onKey)
       mq.removeEventListener('change', onBreakpoint)
       tl?.scrollTrigger?.kill()
       tl?.kill()
-      host.classList.remove('is-portal')
+      host.classList.remove('is-parting')
       for (const prop of ['opacity', 'visibility', 'will-change', 'pointer-events', '--hero-cue']) stage.style.removeProperty(prop)
       const about = o.about()
-      about?.style.removeProperty('opacity')
-      about?.style.removeProperty('will-change')
-      if (stageCanvas) {
-        stageCanvas.style.transform = ''
-        stageCanvas.style.transformOrigin = ''
-        stageCanvas.style.willChange = ''
+      for (const prop of ['opacity', 'transform', 'will-change']) {
+        about?.style.removeProperty(prop)
+        for (const el of heads()) el.style.removeProperty(prop)
       }
     },
   }
