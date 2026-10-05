@@ -1,8 +1,21 @@
 .about-layout {
   --font-about-sans: 'Space Grotesk Variable', 'Bricolage Grotesque', sans-serif;
   --font-about-serif: 'Instrument Serif', Georgia, serif;
-  --about-accent: rgb(204 188 255);
-  --about-accent-dim: rgb(124 92 255 / 0.55);
+  --text-hi: #f4f1ff;
+  --text-mid: #b9b3d6;
+  --text-low: #8c86a8; /* 5.6:1 on --base */
+  --accent: #a78bfa;
+  --accent-glow: #7c5cff;
+  --line: rgba(167, 139, 250, 0.25);
+  --about-grad: linear-gradient(100deg, #c4b5fd 0%, #8b5cf6 50%, #c4b5fd 100%);
+  --about-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --about-h1: clamp(2.8rem, 5.5vw, 5rem);
+  /* 8px spacing scale, tightened on short viewports below. */
+  --sp-1: 0.75rem; /* 12px */
+  --sp-2: 1rem; /* 16px */
+  --sp-3: 1.5rem; /* 24px */
+  --sp-4: 2rem; /* 32px */
+  --sp-6: 3rem; /* 48px */
   font-family: var(--font-about-sans);
   font-synthesis: none;
 }
@@ -30,7 +43,6 @@
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-width: 32rem;
 }
 
 .about-panel p { margin: 0; }
@@ -40,7 +52,7 @@
   display: flex;
   align-items: center;
   gap: 0.85rem;
-  color: var(--ink-2);
+  color: var(--text-low);
   font-size: 0.66rem;
   font-weight: 500;
   letter-spacing: 0.24em;
@@ -52,85 +64,186 @@
   font-style: italic;
   letter-spacing: 0;
   line-height: 1;
-  color: var(--about-accent);
+  color: var(--accent);
 }
-.about-kicker-rule { width: 2.5rem; height: 1px; background: var(--about-accent-dim); }
+.about-kicker-rule { width: 2.5rem; height: 1px; background: var(--line); }
 
-/* Heading */
+/* Reveal: lines stagger in once the panel is `.is-in` (GPU-friendly properties only). */
+.about-reveal {
+  display: block;
+  opacity: 0;
+  transform: translate3d(0, 24px, 0);
+  filter: blur(8px);
+  transition:
+    opacity 0.9s var(--about-ease),
+    transform 0.9s var(--about-ease),
+    filter 0.9s var(--about-ease);
+  transition-delay: calc(var(--i, 0) * 90ms);
+}
+.is-in .about-reveal {
+  opacity: 1;
+  transform: none;
+  filter: none;
+}
+
+/* Headline */
 .about-heading {
-  margin: clamp(1.4rem, 3.4vh, 2.2rem) 0 0;
-  color: var(--ink);
-  font-weight: 500;
+  position: relative;
+  isolation: isolate;
+  margin: clamp(1.5rem, 4vh, 2.5rem) 0 0;
+  font-weight: 600;
+}
+/* Faint violet bloom behind the headline text only. */
+.about-heading::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: -25% -10% -25% -15%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, var(--accent-glow), transparent);
+  opacity: 0.12;
+  filter: blur(120px);
+  pointer-events: none;
 }
 .about-heading-lead {
-  display: block;
-  font-size: clamp(1.45rem, 2.2vw, 2.15rem);
-  font-weight: 500;
-  line-height: 1.1;
-  letter-spacing: -0.045em;
+  color: var(--text-hi);
+  font-size: var(--about-h1);
+  font-weight: 600;
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
 }
+.about-heading-line { margin-top: 0.04em; }
 .about-heading-accent {
-  display: block;
-  width: fit-content;
-  max-width: 100%;
-  padding: 0 0.08em 0.06em 0;
+  display: inline-block;
+  /* Room for the italic overhang, which background-clip would otherwise crop. */
+  padding: 0 0.12em 0.1em 0.02em;
+  margin-left: -0.02em;
   font-family: var(--font-about-serif);
-  font-size: clamp(2.9rem, 5.4vw, 5.25rem);
-  font-weight: 400;
+  font-size: calc(var(--about-h1) * 1.15);
   font-style: italic;
-  line-height: 0.95;
+  font-weight: 400;
+  line-height: 1;
   letter-spacing: -0.035em;
-  color: var(--about-accent);
+  white-space: nowrap;
+  background: var(--about-grad);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  /* drop-shadow, not text-shadow: a text-shadow would paint over the clipped gradient. */
+  filter: drop-shadow(0 0 40px rgba(124, 92, 255, 0.35));
+}
+/* Starts once "beyond the demo" has landed (the last line in the stagger). */
+.is-in .about-heading-accent {
+  animation: about-shimmer 8s linear calc(0.9s + var(--i, 0) * 90ms) infinite;
+}
+@keyframes about-shimmer {
+  to { background-position: 200% 0; }
 }
 
-/* Lede */
-.about-lede {
-  max-width: 29rem;
-  margin-top: clamp(1.3rem, 3vh, 1.9rem) !important;
-  color: var(--ink-2);
-  font-size: clamp(0.98rem, 1.05vw, 1.08rem);
-  line-height: 1.62;
-  letter-spacing: -0.012em;
+/* Intro */
+.about-intro {
+  margin-top: var(--sp-4) !important;
+  color: var(--text-mid);
+  font-size: 1.4rem;
+  line-height: 1.5;
+  letter-spacing: -0.015em;
   text-wrap: pretty;
 }
-.about-lede strong { color: var(--ink); font-weight: 500; white-space: nowrap; }
+.about-name {
+  position: relative;
+  color: var(--text-hi);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.about-name::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -0.1em;
+  height: 2px;
+  border-radius: 2px;
+  background: rgba(167, 139, 250, 0.4);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.9s var(--about-ease) calc(var(--i, 0) * 90ms + 450ms);
+}
+.is-in .about-name::after { transform: scaleX(1); }
 
-/* Body */
+/* Paragraph */
 .about-body {
-  max-width: 29rem;
-  margin-top: 1rem !important;
-  color: var(--ink-3);
-  font-size: clamp(0.9rem, 0.95vw, 0.98rem);
-  line-height: 1.62;
-  letter-spacing: -0.008em;
+  max-width: 46ch;
+  margin-top: var(--sp-2) !important;
+  color: var(--text-low);
+  font-size: 1.05rem;
+  line-height: 1.75;
+  letter-spacing: -0.005em;
   text-wrap: pretty;
 }
-
-/* Closing statement */
-.about-closing {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  max-width: 29rem;
-  margin-top: clamp(1.6rem, 4vh, 2.5rem) !important;
-  padding-top: 1rem;
-  border-top: 1px solid var(--line);
+.about-key {
+  position: relative;
+  color: var(--text-hi);
+  white-space: nowrap;
 }
-.about-closing span:first-child {
-  color: var(--ink-2);
-  font-size: 0.66rem;
+.about-key::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -0.05em;
+  height: 1px;
+  background: rgba(167, 139, 250, 0.45);
+  transform: scaleX(0);
+  transform-origin: left;
+  /* Grow after the paragraph itself has settled, one keyword after another. */
+  transition: transform 0.9s var(--about-ease) calc(var(--i, 0) * 90ms + 750ms + var(--k, 0) * 120ms);
+}
+.is-in .about-key::after { transform: scaleX(1); }
+
+/* Divider */
+.about-divider {
+  height: 1px;
+  margin-top: var(--sp-6);
+  background: linear-gradient(90deg, transparent, var(--line) 20%, var(--line) 80%, transparent);
+}
+
+/* Eyebrow + closing */
+.about-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-top: var(--sp-3) !important;
+  color: var(--accent);
+  font-size: 0.75rem;
   font-weight: 500;
-  letter-spacing: 0.22em;
+  line-height: 1;
+  letter-spacing: 0.28em;
   text-transform: uppercase;
 }
-.about-closing span:last-child {
+.about-eyebrow::before {
+  content: '';
+  flex: none;
+  width: 24px;
+  height: 1px;
+  background: var(--accent);
+}
+.about-closing {
+  width: fit-content;
+  margin-top: var(--sp-1) !important;
+  padding: 0 0.12em 0.08em 0;
   font-family: var(--font-about-serif);
-  font-size: clamp(1.3rem, 1.7vw, 1.6rem);
+  font-size: 1.8rem;
   font-style: italic;
   line-height: 1.2;
   letter-spacing: -0.015em;
-  color: var(--about-accent);
-  text-wrap: balance;
+  background: var(--about-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
 }
 
 /* Render toggle */
@@ -138,10 +251,10 @@
   display: flex;
   align-items: center;
   gap: 0.85rem;
-  margin-top: clamp(1.4rem, 3.4vh, 2.2rem);
+  margin-top: var(--sp-4);
 }
 .about-render-label {
-  color: var(--ink-3);
+  color: var(--text-low);
   font-size: 0.62rem;
   font-weight: 500;
   letter-spacing: 0.22em;
@@ -156,14 +269,14 @@
 .about-toggle button {
   padding: 0.3rem 0.85rem;
   border-radius: 999px;
-  color: var(--ink-3);
+  color: var(--text-low);
   font-size: 0.7rem;
   font-weight: 500;
   letter-spacing: 0.02em;
   transition: color 0.4s, background-color 0.4s;
 }
-.about-toggle button:hover { color: var(--ink-2); }
-.about-toggle button[aria-pressed='true'] { background: rgb(124 92 255 / 0.2); color: var(--ink); }
+.about-toggle button:hover { color: var(--text-mid); }
+.about-toggle button[aria-pressed='true'] { background: rgb(124 92 255 / 0.2); color: var(--text-hi); }
 
 /* Narrow screens: the portrait sits above, so the copy needs a scrim. */
 .about-scrim {
@@ -202,7 +315,7 @@
   margin-top: 0.4rem;
   padding-top: 0.85rem;
   border-top: 1px solid var(--line);
-  color: var(--ink-3);
+  color: var(--text-low);
   font-size: 0.62rem;
   font-weight: 500;
   letter-spacing: 0.22em;
@@ -216,22 +329,67 @@
   .about-portrait { margin: 0 0 0 auto; }
 }
 
-@media (max-height: 44rem) and (min-width: 48rem) {
-  .about-layout--immersive .about-heading-accent { font-size: clamp(2.6rem, 4.6vw, 4.2rem); }
-  .about-layout--immersive .about-closing { margin-top: 1.4rem !important; }
+/* Short desktop viewports: let the headline follow the height too and tighten the rhythm. */
+@media (max-height: 56rem) and (min-width: 48rem) {
+  .about-layout {
+    --about-h1: clamp(2.6rem, min(5.5vw, 8vh), 5rem);
+    --sp-3: 1.25rem;
+    --sp-4: 1.5rem;
+    --sp-6: 2.25rem;
+  }
+  .about-heading { margin-top: clamp(1rem, 3vh, 2rem); }
+  .about-intro { font-size: clamp(1.15rem, 2.6vh, 1.4rem); }
+  .about-closing { font-size: clamp(1.5rem, 3.4vh, 1.8rem); }
 }
 
-@media (max-height: 36rem) and (min-width: 48rem) {
+@media (max-height: 46rem) and (min-width: 48rem) {
+  .about-layout {
+    --about-h1: clamp(2.4rem, min(5.5vw, 7.2vh), 5rem);
+    --sp-3: 1rem;
+    --sp-4: 1.25rem;
+    --sp-6: 1.75rem;
+  }
+  .about-heading { margin-top: clamp(0.75rem, 2.4vh, 1.5rem); }
+}
+
+@media (max-height: 40rem) and (min-width: 48rem) {
   .about-layout--immersive { top: calc(var(--gutter) + 3.5rem); bottom: var(--gutter); }
-  .about-layout--immersive .about-heading { margin-top: 1rem; }
-  .about-layout--immersive .about-heading-accent { font-size: clamp(2.2rem, 4vw, 3.4rem); }
-  .about-layout--immersive .about-lede { margin-top: 1rem !important; font-size: 0.92rem; }
-  .about-layout--immersive .about-body { margin-top: 0.7rem !important; font-size: 0.86rem; }
-  .about-layout--immersive .about-closing { margin-top: 1rem !important; padding-top: 0.7rem; }
-  .about-layout--immersive .about-render { margin-top: 1rem; }
+  .about-layout {
+    --about-h1: clamp(2.2rem, min(5vw, 7.5vh), 4rem);
+    --sp-1: 0.5rem;
+    --sp-2: 0.75rem;
+    --sp-3: 1rem;
+    --sp-4: 1rem;
+    --sp-6: 1.5rem;
+  }
+  .about-body { font-size: 0.95rem; line-height: 1.6; }
 }
 
-@media (max-width: 24rem) {
-  .about-heading-accent { font-size: 2.6rem; }
-  .about-closing span:last-child { font-size: 1.2rem; }
+/* Phones: the portrait owns the top of the screen, so the copy keeps a tighter rhythm below it. */
+@media (max-width: 47.99rem) {
+  .about-layout {
+    --about-h1: clamp(2.1rem, 9.6vw, 2.8rem);
+    --sp-3: 1rem;
+    --sp-4: 1.25rem;
+    --sp-6: 1.75rem;
+  }
+  .about-heading { margin-top: 1rem; }
+  .about-intro { font-size: 1.2rem; }
+  .about-body { font-size: 1rem; line-height: 1.65; }
+  .about-closing { font-size: 1.5rem; }
+  .about-render { margin-top: var(--sp-3); }
 }
+
+/* Reduced motion: everything is simply there. */
+@media (prefers-reduced-motion: reduce) {
+  .about-reveal { opacity: 1; transform: none; filter: none; transition: none; }
+  .about-name::after,
+  .about-key::after { transform: scaleX(1); transition: none; }
+  .is-in .about-heading-accent { animation: none; }
+}
+
+/* LITE: no shimmer, blur or glow. */
+.is-lite .about-reveal { filter: none; }
+.is-lite .about-heading-accent,
+.is-lite .is-in .about-heading-accent { animation: none; filter: none; }
+.is-lite .about-heading::before { display: none; }

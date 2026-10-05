@@ -1,26 +1,67 @@
+import { Fragment, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { Section } from '../Section'
 import { about, site } from '../../content'
 import { signals, useStore } from '../../store/useStore'
 import { holdEnd } from '../../core/timeline'
+import { onTick } from '../../core/clock'
 import '@fontsource-variable/space-grotesk/index.css'
 import '@fontsource/instrument-serif/latin-400.css'
 import '@fontsource/instrument-serif/latin-400-italic.css'
 import './about.css'
 
 /**
- * The copy is choreographed on the same scrubbed timeline that writes the
- * scan uniform, so each copy block lands as the beam passes it. The kicker
- * ([data-a-head]) arrives with the hero's camera as
- * it leaves the cloud bank (src/hero/transition.ts).
+ * The portrait scan, render toggle and exit stay on the scroll-scrubbed
+ * timeline. The copy instead plays in on time once the About stage arrives
+ * (a CSS stagger keyed off `is-in`), and resets if you scroll back into the
+ * hero. The kicker ([data-a-head]) arrives with the hero's camera as it leaves
+ * the cloud bank (src/hero/transition.ts).
  */
 const SCAN_END = 0.46
 const SHIMMER_END = 0.6
 
+/** Reveal order: "beyond the demo" lands last, then starts its shimmer. */
+const ORDER = { lead: 0, intro: 1, body: 2, divider: 3, eyebrow: 4, closing: 5, accent: 6 } as const
+const reveal = (i: number) => ({ '--i': i }) as CSSProperties
+
+/** Wraps each highlight phrase of `text` in a keyword span, in order of appearance. */
+function withHighlights(text: string, phrases: readonly string[]) {
+  const pattern = new RegExp(`(${phrases.map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'g')
+  let k = 0
+  return text.split(pattern).map((part, i) =>
+    phrases.includes(part) ? (
+      <span key={i} className="about-key" style={{ '--k': k++ } as CSSProperties}>
+        {part}
+      </span>
+    ) : (
+      <Fragment key={i}>{part}</Fragment>
+    ),
+  )
+}
+
 export function About() {
   const mode = useStore((s) => s.mode)
   const duotone = useStore((s) => s.duotone)
+  const lite = useStore((s) => s.lite)
   const set = useStore((s) => s.set)
   const webgl = mode === 'webgl'
+  const panel = useRef<HTMLDivElement>(null)
+  const [entered, setEntered] = useState(false)
+
+  useEffect(() => {
+    if (webgl) {
+      let state = false
+      return onTick(() => {
+        const p = signals.progress.about
+        const next = p > 0.01 ? true : p <= 0 ? false : state
+        if (next !== state) setEntered((state = next))
+      })
+    }
+    const el = panel.current
+    if (!el) return
+    const io = new IntersectionObserver(([e]) => e.isIntersecting && setEntered(true), { threshold: 0.25 })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [webgl])
 
   return (
     <Section
@@ -30,14 +71,6 @@ export function About() {
         const q = <T extends Element>(s: string) => Array.from(root.querySelectorAll<T>(s))
         tl.fromTo(signals, { scan: 0 }, { scan: 1, duration: SCAN_END, ease: 'none' }, 0)
         tl.fromTo(signals, { shimmer: 0 }, { shimmer: 1, duration: SHIMMER_END - SCAN_END, ease: 'none' }, SCAN_END)
-
-        q('[data-a-line]').forEach((el, i, all) => {
-          const at = 0.05 + (i / Math.max(all.length, 1)) * (SCAN_END - 0.16)
-          tl.fromTo(el, { y: 40, opacity: 0 }, { y: 0, opacity: 1, duration: 0.08, ease: 'power3.out' }, at)
-        })
-        q('[data-a-fact]').forEach((el, i) => {
-          tl.fromTo(el, { y: 18, opacity: 0 }, { y: 0, opacity: 1, duration: 0.06, ease: 'power3.out' }, SCAN_END - 0.08 + i * 0.03)
-        })
         tl.fromTo(q('[data-a-tool]'), { opacity: 0 }, { opacity: 1, duration: 0.05 }, SHIMMER_END - 0.06)
 
         const exitAt = holdEnd('about') - 0.03
@@ -48,33 +81,42 @@ export function About() {
         {webgl && <div aria-hidden="true" className="about-scrim" />}
         <div
           data-a-copy
-          className={webgl ? 'about-layout about-layout--immersive' : 'about-layout about-layout--static'}
+          className={`about-layout ${webgl ? 'about-layout--immersive' : 'about-layout--static'}${lite ? ' is-lite' : ''}`}
           data-lenis-prevent={webgl ? '' : undefined}
         >
-          <div className="about-panel">
+          <div ref={panel} className={`about-panel${entered ? ' is-in' : ''}`}>
             <span data-a-head className="about-kicker">
               <span aria-hidden="true" className="about-index">02</span>
               <span aria-hidden="true" className="about-kicker-rule" />
               {about.kicker}
             </span>
 
-            <h2 data-a-line className="about-heading">
-              <span className="about-heading-lead">{about.heading[0]}</span>
-              <em className="about-heading-accent">{about.heading[1]}</em>
+            <h2 className="about-heading">
+              <span className="about-reveal about-heading-lead" style={reveal(ORDER.lead)}>
+                {about.heading[0]}
+              </span>{' '}
+              <span className="about-reveal about-heading-line" style={reveal(ORDER.accent)}>
+                <em className="about-heading-accent">{about.heading[1]}</em>
+              </span>
             </h2>
 
-            <p data-a-line className="about-lede">
-              I’m <strong>{site.name}</strong>, {about.lede}
+            <p className="about-reveal about-intro" style={reveal(ORDER.intro)}>
+              {about.intro.before}
+              <strong className="about-name">{about.intro.name}</strong>
+              {about.intro.after}
             </p>
 
-            <p data-a-line className="about-body">{about.body}</p>
+            <p className="about-reveal about-body" style={reveal(ORDER.body)}>
+              {withHighlights(about.body, about.highlights)}
+            </p>
 
-            <p data-a-line className="about-closing">
-              {about.closing.map((line) => (
-                <span key={line} data-a-fact>
-                  {line}
-                </span>
-              ))}
+            <div aria-hidden="true" className="about-reveal about-divider" style={reveal(ORDER.divider)} />
+
+            <p className="about-reveal about-eyebrow" style={reveal(ORDER.eyebrow)}>
+              {about.eyebrow}
+            </p>
+            <p className="about-reveal about-closing" style={reveal(ORDER.closing)}>
+              {about.closing}
             </p>
 
             {webgl && (
