@@ -37,7 +37,7 @@ export function sampleGlyphs(root: HTMLElement, maxPoints: number, lineSelector 
     const cs = getComputedStyle(el)
     if (cs.display === 'none' || el.closest('.sr-only')) continue
     const size = parseFloat(cs.fontSize) * scale
-    ctx.font = `${cs.fontWeight} ${size}px ${cs.fontFamily}`
+    ctx.font = `${cs.fontStyle === 'normal' ? '' : cs.fontStyle} ${cs.fontWeight} ${size}px ${cs.fontFamily}`
     const ls = parseFloat(cs.letterSpacing)
     ;(ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = `${(Number.isFinite(ls) ? ls : 0) * scale}px`
     const upper = cs.textTransform === 'uppercase'

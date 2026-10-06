@@ -20,6 +20,8 @@ import shardFrag from '../shaders/experience/shard.frag'
 const SECTION_INDEX = sections.findIndex((s) => s.id === 'experience')
 /** Distance in front of the camera at which the card's letters are rebuilt. */
 const DEPTH = 3.2
+/** Upper bound on glass slabs a card cracks into before it crumbles. */
+const CHUNKS = 36
 
 /** One burst per experience card. */
 export function CardShatter() {
@@ -78,6 +80,8 @@ function Burst({ index }: { index: number }) {
     const start = new Float32Array(n * 3)
     const dir = new Float32Array(n * 3)
     const seed = new Float32Array(n * 4)
+    const chunkC = new Float32Array(n * 4)
+    const chunkD = new Float32Array(n * 4)
     let cx = 0
     let cy = 0
     for (let i = 0; i < n; i++) {
@@ -103,9 +107,65 @@ function Burst({ index }: { index: number }) {
       dir.set([vx / l, vy / l, vz / l], i * 3)
       seed.set([Math.random(), Math.random(), Math.random(), d / (maxD || 1)], i * 4)
     }
+
+    // Fracture: Voronoi cells over the glyphs become glass slabs that crack
+    // apart as rigid pieces before crumbling into individual shards.
+    const cells = Math.min(CHUNKS, Math.max(1, Math.floor(n / 40)))
+    const sites = new Float32Array(cells * 2)
+    for (let c = 0; c < cells; c++) {
+      const k = Math.floor(Math.random() * n)
+      sites[c * 2] = start[k * 3]
+      sites[c * 2 + 1] = start[k * 3 + 1]
+    }
+    const owner = new Int32Array(n)
+    const seam = new Float32Array(n)
+    const sum = new Float32Array(cells * 3)
+    for (let i = 0; i < n; i++) {
+      const x = start[i * 3]
+      const y = start[i * 3 + 1]
+      let b1 = 0
+      let d1 = Infinity
+      let d2 = Infinity
+      for (let c = 0; c < cells; c++) {
+        const dd = Math.hypot(x - sites[c * 2], y - sites[c * 2 + 1])
+        if (dd < d1) {
+          d2 = d1
+          d1 = dd
+          b1 = c
+        } else if (dd < d2) d2 = dd
+      }
+      owner[i] = b1
+      // 1 on the crack line between two cells, 0 deep inside a slab.
+      seam[i] = cells > 1 ? Math.max(0, 1 - (d2 - d1) / (halfH * 0.035)) : 0
+      sum[b1 * 3] += x
+      sum[b1 * 3 + 1] += y
+      sum[b1 * 3 + 2]++
+    }
+    const slab = new Float32Array(cells * 8)
+    for (let c = 0; c < cells; c++) {
+      const m = Math.max(sum[c * 3 + 2], 1)
+      const sx = sum[c * 3] / m
+      const sy = sum[c * 3 + 1] / m
+      const dx = sx - cx
+      const dy = sy - cy
+      const d = Math.hypot(dx, dy) || 1
+      const vx = (dx / d) * 0.8 + (Math.random() - 0.5) * 0.5
+      const vy = (dy / d) * 0.8 + (Math.random() - 0.5) * 0.5
+      const vz = (Math.random() - 0.7) * 0.9
+      const l = Math.hypot(vx, vy, vz)
+      slab.set([sx, sy, -DEPTH, Math.random(), vx / l, vy / l, vz / l, 0], c * 8)
+    }
+    for (let i = 0; i < n; i++) {
+      const c = owner[i] * 8
+      chunkC.set([slab[c], slab[c + 1], slab[c + 2], slab[c + 3]], i * 4)
+      chunkD.set([slab[c + 4], slab[c + 5], slab[c + 6], seam[i]], i * 4)
+    }
+
     geo.setAttribute('aStart', new InstancedBufferAttribute(start, 3))
     geo.setAttribute('aDir', new InstancedBufferAttribute(dir, 3))
     geo.setAttribute('aSeed', new InstancedBufferAttribute(seed, 4))
+    geo.setAttribute('aChunkC', new InstancedBufferAttribute(chunkC, 4))
+    geo.setAttribute('aChunkD', new InstancedBufferAttribute(chunkD, 4))
     geo.instanceCount = n
 
     // Shard size from sample spacing so the letters read solid at t = 0.

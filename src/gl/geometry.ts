@@ -20,3 +20,24 @@ export function crystalGeometry(kind: 'octa' | 'tetra' | 'icosa' = 'octa', radiu
   geo.deleteAttribute('uv')
   return geo
 }
+
+/**
+ * Tags every triangle of a non-indexed crystal with its centroid and a random
+ * value (`aFace`), so a vertex shader can pull the facets apart as rigid pieces.
+ */
+export function withFacets(geo: BufferGeometry): BufferGeometry {
+  const pos = geo.attributes.position
+  const face = new Float32Array(pos.count * 4)
+  for (let t = 0; t < pos.count; t += 3) {
+    const r = Math.random()
+    for (let a = 0; a < 3; a++) {
+      const v = t + a
+      face[v * 4] = (pos.getX(t) + pos.getX(t + 1) + pos.getX(t + 2)) / 3
+      face[v * 4 + 1] = (pos.getY(t) + pos.getY(t + 1) + pos.getY(t + 2)) / 3
+      face[v * 4 + 2] = (pos.getZ(t) + pos.getZ(t + 1) + pos.getZ(t + 2)) / 3
+      face[v * 4 + 3] = r
+    }
+  }
+  geo.setAttribute('aFace', new BufferAttribute(face, 4))
+  return geo
+}

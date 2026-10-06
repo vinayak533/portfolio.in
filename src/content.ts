@@ -28,8 +28,9 @@ export interface Role {
   title: string
   start: string
   end: string
-  location: string
-  impact: [string, string]
+  summary: string
+  /** Phrases in `summary` that get the keyword underline. */
+  highlights: string[]
 }
 
 export const site = {
@@ -184,37 +185,28 @@ export const projects: Project[] = [
 
 export const experience: Role[] = [
   {
-    company: 'Northwind Labs',
-    title: 'Senior ML Engineer, Applied AI',
-    start: '2024',
+    company: 'AMnova Technologies',
+    title: 'AI/ML Engineer',
+    start: 'Jun 2026',
     end: 'Present',
-    location: 'Bengaluru',
-    impact: [
-      'Led retrieval and evaluation for an assistant used by 3,200 support engineers, cutting time to resolution by 41%.',
-      'Built the agent runtime now automating 71% of tier-one operations tickets at 58% lower cost per task.',
-    ],
+    summary: 'Building production AI systems, multi-agent workflows, LLM pipelines, and backend AI infrastructure.',
+    highlights: ['production AI systems', 'multi-agent workflows', 'LLM pipelines'],
   },
   {
-    company: 'Helix Robotics',
-    title: 'ML Engineer, Perception',
-    start: '2022',
-    end: '2024',
-    location: 'Pune',
-    impact: [
-      'Shipped an INT8 edge defect detector at 98.7% recall and 14ms per frame across four factory lines.',
-      'Designed an active-learning loop that reduced labelling spend by 72% year over year.',
-    ],
+    company: 'Amdox',
+    title: 'Data Science Intern',
+    start: 'Apr 2026',
+    end: 'May 2026',
+    summary: 'Built ML models for demand forecasting and churn prediction using Python, XGBoost, and Scikit-learn.',
+    highlights: ['demand forecasting', 'churn prediction', 'XGBoost'],
   },
   {
-    company: 'Quanta Media',
-    title: 'Machine Learning Engineer',
-    start: '2020',
-    end: '2022',
-    location: 'Remote',
-    impact: [
-      'Rebuilt candidate generation as a two-tower model, lifting session watch time by 9.4%.',
-      'Introduced interleaving experiments that cut ranking decision time from three weeks to four days.',
-    ],
+    company: 'Cognify Technologies',
+    title: 'Data Science Intern',
+    start: 'Aug 2025',
+    end: 'Sep 2025',
+    summary: 'Developed and evaluated classification models with feature engineering, model tuning, and performance analysis.',
+    highlights: ['classification models', 'feature engineering', 'model tuning'],
   },
 ]
 
