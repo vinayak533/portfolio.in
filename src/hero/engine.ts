@@ -34,6 +34,7 @@ import moonNormalUrl from '../assets/moon/normal.png'
 import moonMeta from '../assets/moon/meta.json'
 import { heroConfig as cfg, transitionProfile } from './config'
 import { atmosphereBands, opticalDepth, shotAt } from './shot'
+import { PHOTO_WIDTHS, photoTierForView, sceneSizeForView, type PhotoTier as Tier } from './resolution'
 import { buildFallbackMaps, loadImage, MAP_NAMES, suppliedMapUrl, type MapName } from './maps'
 import { smoothstep, wispField } from './noise'
 import { createInput } from './input'
@@ -200,11 +201,9 @@ function moonHue(m: typeof cfg.moon): number[] {
 
 /**
  * Sharper copies of the photo (src/assets/hero-hi/{2k,4k,8k}.{ktx2,avif,webp},
- * built by `npm run hero` from an AI-upscaled source). The dive zooms the photo
- * ~14x, so the 1672 px base goes soft; the tier that suits the device streams
- * in after the first frame and crossfades in. The glob is empty until they exist.
+ * built by `npm run hero`). Budget for the entire camera push, not only the
+ * opening frame. Fetch alongside the base assets and crossfade once uploaded.
  */
-type Tier = '8k' | '4k' | '2k'
 const hiResUrls = import.meta.glob('../assets/hero-hi/*.{ktx2,avif,webp}', { eager: true, query: '?url', import: 'default' }) as Record<string, string>
 function hiResCandidates(want: Tier | 'off'): { tier: Tier; url: string; ktx2: boolean }[] {
   const tiers: Tier[] = want === '8k' ? ['8k', '4k', '2k'] : want === '4k' ? ['4k', '2k'] : want === '2k' ? ['2k'] : []
@@ -565,6 +564,7 @@ export function mountHero(container: HTMLElement, opts: HeroOptions = {}): HeroH
   let sceneW = 1
   let sceneH = 1
   let hiRes = false // a 4K / 8K photo is on the GPU: render the scene at full device resolution
+  let photoWidth = cfg.image.ref[0]
   let qScale = 1 // automatic quality: fraction of the scene pixel cap (perf.adaptive)
   function resize() {
     cssW = Math.max(1, container.clientWidth)
@@ -575,26 +575,29 @@ export function mountHero(container: HTMLElement, opts: HeroOptions = {}): HeroH
     renderer.setSize(cssW, cssH, false)
     const fw = Math.round(cssW * dpr)
     const fh = Math.round(cssH * dpr)
-    // The heavy scene pass is capped near the photo's own detail: low for the 1672 px base, high once 4K / 8K is in.
-    // Integrated GPUs keep the base cap even once the sharp photo is in: the scene pass is fill-rate bound.
+    // Protect spatial detail while allowing the atmosphere/effects to adapt independently.
     const integrated = !!opts.integratedGpu
-    const base = hiRes && !integrated ? cfg.perf.maxScenePixelsHi : cfg.perf.maxScenePixels
-    const cap = base * (lowPower ? cfg.perf.lowPowerScale : integrated ? cfg.perf.integratedScale : 1) * qScale
-    const k = Math.min(1, Math.sqrt(cap / (fw * fh)))
-    sceneW = Math.max(1, Math.round(fw * k))
-    sceneH = Math.max(1, Math.round(fh * k))
+    const base = hiRes ? cfg.perf.maxScenePixelsHi : cfg.perf.maxScenePixels
+    const cap = base * (lowPower ? cfg.perf.lowPowerScale : integrated ? cfg.perf.integratedScale : 1)
+    const size = sceneSizeForView(cssW, cssH, dpr, cap, qScale)
+    sceneW = size.width
+    sceneH = size.height
     sceneRT.setSize(sceneW, sceneH)
-    raysRT.setSize(Math.ceil(sceneW / 2), Math.ceil(sceneH / 2))
-    bloomA.setSize(Math.ceil(sceneW / 4), Math.ceil(sceneH / 4))
-    bloomB.setSize(Math.ceil(sceneW / 4), Math.ceil(sceneH / 4))
+    const effectScale = Math.sqrt(qScale)
+    raysRT.setSize(Math.ceil(sceneW * effectScale / 2), Math.ceil(sceneH * effectScale / 2))
+    bloomA.setSize(Math.ceil(sceneW * effectScale / 4), Math.ceil(sceneH * effectScale / 4))
+    bloomB.setSize(Math.ceil(sceneW * effectScale / 4), Math.ceil(sceneH * effectScale / 4))
     lensRT.setSize(Math.ceil(sceneW / 2), Math.ceil(sceneH / 2))
-    cloudRT.setSize(Math.ceil(sceneW / 2), Math.ceil(sceneH / 2))
+    cloudRT.setSize(Math.ceil(sceneW * effectScale / 2), Math.ceil(sceneH * effectScale / 2))
     finalMat.uniforms.uRes.value.set(fw, fh)
     finalMat.uniforms.uSceneTexel.value.set(1 / sceneW, 1 / sceneH)
     heroDebug.scene = `${sceneW}x${sceneH} of ${fw}x${fh}`
   }
   resize()
-  const ro = new ResizeObserver(() => resize())
+  const ro = new ResizeObserver(() => {
+    resize()
+    if (ready) void streamHiRes()
+  })
   ro.observe(container)
 
   // ---------------------------------------------------------------- assets
@@ -646,6 +649,12 @@ export function mountHero(container: HTMLElement, opts: HeroOptions = {}): HeroH
     'protect-mask': 'uProtect',
     'moon-matte': 'uMoonMatte',
   }
+  // Download and decode the selected photo during base-map setup, not after shader warm-up.
+  const firstCandidate = hiResCandidates(wantedTier())[0]
+  let earlyImage = firstCandidate && !firstCandidate.ktx2 ? loadImage(firstCandidate.url) : null
+  earlyImage?.catch(() => {})
+  let streaming = false
+  let attemptedTier: Tier | 'off' | null = null
   photo
     .then(async (img) => {
       const [albedo, normal] = await moonMaps
@@ -680,16 +689,20 @@ export function mountHero(container: HTMLElement, opts: HeroOptions = {}): HeroH
     })
 
   /**
-   * The photo tier this device deserves: phones and Lite take 2k, normal desktops
-   * 4k, large or retina desktops (css width x DPR >= perf.bigScreen) 8k.
+   * Include cover-cropping, depth magnification and the last visible point of the push.
    */
   function wantedTier(): Tier | 'off' {
-    const cap = cfg.perf.hiRes
-    if (cap === 'off') return 'off'
-    const rank = { '2k': 0, '4k': 1, '8k': 2 } as const
-    const devW = Math.max(window.screen.width, window.screen.height) * Math.min(window.devicePixelRatio || 1, cfg.perf.maxDpr)
-    const t: Tier = lowPower || smallScreen ? '2k' : devW >= cfg.perf.bigScreen ? '8k' : '4k'
-    return rank[t] <= rank[cap] ? t : cap
+    const A = cfg.transition.atmosphere
+    const visibleTravel = (A.bank.ramp + 0.6 - A.path[0]) / -A.path[0]
+    return photoTierForView({
+      width: cssW, height: cssH,
+      dpr: Math.min(window.devicePixelRatio || 1, lowPower ? Math.min(1.5, cfg.perf.maxDpr) : cfg.perf.maxDpr),
+      aspect: cfg.image.ref[0] / cfg.image.ref[1],
+      zoom: Math.pow(transitionProfile().zoom, visibleTravel) * cfg.dolly.max,
+      nearExponent: Math.max(1, cfg.transition.parallax.near),
+      maxTextureSize: renderer.capabilities.maxTextureSize,
+      cap: cfg.perf.hiRes, compact: lowPower || compact,
+    })
   }
 
   let swapT = -1 // seconds into the crossfade to the sharp tier (-1 = none)
@@ -715,34 +728,55 @@ export function mountHero(container: HTMLElement, opts: HeroOptions = {}): HeroH
 
   /** Streams the sharp tier in after the first frame (best format first), then crossfades to it: no visible pop. */
   async function streamHiRes() {
-    const candidates = hiResCandidates(wantedTier())
-    for (const c of candidates) {
-      if (disposed || contextLost) return
-      try {
-        let t: Texture
-        let width: number
-        if (c.ktx2) {
-          t = await loadKtx2(c.url)
-          width = (t.image as { width: number }).width
-        } else {
-          const img = await loadImage(c.url) // AVIF where the browser decodes it, else the WebP after it
-          if (img.naturalWidth > renderer.capabilities.maxTextureSize) continue // this GPU cannot hold it: next tier down
-          t = makeTexture(img, true)
-          width = img.naturalWidth
-        }
+    const want = wantedTier()
+    if (streaming || swapping || want === 'off' || want === attemptedTier || PHOTO_WIDTHS[want] <= photoWidth) return
+    streaming = true
+    attemptedTier = want
+    const candidates = hiResCandidates(want).filter(c => PHOTO_WIDTHS[c.tier] <= renderer.capabilities.maxTextureSize && PHOTO_WIDTHS[c.tier] > photoWidth)
+    try {
+      for (const c of candidates) {
         if (disposed || contextLost) return
-        renderer.initTexture(t) // upload and build mips now, not mid-frame
-        sceneMat.uniforms.uImageHi.value = t
-        sceneMat.uniforms.uImgLodHi.value = Math.log2(width / cfg.image.ref[0])
-        swapping = t
-        swapT = 0
-        hiRes = true
-        heroDebug.photo = `${c.tier} (${c.url.split('.').pop()}), ${width} px`
-        resize()
-        return
-      } catch (e) {
-        console.warn(`[hero] ${c.tier} photo (${c.url}) failed; trying the next`, e)
+        try {
+          let t: Texture
+          let width: number
+          if (c.ktx2) {
+            t = await loadKtx2(c.url)
+            width = (t.image as { width: number }).width
+          } else {
+            const img = await (c.url === firstCandidate?.url && earlyImage ? earlyImage : loadImage(c.url))
+            earlyImage = null
+            if (disposed || contextLost) return
+            if (img.naturalWidth > renderer.capabilities.maxTextureSize) continue // this GPU cannot hold it: next tier down
+            t = makeTexture(img, true)
+            width = img.naturalWidth
+          }
+          if (disposed || contextLost) {
+            t.dispose()
+            textures.splice(textures.indexOf(t), 1)
+            return
+          }
+          renderer.initTexture(t) // upload and build mips now, not mid-frame
+          sceneMat.uniforms.uImageHi.value = t
+          sceneMat.uniforms.uImgLodHi.value = Math.log2(width / cfg.image.ref[0])
+          swapping = t
+          swapT = 0
+          hiRes = width >= PHOTO_WIDTHS['2k']
+          photoWidth = width
+          qScale = 1
+          cooldown = 2
+          slowFor = fastFor = 0
+          judging = null
+          adaptiveOff = false
+          heroDebug.photo = `${c.tier} (${c.url.split('.').pop()}), ${width} px`
+          resize()
+          return
+        } catch (e) {
+          console.warn(`[hero] ${c.tier} photo (${c.url}) failed; trying the next`, e)
+        }
       }
+    } finally {
+      streaming = false
+      earlyImage = null
     }
   }
 
@@ -765,11 +799,12 @@ export function mountHero(container: HTMLElement, opts: HeroOptions = {}): HeroH
     }
     swapping = null
     swapT = -1
+    void streamHiRes() // the viewport may have grown while the first tier was loading
   }
 
   /** Compile every program, upload every texture and allocate every target now, so the first scroll never hitches. */
   function prewarm() {
-    for (const m of [sceneMat, raysMat, blurH, lensMat, finalMat]) {
+    for (const m of [sceneMat, raysMat, blurH, blurV, lensMat, cloudMat, finalMat]) {
       quad.material = m
       renderer.compile(quadScene, camera)
     }
@@ -1255,7 +1290,8 @@ export function mountHero(container: HTMLElement, opts: HeroOptions = {}): HeroH
     fu.uGrain.value = cfg.film.grain
     fu.uSharpen.value = cfg.film.sharpen
     fu.uClarity.value = cfg.film.clarity
-    fu.uAberration.value = cfg.film.aberration + streak * 0.02
+    // Bound channel separation to half an output pixel, including on retina displays.
+    fu.uAberration.value = Math.min(cfg.film.aberration + streak * 0.02, 1 / Math.max(fu.uRes.value.x, fu.uRes.value.y))
     fu.uCaSpread.value = Math.min(1, streak * 4)
     fu.uKnee.value = cfg.film.knee
     fu.uStreak.value = cfg.film.streak
@@ -1417,10 +1453,12 @@ export function mountHero(container: HTMLElement, opts: HeroOptions = {}): HeroH
   }
   const onRestored = () => {
     contextLost = false
+    attemptedTier = null
     textures.forEach((t) => (t.needsUpdate = true))
     still?.remove()
     still = null
     sync()
+    if (ready) void streamHiRes()
   }
   canvas.addEventListener('webglcontextlost', onLost)
   canvas.addEventListener('webglcontextrestored', onRestored)
@@ -1470,6 +1508,7 @@ export function mountHero(container: HTMLElement, opts: HeroOptions = {}): HeroH
       if (v === lowPower) return
       lowPower = v
       resize()
+      if (ready) void streamHiRes()
     },
     setProgress(p: number) {
       progress = Math.min(1, Math.max(0, p))
