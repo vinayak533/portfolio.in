@@ -283,8 +283,8 @@ export const heroConfig = {
     cue: { pulse: 1.6, glow: 0.18 },
     /** Depth parallax: zoom exponent per layer (the figure = 1). Far < 1 barely moves, near > 1 rushes past. */
     parallax: { far: 0.22, near: 1.45, iterations: 3 },
-    /** Half-res lens: radial motion blur from push speed and depth of field away from the figure. Kept barely there. */
-    blur: { motion: 0.55, dof: 0.008, focus: 0.26 }, // dof in viewport heights (0 = everything sharp), focus = sharp radius in viewport heights
+    /** Keep the photograph in focus throughout the push; the camera easing supplies the cinematic motion. */
+    blur: { motion: 0, dof: 0, focus: 0.26 }, // optional lens effects remain available in the debug panel
     vignette: 0.16, // extra vignette at the end of the push
     raysFade: 0.85, // god rays and moon glow give way as the air between camera and sky thickens
     ambientSlow: 0, // clouds, grass and particles slow by this fraction during the push (0 = the world keeps its pace)
@@ -351,17 +351,16 @@ export const heroConfig = {
   perf: {
     maxDpr: 2,
     maxScenePixels: 1_800_000, // cap for the heavy scene pass with the 1672 px photo, just above its own 1.57 MP (rays and bloom run at 1/2 and 1/4 of it)
-    maxScenePixelsHi: 5_000_000, // the cap once a 4K / 8K photo has streamed in: full device resolution up to ~2560 x 1600 at 1x
+    maxScenePixelsHi: 8_400_000, // full 3840 x 2160 scene on the high tier
     /**
      * Highest photo tier to stream in from src/assets/hero-hi/ (built by `npm run hero`),
-     * after the base photo is on screen. Picked per device: phones / Lite take 2k, normal
-     * desktops 4k, large or retina desktops (>= `bigScreen` device px wide) 8k.
+     * Chosen using the cover crop, DPR and maximum zoom. Phones / Lite cap at 4K;
+     * desktops can use 8K. Unsupported texture sizes are excluded before downloading.
      */
     hiRes: '8k' as '8k' | '4k' | '2k' | 'off',
-    bigScreen: 3000, // device px (css width x DPR) from which the 8k tier is worth its memory
     swapSeconds: 0.9, // crossfade from the base photo to the sharp tier (no visible pop)
-    lowPowerScale: 0.5, // multiplier on the pixel cap when the site is in Lite / low tier
-    integratedScale: 0.5, // multiplier on the base cap for integrated / mobile-class GPUs (site mid tier): ~0.9 MP, ~10 ms on Iris Xe
+    lowPowerScale: 0.25, // ~2.1 MP with a sharp photo; effects adapt separately
+    integratedScale: 0.5, // ~4.2 MP with a sharp photo; never stuck at the base photo's cap
     /** Automatic quality: when frames run slow, the scene resolution steps down (and back up when there is headroom). */
     adaptive: true,
     targetMs: 17.5, // frame time to hold (60 fps = 16.7 ms)

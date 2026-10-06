@@ -29,7 +29,7 @@ src/hero/
 
 ## Pipeline per frame
 
-1. **Scene** (capped at 1.8 MP with the base photo, 5 MP once 4K / 8K has streamed in): the photo, decomposed by the masks and
+1. **Scene** (capped at 1.8 MP with the base photo, 8.4 MP on the high tier once the sharp photo has streamed in): the photo, decomposed by the masks and
    animated. Output is linear HDR; alpha = sky transmittance.
 2. **Particles** drawn into the same target (dust and fireflies additive, leaves occlude).
 3. **God rays** at 1/2 res: radial gather toward the moon, weighted by transmittance.
@@ -107,11 +107,25 @@ tone roll-off) and streams sharper tiers when you supply them:
    (clean plates). With KTX-Software's `toktx` on PATH it also writes
    `8k.ktx2` (UASTC + zstd, mipmapped, about a quarter of the GPU memory) and
    copies the Basis transcoder to `public/hero/basis/`.
-3. The engine shows the base photo first, then streams the tier the device
-   deserves (`perf.hiRes`: phones / Lite 2k, desktops 4k, large or retina
-   screens >= `perf.bigScreen` device px 8k; KTX2, then AVIF, then WebP) and
-   crossfades to it over `perf.swapSeconds`: no pop. A plain resample adds no
-   detail, so it is not worth shipping.
+3. The engine downloads the selected tier alongside the base maps. Selection
+   includes the viewport's cover crop, DPR, closest visible zoom and near-layer
+   magnification (`resolution.ts`). A normal Full HD desktop push selects 8K;
+   phones / Lite cap at 4K. GPU texture limits are checked before downloading.
+   Formats fall back from KTX2 to AVIF to WebP, then to smaller supported tiers.
+   The base is replaced over `perf.swapSeconds`; resizing can request a larger
+   tier. Failed upgrades retain the working photo.
+
+The supplied 8K files are **7680 x 4322**, preserving the original 1672:941
+framing without cropping to 4320. Pixel dimensions alone do not establish
+native 8K detail: the original source is 1672 x 941. The existing artwork is
+retained unchanged; a genuinely detailed replacement master is required to
+recover more source detail. Neither sharpening nor larger render targets can
+reconstruct missing information or guarantee lossless zoom on every display.
+
+The default camera push uses no motion blur or depth-of-field blur. Photo
+sampling uses explicit camera gradients so mip selection remains stable inside
+sky/grass mask branches. Film chromatic separation is limited to half an output
+pixel. Camera framing, zoom path, colors, and cloud choreography are unchanged.
 
 ## Sky motion
 
@@ -128,16 +142,25 @@ twinkle, a rare shooting star crosses the dark upper sky (`stars.meteor`;
 
 ## Performance
 
-Scene pass capped by `perf.maxScenePixels(Hi)`, DPR <= 2, rays at 1/2, bloom
-at 1/4. Integrated GPUs (the site's mid tier) keep the base cap times
-`perf.integratedScale` even once the 4K / 8K photo is in, and integrate the
-cloud bank in `atmosphere.slicesLow` slices: the scene pass costs ~10 ms per
-megapixel on an Iris Xe. While the photo covers the viewport, the fixed
-WebGL stage behind it is not rendered at all. With `perf.adaptive` the scene resolution steps down 20% at a time
-(to `minScale`) while frames run over `targetMs`, and back up after a long
-stretch of headroom; if a step does not help (a throttled display, not the
-GPU) it is undone and adaptation stops. `?debug` > Info shows frame ms and the
-current quality.
+Scene pass capped by `perf.maxScenePixels(Hi)`, DPR <= 2 (1.5 in Lite).
+With the sharp photo loaded, high / integrated / Lite budgets are 8.4 / 4.2 /
+2.1 MP. Adaptive resolution preserves at least one scene sample per CSS pixel
+where that fits within the device budget. High-DPR or larger displays may still
+require downsampling; quality and frame rate depend on the GPU.
+
+Rays and transition clouds start at half scene resolution, bloom at quarter;
+these soft effects scale further with adaptive quality, independently of the
+scene's detail floor. Shader warm-up includes the cloud pass before scrolling.
+While the photo covers the viewport, the fixed WebGL stage behind it is not
+rendered. Adaptation lowers quality during sustained slow frames and restores
+it with headroom; an ineffective reduction is undone. `?debug` > Info shows
+the photo tier, scene resolution, frame time and current quality.
+
+Run `npm run test:hero` (Node 22.18+ or 24+) for zoom/crop tier selection,
+GPU fallback, resolution floors and asset-dimension checks. Run `npm run build`
+for TypeScript and bundling. Visual QA should cover the opening frame, slow
+and fast scrolling in both directions, the closest visible push, portrait
+layout, resize, and Lite mode. Build checks do not measure GPU frame rate.
 
 ## The screen video
 

@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
+    "test:hero": "node --test scripts/hero-resolution.test.mjs",
     "portrait": "node scripts/prepare-portrait.mjs",
     "hero": "node scripts/prepare-hero.mjs"
   },

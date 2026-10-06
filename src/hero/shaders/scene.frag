@@ -109,9 +109,14 @@ varying vec2 vUv;
 const float WISP_TILE = 32.0;
 
 // ---- the photo, with the sharper tier crossfading in over the base (no pop)
+// Compute the camera footprint before entering any per-pixel material branches.
+// Implicit derivatives inside the sky/grass branches can pick unstable mip levels
+// along mask edges. Both tiers must use the same footprint during a crossfade.
+vec2 photoDx;
+vec2 photoDy;
 vec3 photo(vec2 uv) {
-  vec3 c = texture(uImage, uv).rgb;
-  if (uImgMix > 0.0) c = mix(c, texture(uImageHi, uv).rgb, uImgMix);
+  vec3 c = textureGrad(uImage, uv, photoDx, photoDy).rgb;
+  if (uImgMix > 0.0) c = mix(c, textureGrad(uImageHi, uv, photoDx, photoDy).rgb, uImgMix);
   return c;
 }
 // `lod` in source px terms (0 = the 1672 px photo), at any texture resolution.
@@ -280,6 +285,8 @@ void main() {
   // Image heights per render px (taken here, in uniform control flow).
   vec2 dpx = dFdx(pa);
   vec2 dpy = dFdy(pa);
+  photoDx = dpx / toA;
+  photoDy = dpy / toA;
   // Render px per source px at this depth: the dive magnifies each layer by its own power.
   float mag = uPxPerH / uRef.y * exp(uDive.x * (diveK(depth, uDive.y, uDive.z, uPersonDepth) - 1.0));
 
