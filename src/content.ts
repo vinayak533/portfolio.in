@@ -38,7 +38,7 @@ export const site = {
   /** Short form used for the corner mark. */
   mark: 'VKV',
   role: 'AI / ML Engineer',
-  location: 'Bengaluru, India',
+  location: 'Kochi, Kerala, India',
   timezone: 'Asia/Kolkata',
   timezoneLabel: 'IST',
   intro:
@@ -211,16 +211,21 @@ export const experience: Role[] = [
 ]
 
 export const contact = {
-  heading: ["Let's build", 'something.'],
-  lede: 'Hiring for applied ML, or have a model that needs to survive production? I reply within a day.',
-  email: 'hello@vinayak.dev',
-  socials: [
-    { label: 'GitHub', href: 'https://github.com/' },
-    { label: 'LinkedIn', href: 'https://www.linkedin.com/' },
-    { label: 'X', href: 'https://x.com/' },
-    { label: 'Résumé', href: '#' },
+  index: '05',
+  kicker: 'Contact',
+  heading: ['Let’s build', 'something', 'that matters.'],
+  lede: ['Have an ambitious idea?', 'Let’s turn it into something worth building.'],
+  email: 'vinayakkv04@gmail.com',
+  phone: { label: '+91 9077252290', href: 'tel:+919077252290' },
+  location: 'Kochi, Kerala, India',
+  /** Shown beside the location as a quiet alignment cue. */
+  coordinates: '9.93° N  76.27° E',
+  links: [
+    { label: 'GitHub', href: 'https://github.com/vinayak523' },
+    { label: 'LinkedIn', href: 'https://www.linkedin.com/in/vinayak-k-v6' },
+    /** Drop the PDF at public/resume.pdf. */
+    { label: 'Résumé', href: '/resume.pdf' },
   ],
-  footer: 'Designed and engineered by hand. Every pixel is a shader.',
 }
 
 export const sections = [

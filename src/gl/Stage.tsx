@@ -14,7 +14,6 @@ import { Effects } from './Effects'
 import { PortraitScan } from './about/PortraitScan'
 import { WorksGallery } from './works/WorksGallery'
 import { ExperiencePath } from './experience/ExperiencePath'
-import { ContactSeed } from './contact/ContactSeed'
 
 /** Drives R3F from the shared GSAP ticker; skips frames while fully covered or hidden. */
 function Driver() {
@@ -24,7 +23,7 @@ function Driver() {
   useEffect(
     () =>
       onTick((time) => {
-        if (signals.paused || signals.heroCovers || document.hidden) return
+        if (signals.paused || signals.heroCovers || signals.contactCovers || document.hidden) return
         advance(time)
       }, 100),
     [advance],
@@ -126,7 +125,7 @@ export default function Stage() {
   useEffect(() => setDpr(Math.min(deviceDpr(), cfg.startDpr)), [cfg.startDpr])
 
   return (
-    <div className="fixed inset-0 z-0" aria-hidden="true">
+    <div data-stage className="fixed inset-0 z-0" aria-hidden="true">
       <Canvas
         frameloop="never"
         dpr={dpr}
@@ -161,7 +160,6 @@ export default function Stage() {
           <PortraitScan />
           <WorksGallery />
           <ExperiencePath />
-          <ContactSeed />
           <Warmup />
         </Suspense>
         {!debug.has('nopost') && <Effects />}

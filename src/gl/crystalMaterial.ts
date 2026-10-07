@@ -5,7 +5,7 @@ import frag from './shaders/crystal/solid.frag'
 import { colors } from './world'
 
 /**
- * Single glass crystal (waypoints, contact seed). Pair with crystalGeometry().
+ * Single glass crystal (experience waypoints). Pair with crystalGeometry().
  * With `facets`, the geometry must also go through withFacets(); uSplit then
  * pulls its facets apart.
  */

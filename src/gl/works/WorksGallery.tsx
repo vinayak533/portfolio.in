@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { Text } from '@react-three/drei'
-import { Group, Mesh, PlaneGeometry, ShaderMaterial, Vector3, type PerspectiveCamera } from 'three'
+import { Group, Mesh, PlaneGeometry, ShaderMaterial, Vector3, type Intersection, type Object3D, type PerspectiveCamera, type Raycaster } from 'three'
 import { projects, type Project } from '../../content'
 import { visibility } from '../../theme'
 import { colors, world } from '../world'
@@ -18,6 +18,22 @@ const displayFont = '/fonts/bricolage-grotesque-latin-600-normal.woff'
 const W = 4.6
 const H = 2.88
 const ASPECT = W / H
+
+/**
+ * R3F raycasts every mesh with handlers, visible or not. The exhibits only take
+ * the pointer while Act III is actually on screen: never through the hero or
+ * Contact covers, and never from a slice of the timeline where they are hidden.
+ */
+function interactive(obj: Object3D) {
+  const [a, b] = visibility.works
+  if (signals.heroCovers || signals.contactCovers || signals.t < a || signals.t > b) return false
+  for (let o: Object3D | null = obj; o; o = o.parent) if (!o.visible) return false
+  return true
+}
+
+function gatedRaycast(this: Mesh, raycaster: Raycaster, hits: Intersection[]) {
+  if (interactive(this)) Mesh.prototype.raycast.call(this, raycaster, hits)
+}
 
 /** Act III. Five floating glass exhibits the camera tracks past. */
 export function WorksGallery() {
@@ -95,6 +111,8 @@ function Exhibit({ project, index }: { project: Project; index: number }) {
     st.focus = damp(st.focus, focusTarget, 4, dt)
     st.hover = damp(st.hover, hovered ? 1 : 0, hovered ? 6 : 3, dt)
     const isOpen = s.openWork === index
+    // Scrolled away while hovered (no pointer move to trigger the out event).
+    if (hovered && screen.current && !interactive(screen.current)) s.set({ hoveredWork: null, cursor: 'default', cursorLabel: '' })
 
     // Float, and lean toward the cursor while hovered.
     const p = signals.pointer
@@ -154,6 +172,7 @@ function Exhibit({ project, index }: { project: Project; index: number }) {
         ref={screen}
         geometry={geo}
         material={mat}
+        raycast={gatedRaycast}
         onPointerOver={over}
         onPointerOut={out}
         onPointerMove={move}

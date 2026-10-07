@@ -16,6 +16,13 @@ interface Props {
    * fractions of section progress.
    */
   choreography?: (tl: gsap.core.Timeline, root: HTMLElement) => void
+  /**
+   * WebGL layout only. The section starts underneath the previous section's
+   * hand-off (its last 100vh) instead of after it: the stage pins while the
+   * previous stage scrolls away over it. Progress starts once that hand-off
+   * is over, so the camera blend between the two acts is unchanged.
+   */
+  underlap?: boolean
 }
 
 /**
@@ -23,7 +30,7 @@ interface Props {
  * progress feeds the global camera parameter and its own GSAP timeline, so DOM
  * and WebGL move off the exact same number.
  */
-export function Section({ id, title, children, className = '', choreography }: Props) {
+export function Section({ id, title, children, className = '', choreography, underlap = false }: Props) {
   const ref = useRef<HTMLElement>(null)
   const mode = useStore((s) => s.mode)
   const webgl = mode === 'webgl'
@@ -47,11 +54,16 @@ export function Section({ id, title, children, className = '', choreography }: P
         defaults: { ease: 'none' },
         scrollTrigger: {
           trigger: root,
-          start: 'top top',
+          start: underlap ? () => root.getBoundingClientRect().top + window.scrollY + window.innerHeight : 'top top',
           end: last ? 'bottom bottom' : 'bottom top',
           scrub: true,
           invalidateOnRefresh: true,
           onUpdate: (self) => {
+            signals.progress[id] = self.progress
+          },
+          // onUpdate only fires on change: a rebuilt trigger (fonts, resize) must still
+          // overwrite what the one it replaced left behind, or the camera jumps acts.
+          onRefresh: (self) => {
             signals.progress[id] = self.progress
           },
           onToggle: (self) => {
@@ -61,9 +73,23 @@ export function Section({ id, title, children, className = '', choreography }: P
       })
       choreography?.(tl, root)
       tl.set({}, {}, 1) // pin the timeline length to exactly 1
+      return () => {
+        signals.progress[id] = 0
+      }
     },
-    { scope: ref, dependencies: [webgl, layoutKey], revertOnUpdate: true },
+    { scope: ref, dependencies: [webgl, layoutKey, underlap], revertOnUpdate: true },
   )
+
+  if (webgl && underlap) {
+    return (
+      <section id={id} ref={ref} aria-label={title} className={`relative ${className}`} style={{ marginTop: '-100vh', zIndex: -1 }}>
+        <div className="sticky top-0 min-h-[100svh] w-full overflow-hidden">{children}</div>
+        {/* The previous section's hand-off scrolls past while the stage above stays pinned. */}
+        <div aria-hidden="true" className="h-[100vh]" />
+        <div aria-hidden="true" data-scroll-anchor={id} className="pointer-events-none absolute left-0 top-[100vh] h-px w-px" />
+      </section>
+    )
+  }
 
   return (
     <section

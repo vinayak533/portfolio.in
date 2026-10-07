@@ -6,13 +6,14 @@ const LABELS: Partial<Record<CursorState, string>> = { view: 'View', copy: 'Copy
 
 /**
  * Two-part cursor: a precise dot and a weighted ring that lags behind it.
- * DOM elements opt in with data-cursor="link|view|copy"; anchors and buttons
- * are links by default. 3D objects set the state through the store.
+ * DOM elements opt in with data-cursor="link|view|copy|tag"; anchors and buttons
+ * are links by default. "tag" keeps the ring small and sets its label beside it. 3D objects set the state through the store.
  */
 export function Cursor() {
   const dot = useRef<HTMLDivElement>(null)
   const ring = useRef<HTMLDivElement>(null)
   const label = useRef<HTMLSpanElement>(null)
+  const tag = useRef<HTMLSpanElement>(null)
   const glState = useStore((s) => s.cursor)
   const glLabel = useStore((s) => s.cursorLabel)
   const [domState, setDomState] = useState<CursorState | null>(null)
@@ -34,8 +35,11 @@ export function Cursor() {
       ry(e.clientY)
       setVisible(true)
     }
+    // Labels can change while hovered (e.g. Copy -> Copied): watch the current target.
+    const watch = new MutationObserver(([m]) => setDomLabel((m.target as HTMLElement).dataset.cursorLabel ?? ''))
     const over = (e: PointerEvent) => {
       const el = (e.target as HTMLElement)?.closest<HTMLElement>('[data-cursor], a, button, [role="button"], input, label')
+      watch.disconnect()
       if (!el) {
         setDomState(null)
         setDomLabel('')
@@ -44,6 +48,7 @@ export function Cursor() {
       const s = (el.dataset.cursor as CursorState) || 'link'
       setDomState(s)
       setDomLabel(el.dataset.cursorLabel ?? '')
+      watch.observe(el, { attributes: true, attributeFilter: ['data-cursor-label'] })
     }
     const leave = () => setVisible(false)
     const down = () => gsap.to(ring.current, { scale: 0.82, duration: 0.25, ease: 'power3.out' })
@@ -56,6 +61,7 @@ export function Cursor() {
     window.addEventListener('pointerup', up)
     return () => {
       document.documentElement.classList.remove('has-cursor')
+      watch.disconnect()
       window.removeEventListener('pointermove', move)
       document.removeEventListener('pointerover', over)
       document.documentElement.removeEventListener('pointerleave', leave)
@@ -67,20 +73,22 @@ export function Cursor() {
   const state: CursorState = domState ?? glState
   const text = domLabel || glLabel || LABELS[state] || ''
   const big = state === 'view' || state === 'copy' || state === 'drag'
+  const tagged = state === 'tag'
 
   useEffect(() => {
-    const size = big ? 88 : state === 'link' ? 54 : 34
+    const size = big ? 88 : state === 'link' ? 54 : tagged ? 22 : 34
     gsap.to(ring.current, {
       width: size,
       height: size,
       backgroundColor: big ? 'rgba(124,92,255,0.92)' : 'rgba(124,92,255,0)',
-      borderColor: state === 'default' ? 'rgba(236,234,242,0.38)' : 'rgba(124,92,255,0.9)',
+      borderColor: state === 'default' ? 'rgba(236,234,242,0.38)' : tagged ? 'rgba(154,130,255,0.75)' : 'rgba(124,92,255,0.9)',
       duration: 0.7,
       ease: 'expo.out',
     })
-    gsap.to(dot.current, { scale: big ? 0 : state === 'link' ? 0.5 : 1, duration: 0.5, ease: 'expo.out' })
+    gsap.to(dot.current, { scale: big ? 0 : state === 'link' ? 0.5 : tagged ? 0.6 : 1, duration: 0.5, ease: 'expo.out' })
     gsap.to(label.current, { opacity: big ? 1 : 0, scale: big ? 1 : 0.6, duration: 0.5, ease: 'expo.out' })
-  }, [state, big])
+    gsap.to(tag.current, { opacity: tagged ? 1 : 0, x: tagged ? 0 : -6, duration: tagged ? 0.5 : 0.25, ease: 'expo.out' })
+  }, [state, big, tagged])
 
   return (
     <div
@@ -94,7 +102,10 @@ export function Cursor() {
         style={{ width: 34, height: 34, translate: '-50% -50%', borderColor: 'rgba(236,234,242,0.38)', boxShadow: big ? '0 0 40px rgba(124,92,255,.45)' : 'none' }}
       >
         <span ref={label} className="mono mono-sm text-[var(--ink)] opacity-0">
-          {text}
+          {big ? text : ''}
+        </span>
+        <span ref={tag} className="cursor-tag opacity-0">
+          {tagged ? text : ''}
         </span>
       </div>
       <div

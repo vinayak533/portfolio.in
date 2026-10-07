@@ -276,7 +276,7 @@ export const heroConfig = {
      * stop over `settle` as About arrives. Never an abrupt change of pace.
      */
     move: { easeIn: 0.3, settle: 0.2 },
-    scrub: 1.1, // seconds of scroll smoothing on the timeline: the camera has weight
+    scrub: 0.5, // seconds of scroll smoothing on top of Lenis: weight without trailing the wheel
     renderUntil: 0.995, // the hero render loop stops at this progress (and restarts below it)
     keyboardDuration: 3.2, // seconds for PageDown / Space to play the whole shot
     /** Hold: the screen glow pulses a little harder, inviting the scroll. */

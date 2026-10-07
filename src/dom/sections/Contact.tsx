@@ -1,127 +1,318 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useGSAP } from '@gsap/react'
+import { CustomEase } from 'gsap/CustomEase'
 import { Section } from '../Section'
-import { contact, site } from '../../content'
-import { useStore } from '../../store/useStore'
-import { useLocalTime } from '../../core/time'
-import { gsap } from '../../core/clock'
+import { signals, useStore } from '../../store/useStore'
+import { easeInOutCubic, gsap, ScrollTrigger, smoothstep, SplitText } from '../../core/clock'
 import { scrollToSection } from '../../core/scroll'
-import { Magnetic } from '../ui/Magnetic'
+import type { Abyss } from '../contact/abyss'
+import '@fontsource-variable/inter/opsz.css'
+import './contact.css'
 
+const EMAIL = 'vinayakkv2004@gmail.com'
+const LINKS = [
+  { label: 'GitHub', href: 'https://github.com/vinayak533' },
+  { label: 'LinkedIn', href: 'https://www.linkedin.com/in/YOUR-LINKEDIN-HANDLE' },
+  /** Drop the PDF at public/resume.pdf. */
+  { label: 'Résumé', href: '/resume.pdf' },
+]
+
+const EASE = CustomEase.create('ct-out', '0.16,1,0.3,1')
+const docTop = (el: HTMLElement) => el.getBoundingClientRect().top + window.scrollY
+
+/**
+ * Act V, the deepest point. Almost black and very quiet: one headline, the
+ * address, three links, and a single soft light that follows the pointer.
+ * In the WebGL layout the section underlaps the end of Experience: as that
+ * hand-off scrolls, the 3D world lifts and dims, the dark settles in beneath
+ * it, and the type rises once it has.
+ */
 export function Contact() {
   const mode = useStore((s) => s.mode)
+  const isTouch = useStore((s) => s.isTouch)
+  const reduced = useStore((s) => s.reducedMotion)
+  const layoutKey = useStore((s) => s.layoutKey)
   const webgl = mode === 'webgl'
-  const time = useLocalTime()
+
+  const root = useRef<HTMLDivElement>(null)
+  const backdrop = useRef<HTMLDivElement>(null)
+  const title = useRef<HTMLHeadingElement>(null)
+  const email = useRef<HTMLAnchorElement>(null)
+  const lamp = useRef<HTMLDivElement>(null)
+  const glow = useRef<HTMLDivElement>(null)
+  const snow = useRef<HTMLCanvasElement>(null)
+  const abyss = useRef<Abyss | null>(null)
+  const want = useRef({ run: false, cover: webgl ? 0 : 1, lit: false })
+  const played = useRef(false)
+  const [near, setNear] = useState(false)
+  const [entered, setEntered] = useState(false)
+  const lit = entered || reduced
+
+  // The font and the light load only once the section is within a couple of screens.
+  useEffect(() => {
+    const io = new IntersectionObserver(([e]) => e.isIntersecting && setNear(true), { rootMargin: '200% 0px' })
+    io.observe(root.current!)
+    return () => io.disconnect()
+  }, [])
+
+  useEffect(() => {
+    if (!near) return
+    let cancelled = false
+    import('../contact/abyss').then(({ createAbyss }) => {
+      if (cancelled || !root.current || !lamp.current || !glow.current) return
+      const a = createAbyss(root.current, lamp.current, glow.current, snow.current, {
+        touch: isTouch,
+        still: reduced,
+        anchor: () => email.current,
+      })
+      a.setCover(want.current.cover)
+      a.setLit(want.current.lit)
+      a.setRunning(want.current.run)
+      abyss.current = a
+    })
+    return () => {
+      cancelled = true
+      abyss.current?.destroy()
+      abyss.current = null
+    }
+  }, [near, isTouch, reduced])
+
+  useEffect(() => {
+    want.current.lit = lit
+    abyss.current?.setLit(lit)
+  }, [lit])
+
+  const setRunning = (on: boolean) => {
+    want.current.run = on
+    abyss.current?.setRunning(on)
+  }
+  const setCover = (c: number) => {
+    want.current.cover = c
+    abyss.current?.setCover(c)
+  }
+
+  useGSAP(
+    () => {
+      const el = root.current!
+      const section = el.closest('section')!
+      let tl: gsap.core.Timeline | null = null
+
+      // One entrance, played once: the headline's lines rise out of their masks, then the rest fades in.
+      if (!reduced && !played.current) {
+        const split = SplitText.create(title.current!, { type: 'lines', mask: 'lines', linesClass: 'ct-line' })
+        const fades = el.querySelectorAll('[data-ct-fade]')
+        gsap.set(split.lines, { yPercent: 110 })
+        gsap.set(fades, { opacity: 0, y: 12 })
+        tl = gsap.timeline({
+          paused: true,
+          defaults: { ease: EASE },
+          onComplete: () => {
+            split.revert()
+            gsap.set(fades, { clearProps: 'transform' })
+          },
+        })
+        tl.to(split.lines, { yPercent: 0, duration: 1.1, stagger: 0.08 }, 0)
+        tl.to(fades, { opacity: 1, y: 0, duration: 0.8, stagger: 0.08 }, 0.42)
+      }
+
+      let unsub: (() => void) | null = null
+      const enter = () => {
+        if (played.current || unsub) return
+        // Hold the sequence until the loader has handed over (deep links, reloads at the end).
+        const go = () => {
+          played.current = true
+          tl?.play(0)
+          setEntered(true)
+        }
+        if (useStore.getState().loaded) go()
+        else unsub = useStore.subscribe((s) => s.loaded && (unsub?.(), (unsub = null), go()))
+      }
+
+      // Keyboard users tabbing into the section are taken there. In the WebGL
+      // layout the hand-off plays the entrance on arrival; wait a frame so the
+      // browser's own focus scroll does not cancel the journey.
+      let arrived = false
+      const onFocus = () => {
+        if (arrived) return
+        if (webgl) requestAnimationFrame(() => scrollToSection('contact'))
+        else enter()
+      }
+      el.addEventListener('focusin', onFocus)
+
+      if (webgl) {
+        // The section sits under Experience's hand-off, so "in view" is that hand-off's progress, not an IntersectionObserver.
+        let stage: HTMLElement | null = null
+        let past = false
+        const handoff = (p: number) => {
+          // The navigation follows the hand-off's midpoint (Contact's own progress only starts after it).
+          if (p >= 0.5 !== past) {
+            past = p >= 0.5
+            useStore.getState().set({ section: past ? 'contact' : 'experience' })
+          }
+          const cover = smoothstep(0, 0.8, p)
+          backdrop.current!.style.opacity = String(cover)
+          setCover(cover)
+          // The world behind lifts and dims as the dark settles underneath.
+          stage ??= document.querySelector<HTMLElement>('[data-stage]')
+          if (stage) {
+            stage.style.transform = p > 0 ? `translate3d(0, ${(-8 * easeInOutCubic(p)).toFixed(3)}vh, 0)` : ''
+            stage.style.opacity = p > 0 ? String(1 - 0.55 * smoothstep(0, 0.75, p)) : ''
+          }
+          signals.contactCovers = cover >= 0.999
+          setRunning(p > 0.3)
+          arrived = p >= 0.55
+          if (arrived) enter()
+        }
+        const st = ScrollTrigger.create({
+          trigger: section,
+          start: () => docTop(section),
+          end: () => docTop(section) + window.innerHeight,
+          onUpdate: (self) => handoff(self.progress),
+          onRefresh: (self) => handoff(self.progress),
+        })
+        // Rebuilt mid-page (resize, fonts): start from where the scroll actually is.
+        handoff(st.progress)
+        return () => {
+          el.removeEventListener('focusin', onFocus)
+          unsub?.()
+          signals.contactCovers = false
+          if (stage) Object.assign(stage.style, { transform: '', opacity: '' })
+        }
+      }
+
+      backdrop.current!.style.opacity = '1'
+      setCover(1)
+      const io = new IntersectionObserver(
+        ([e]) => {
+          setRunning(e.isIntersecting)
+          arrived = e.isIntersecting
+          if (e.intersectionRatio >= 0.25) enter()
+        },
+        { threshold: [0, 0.25] },
+      )
+      io.observe(el)
+      return () => {
+        el.removeEventListener('focusin', onFocus)
+        unsub?.()
+        io.disconnect()
+      }
+    },
+    { scope: root, dependencies: [webgl, reduced, layoutKey], revertOnUpdate: true },
+  )
 
   return (
-    <Section
-      id="contact"
-      title="Contact"
-      choreography={(tl, root) => {
-        tl.fromTo(root.querySelectorAll('[data-c-line]'), { yPercent: 110 }, { yPercent: 0, duration: 0.3, stagger: 0.08, ease: 'expo.out' }, 0)
-        tl.fromTo(root.querySelectorAll('[data-c-in]'), { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.25, stagger: 0.05, ease: 'power3.out' }, 0.2)
-      }}
-    >
-      <div className={webgl ? 'relative flex h-full w-full flex-col justify-between px-[var(--gutter)] pb-[var(--gutter)] pt-[calc(var(--gutter)+4rem)]' : 'flex min-h-[100svh] flex-col justify-between px-[var(--gutter)] pb-[var(--gutter)] pt-[16vh]'}>
-        <div className="flex flex-col gap-10">
-          <span data-c-in className="mono dim">
-            (05) Contact
-          </span>
-          <h2 className="display display-xl">
-            {contact.heading.map((l, i) => (
-              <span key={l} className="line-mask block">
-                <span data-c-line className={`block ${i === 1 ? 'pl-[0.6em] md:pl-[1.2em]' : ''}`}>
-                  {l}
-                </span>
-              </span>
-            ))}
-          </h2>
-          <div data-c-in className="flex flex-col gap-8 md:flex-row md:items-center md:gap-14">
-            <CopyEmail />
-            <p className="body-copy max-w-[26rem]">{contact.lede}</p>
+    <Section id="contact" title="Contact" underlap={webgl}>
+      <div
+        ref={root}
+        className={`ct${near ? ' is-near' : ''}`}
+        onFocus={(e) => e.target instanceof HTMLElement && e.target.matches(':focus-visible') && abyss.current?.focusOn(e.target)}
+        onPointerDown={(e) => {
+          if (e.pointerType === 'mouse') return
+          if ((e.target as Element).closest('a, button')) abyss.current?.tapAt(e.clientX, e.clientY)
+        }}
+      >
+        <div ref={backdrop} className="ct-backdrop" aria-hidden="true" style={{ opacity: webgl ? 0 : 1 }} />
+        {!reduced && <canvas ref={snow} className="ct-snow" aria-hidden="true" />}
+
+        <div className="ct-frame">
+          <div className="ct-main">
+            <h2 ref={title} className="ct-title">
+              Let’s build something that matters.
+            </h2>
+
+            <div className="ct-email" data-ct-fade>
+              <a
+                ref={email}
+                className="ct-email-link"
+                href={`mailto:${EMAIL}`}
+                onPointerEnter={() => abyss.current?.setBoost(true)}
+                onPointerLeave={() => abyss.current?.setBoost(false)}
+                onFocus={() => abyss.current?.setBoost(true)}
+                onBlur={() => abyss.current?.setBoost(false)}
+              >
+                {EMAIL}
+              </a>
+              <CopyEmail ripple={!reduced} />
+            </div>
+
+            <ul className="ct-links" aria-label="Elsewhere">
+              {LINKS.map((l) => (
+                <li key={l.label} data-ct-fade>
+                  <a href={l.href} target="_blank" rel="noopener noreferrer" className="ct-link">
+                    <span>{l.label}</span>
+                    <span className="ct-arrow" aria-hidden="true">
+                      ↗
+                    </span>
+                    <span className="sr-only"> (opens in a new tab)</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
           </div>
+
+          <footer className="ct-foot" data-ct-fade>
+            <p>Vinayak K V · AI / ML Engineer · Kochi, India</p>
+            <a
+              href="#hero"
+              className="ct-top"
+              onClick={(e) => {
+                e.preventDefault()
+                scrollToSection('hero')
+              }}
+            >
+              Back to top
+            </a>
+          </footer>
         </div>
 
-        <footer className="flex flex-col gap-8">
-          <ul data-c-in className="flex flex-wrap gap-x-8 gap-y-3" aria-label="Elsewhere">
-            {contact.socials.map((s) => (
-              <li key={s.label}>
-                <Magnetic strength={0.25} radius={24}>
-                  <a href={s.href} target="_blank" rel="noreferrer" className="mono group relative inline-block py-1">
-                    <span>{s.label}</span>
-                    <span className="absolute bottom-0 left-0 h-px w-full origin-right scale-x-0 bg-[var(--accent)] transition-transform duration-700 ease-[var(--ease-out)] group-hover:origin-left group-hover:scale-x-100 group-focus-visible:scale-x-100" />
-                  </a>
-                </Magnetic>
-              </li>
-            ))}
-          </ul>
-          <div data-c-in className="mono mono-sm flex flex-col gap-3 border-t border-[var(--line)] pt-5 sm:flex-row sm:items-center sm:justify-between">
-            <span className="dimmer">
-              © {new Date().getFullYear()} {site.name}. {contact.footer}
-            </span>
-            <span className="flex items-center gap-3">
-              <span className="glow-dot" aria-hidden="true" />
-              <span className="dim">{site.location}</span>
-              <time className="tabular-nums">
-                {time} <span className="dimmer">{site.timezoneLabel}</span>
-              </time>
-            </span>
-            <button type="button" onClick={() => scrollToSection('hero')} className="dim self-start transition-colors duration-500 hover:text-[var(--ink)] sm:self-auto">
-              Back to top ↑
-            </button>
-          </div>
-        </footer>
+        <div ref={glow} className="ct-glow" aria-hidden="true" />
+        <div ref={lamp} className="ct-lamp" aria-hidden="true" />
       </div>
     </Section>
   )
 }
 
-/** Magnetic email button: copies to clipboard with a roll + ring burst. */
-function CopyEmail() {
-  const [copied, setCopied] = useState(false)
-  const roller = useRef<HTMLSpanElement>(null)
-  const ring = useRef<HTMLSpanElement>(null)
+async function copyText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    // Older / insecure contexts.
+    const t = document.createElement('textarea')
+    t.value = text
+    t.setAttribute('readonly', '')
+    t.style.cssText = 'position:fixed;opacity:0;pointer-events:none'
+    document.body.appendChild(t)
+    t.select()
+    const ok = document.execCommand('copy')
+    t.remove()
+    return ok
+  }
+}
+
+function CopyEmail({ ripple }: { ripple: boolean }) {
+  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const [wave, setWave] = useState(0)
   const timer = useRef(0)
+  useEffect(() => () => window.clearTimeout(timer.current), [])
 
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(contact.email)
-    } catch {
-      window.location.href = `mailto:${contact.email}`
-      return
-    }
-    setCopied(true)
-    gsap.to(roller.current, { yPercent: -50, duration: 0.8, ease: 'expo.out' })
-    gsap.fromTo(ring.current, { scale: 0.6, opacity: 0.9 }, { scale: 2.4, opacity: 0, duration: 1.1, ease: 'expo.out' })
+    const ok = await copyText(EMAIL)
+    setState(ok ? 'copied' : 'failed')
+    if (ok && ripple) setWave((n) => n + 1)
     window.clearTimeout(timer.current)
-    timer.current = window.setTimeout(() => {
-      setCopied(false)
-      gsap.to(roller.current, { yPercent: 0, duration: 0.8, ease: 'expo.out' })
-    }, 2200)
+    timer.current = window.setTimeout(() => setState('idle'), 1800)
   }
 
   return (
-    <Magnetic strength={0.3} radius={50}>
-      <button
-        type="button"
-        onClick={copy}
-        data-cursor="copy"
-        data-cursor-label={copied ? 'Done' : 'Copy'}
-        aria-label={`Copy email address ${contact.email}`}
-        className="group relative flex items-center gap-4 rounded-full border border-[var(--line)] px-7 py-5 transition-colors duration-700 hover:border-[var(--accent)]"
-        style={{ boxShadow: '0 0 0 0 transparent' }}
-      >
-        <span ref={ring} aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-full border border-[var(--accent)] opacity-0" />
-        <span className="glow-dot" aria-hidden="true" />
-        <span className="relative block h-[1.4em] overflow-hidden">
-          <span ref={roller} className="display-s flex flex-col">
-            <span className="h-[1.4em] leading-[1.4em]">{contact.email}</span>
-            <span className="accent h-[1.4em] leading-[1.4em]">Copied to clipboard</span>
-          </span>
-        </span>
-        <span className="sr-only" aria-live="polite">
-          {copied ? 'Email address copied to clipboard' : ''}
-        </span>
+    <>
+      <button type="button" className="ct-copy" onClick={copy}>
+        {wave > 0 && <span key={wave} className="ct-ripple" aria-hidden="true" />}
+        {state === 'copied' ? 'Copied' : state === 'failed' ? 'Copy failed' : 'Copy email'}
       </button>
-    </Magnetic>
+      <span className="sr-only" role="status" aria-live="polite">
+        {state === 'copied' ? 'Email address copied to clipboard' : state === 'failed' ? `Couldn’t copy. The address is ${EMAIL}` : ''}
+      </span>
+    </>
   )
 }

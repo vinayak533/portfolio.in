@@ -13,11 +13,12 @@ export function getLenis() {
 /** Lenis smooth scroll, slaved to the GSAP ticker and feeding ScrollTrigger. */
 export function initScroll(smooth: boolean) {
   if (smooth) {
+    // Lerp, not a fixed duration: each wheel tick eases the same running target,
+    // so a stream of ticks glides at a steady pace instead of restarting a curve.
     lenis = new Lenis({
-      duration: 1.35,
-      easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
+      lerp: 0.1,
       smoothWheel: true,
-      wheelMultiplier: 0.9,
+      wheelMultiplier: 1,
       touchMultiplier: 1.4,
       autoRaf: false,
     })
@@ -49,7 +50,8 @@ export function initScroll(smooth: boolean) {
 }
 
 export function scrollToSection(id: string) {
-  const el = document.getElementById(id)
+  // A section may land somewhere other than its top (Contact begins under the previous hand-off).
+  const el = document.querySelector<HTMLElement>(`[data-scroll-anchor="${id}"]`) ?? document.getElementById(id)
   if (!el) return
   const reduced = useStore.getState().reducedMotion
   if (lenis && !reduced) lenis.scrollTo(el, { duration: 2.2, easing: (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2) })

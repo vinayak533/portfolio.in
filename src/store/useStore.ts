@@ -3,7 +3,7 @@ import { experience, type SectionId } from '../content'
 
 export type Quality = 'high' | 'mid' | 'low'
 export type RenderMode = 'webgl' | 'static'
-export type CursorState = 'default' | 'link' | 'view' | 'copy' | 'drag' | 'hidden'
+export type CursorState = 'default' | 'link' | 'view' | 'copy' | 'drag' | 'tag' | 'hidden'
 
 interface State {
   mode: RenderMode
@@ -71,5 +71,7 @@ export const signals = {
   paused: false,
   /** True while the opaque hero photo covers the whole viewport: the fixed stage behind it is skipped. */
   heroCovers: false,
+  /** True while the opaque Contact stage covers the whole viewport: the fixed stage behind it is skipped. */
+  contactCovers: false,
   pointer: { x: 0, y: 0, nx: 0, ny: 0, vx: 0, vy: 0, lastMove: 0, active: false },
 }

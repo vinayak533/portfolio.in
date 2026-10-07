@@ -1,0 +1,263 @@
+/*
+ * Contact: the deepest point. Near-black with a faint violet tint, one grotesk,
+ * and a single light. Type rests dim in the dark and rises to full brightness
+ * inside the lamp (a color-dodge layer), so nothing is ever hidden.
+ *
+ * Unlit contrast on --ct-bg: headline 3.6:1 (large text), email 5.4:1,
+ * links and footer 4.6:1.
+ */
+.ct {
+  --ct-bg: #06060c;
+  --ct-ink: #f4f3f7;
+  --ct-dim-title: rgb(236 234 242 / 0.42);
+  --ct-dim-email: rgb(236 234 242 / 0.56);
+  --ct-dim: rgb(236 234 242 / 0.5);
+  --ct-line: rgb(236 234 242 / 0.1);
+  --ct-violet: #9a82ff;
+  --ct-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --ct-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  position: relative;
+  isolation: isolate;
+  overflow: clip;
+  min-height: 100svh;
+  color: var(--ct-dim);
+  font-family: var(--ct-sans);
+  font-synthesis: none;
+}
+/* The font is attached once the section is near, so it never competes with the hero. */
+.ct.is-near {
+  --ct-sans: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+.ct-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: var(--ct-bg);
+  pointer-events: none;
+}
+
+.ct-snow {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------------------ light */
+.ct-lamp,
+.ct-glow {
+  position: absolute;
+  left: -170px;
+  top: -170px;
+  z-index: 3;
+  width: 340px;
+  height: 340px;
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+/* Barely there: a violet-white haze you read as light in the water. */
+.ct-glow {
+  background: radial-gradient(closest-side, rgb(220 214 255 / 0.05), rgb(167 150 255 / 0.02) 55%, rgb(167 150 255 / 0));
+}
+/* Brightens whatever is under it about 2.3x: dim type turns white, the near-black stays near-black. */
+.ct-lamp {
+  mix-blend-mode: color-dodge;
+  background: radial-gradient(closest-side, rgb(146 145 158), rgb(146 145 158 / 0.55) 40%, rgb(146 145 158 / 0.12) 75%, rgb(146 145 158 / 0));
+}
+
+/* ------------------------------------------------------------------ frame */
+.ct-frame {
+  position: relative;
+  z-index: 2;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  min-height: 100svh;
+  max-width: calc(1200px + 2 * var(--gutter));
+  margin-inline: auto;
+  /* Clears the floating navigation. */
+  padding: clamp(7.5rem, 17svh, 11rem) var(--gutter) 0;
+}
+
+.ct-main {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: clamp(1rem, 2vw, 2rem);
+  row-gap: clamp(3rem, 8svh, 5.5rem);
+  align-content: center;
+  padding-bottom: clamp(3.5rem, 9svh, 6.5rem);
+}
+
+.ct-title {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--ct-dim-title);
+  font-size: clamp(2.5rem, 8vw, 6.5rem);
+  font-weight: 500;
+  font-optical-sizing: auto;
+  line-height: 1;
+  letter-spacing: -0.045em;
+  text-wrap: balance;
+}
+.ct-line { padding-bottom: 0.08em; margin-bottom: -0.08em; will-change: transform; }
+
+/* ------------------------------------------------------------------ email */
+.ct-email {
+  grid-column: 1 / 8;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.ct-email-link {
+  /* Enough vertical padding for a 44px target at the smallest size. */
+  --ct-pad: max(0.25em, calc(22px - 0.575em));
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  padding-block: var(--ct-pad);
+  color: var(--ct-dim-email);
+  font-size: clamp(1.25rem, 3vw, 2.25rem);
+  font-weight: 500;
+  line-height: 1.15;
+  letter-spacing: -0.025em;
+  overflow-wrap: anywhere;
+  transition: color 0.4s var(--ct-ease);
+}
+.ct-email-link::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--ct-pad) - 0.12em);
+  height: 1px;
+  background: var(--ct-violet);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 0.7s var(--ct-ease);
+}
+.ct-email-link:is(:hover, :focus-visible) { color: var(--ct-ink); }
+.ct-email-link:is(:hover, :focus-visible)::after { transform: scaleX(1); }
+
+.ct-copy {
+  position: relative;
+  min-height: 44px;
+  padding: 0 1.1rem;
+  border: 1px solid var(--ct-line);
+  border-radius: 999px;
+  color: var(--ct-dim);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: color 0.3s var(--ct-ease), border-color 0.3s var(--ct-ease);
+}
+.ct-copy:is(:hover, :focus-visible) { color: var(--ct-ink); border-color: rgb(236 234 242 / 0.28); }
+/* One soft ring of light from the button on copy. */
+.ct-ripple {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(closest-side, rgb(200 188 255 / 0), rgb(200 188 255 / 0.22) 70%, rgb(200 188 255 / 0));
+  pointer-events: none;
+  animation: ct-ripple 0.9s var(--ct-ease) forwards;
+}
+@keyframes ct-ripple {
+  from { opacity: 1; transform: scale(0.6); }
+  to { opacity: 0; transform: scale(2.4); }
+}
+
+/* ------------------------------------------------------------------ links */
+.ct-links {
+  grid-column: 9 / 13;
+  align-self: start;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-bottom: 1px solid var(--ct-line);
+}
+.ct-links li { border-top: 1px solid var(--ct-line); }
+.ct-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 52px;
+  color: var(--ct-dim);
+  font-size: 1rem;
+  transition: color 0.35s var(--ct-ease), transform 0.45s var(--ct-ease);
+}
+.ct-arrow {
+  font-size: 0.875rem;
+  opacity: 0;
+  transform: translate(-4px, 4px);
+  transition: opacity 0.35s var(--ct-ease), transform 0.45s var(--ct-ease);
+}
+.ct-link:focus-visible { color: #fff; }
+.ct-link:focus-visible .ct-arrow { opacity: 1; transform: none; }
+@media (hover: hover) {
+  .ct-link:hover { color: #fff; transform: translateX(8px); }
+  .ct-link:hover .ct-arrow { opacity: 1; transform: none; }
+}
+@media (hover: none) {
+  .ct-arrow { opacity: 0.6; transform: none; }
+}
+
+/* ----------------------------------------------------------------- footer */
+.ct-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 1.5rem;
+  padding: 0.5rem 0 max(0.5rem, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--ct-line);
+  font-size: 0.875rem;
+}
+.ct-foot p { margin: 0; padding-block: 0.75rem; }
+.ct-top {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--ct-dim);
+  transition: color 0.3s var(--ct-ease);
+}
+.ct-top:is(:hover, :focus-visible) { color: var(--ct-ink); }
+
+/* ------------------------------------------------------------------ focus */
+.ct :focus-visible {
+  outline: 1px solid var(--ct-violet);
+  outline-offset: 4px;
+  border-radius: 2px;
+}
+.ct .ct-copy:focus-visible { border-radius: 999px; }
+
+/* ------------------------------------------------------- tablet + mobile */
+@media (max-width: 1023px) {
+  .ct-main { grid-template-columns: minmax(0, 1fr); row-gap: clamp(2.5rem, 6svh, 4rem); }
+  .ct-title,
+  .ct-email,
+  .ct-links { grid-column: 1 / -1; }
+  .ct-links { max-width: 32rem; width: 100%; }
+}
+@media (max-width: 767px) {
+  .ct-frame { padding-top: calc(var(--gutter) + 5.5rem); }
+  .ct-main { align-content: end; }
+}
+
+/* --------------------------------------------------------- reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .ct-email-link,
+  .ct-email-link::after,
+  .ct-link,
+  .ct-arrow,
+  .ct-copy,
+  .ct-top { transition: none; }
+  .ct-link:hover { transform: none; }
+}
