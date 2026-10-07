@@ -191,3 +191,21 @@ a { color: inherit; text-decoration: none; }
   box-shadow: inset 0 0 0 1px rgb(124 92 255 / 0.35), 0 0 24px -6px rgb(124 92 255 / 0.6);
   transition: left 0.9s var(--ease-out), width 0.9s var(--ease-out);
 }
+
+/* Cursor "tag": a tiny label set beside the ring rather than inside it. */
+.cursor-tag {
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  translate: 0 -50%;
+  padding: 0.3em 0.55em 0.25em;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  background: rgb(7 7 9 / 0.82);
+  color: #f4f3f7;
+  font-family: 'IBM Plex Mono', var(--font-mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  white-space: nowrap;
+}

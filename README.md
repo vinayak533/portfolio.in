@@ -8,7 +8,7 @@ A single, continuous camera flight in five acts, from a night sky above the clou
 | II · Self | About | The portrait is rebuilt from tens of thousands of instanced GPU crystals. A scan beam sweeps down (scroll-scrubbed and reversible); crystals fly in on curl-noise paths and lock into the photo; a second pass adds a depth shimmer. The bio reveals line by line as the beam passes. Photo / Spectral (violet duotone) toggle. |
 | III · Work | Works | Five floating glass exhibits, each running a live generative shader of what the system does (retrieval, vision, pipeline DAG, agents, recommender). Hover: ripple + RGB split. Click: the screen grows into a full case study (shared-element FLIP, live media canvas). |
 | IV · Path | Experience | The camera rides a beam of light; each role's waypoint ignites as it passes. Leaving a role, its card's own letters shatter into crystal shards (sampled from the live text) and the camera flies through the debris. Scroll-scrubbed and reversible. |
-| V · Seed | Contact | The last crystal follows the cursor on a spring and settles when idle. Magnetic copy-to-clipboard email. |
+| V · Signal | Contact | The closing frame. The section slides in *under* Experience's hand-off: the 3D world lifts and dims, a near-black stage with film grain settles beneath it, then the label, the headline (line by line through clip masks), copy, email, links and metadata arrive in sequence. A generative field (`src/dom/contact/field.ts`) resolves out of the dark: nested shells of nodes wired to their nearest neighbours, links between layers that reorganise now and then, sparse signals travelling outward. It leans toward the pointer with spring inertia under a low violet light; the headline's letters shift a pixel or two over a light that passes beneath them. Clicking the email copies it (touch: opens mail). |
 
 ## Run
 
@@ -64,6 +64,8 @@ No stock imagery, templates, models or textures are used. Every visual is genera
 | Portrait (`src/profile/*`, `public/about.jpg`, `public/about.original.png`, `public/portrait/*`) | Provided by the site owner | Owner's own image, all rights reserved |
 | Bricolage Grotesque (latin subset, WOFF2 via `@fontsource/bricolage-grotesque`; WOFF copy in `public/fonts` for the 3D exhibit numbers) | Mathieu Triay / Google Fonts | SIL Open Font License 1.1 (`public/fonts/OFL-BricolageGrotesque.txt`) |
 | JetBrains Mono (latin subset, via `@fontsource/jetbrains-mono`) | JetBrains | SIL Open Font License 1.1 (`public/fonts/OFL-JetBrainsMono.txt`) |
+| Inter (variable, optical sizes, via `@fontsource-variable/inter`; Contact only, loaded when the section is near) | Rasmus Andersson | SIL Open Font License 1.1 (`public/fonts/OFL-Inter.txt`) |
+| IBM Plex Mono (latin 400 / 500, via `@fontsource/ibm-plex-mono`; Contact only) | IBM | SIL Open Font License 1.1 (`public/fonts/OFL-IBMPlexMono.txt`) |
 | 3D simplex noise (`src/gl/shaders/common/noise.glsl`) | Ian McEwan, Stefan Gustavson (Ashima Arts) | MIT |
 | Night sky, moon, clouds, mist, island rock, roots, grass, leaves, figure, laptop, noise texture, crystals, exhibit visuals, dust, favicon | Generated in this repo (procedural geometry and shaders) | Same as this repo |
 

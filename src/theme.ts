@@ -35,6 +35,7 @@ export const sectionHeights = {
   about: 420,
   works: 640,
   experience: 480,
+  /** Unused in the WebGL layout: Contact underlaps Experience's hand-off and sizes to its content. */
   contact: 200,
 } as const
 
@@ -50,5 +51,4 @@ export const visibility = {
   about: [0.25, 2.25],
   works: [1.74, 3.35],
   experience: [2.55, 4.6],
-  contact: [3.5, 6],
 } as const
