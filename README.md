@@ -1,6 +1,6 @@
 # Lattice: portfolio of Vinayak K V
 
-A single, continuous camera flight in five acts, from a night sky above the clouds down into a crystalline inner space:
+A single, continuous camera flight in five acts, from a night sky above the clouds down into a diamond inner space:
 
 | Act | Section | What happens |
 |---|---|---|
