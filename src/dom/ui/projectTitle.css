@@ -1,0 +1,87 @@
+/*
+ * Project names in their own brands (ProjectTitle.tsx). Each takes its type and
+ * palette from the product UI in its reel; --brand-scale evens out optical size
+ * between very wide and very narrow faces.
+ */
+.brand-title {
+  --brand-scale: 1;
+  display: inline-block;
+  font-size: calc(1em * var(--brand-scale));
+  line-height: 1;
+  font-weight: 600;
+  /* Room for italic overhang and descenders inside line masks. */
+  padding-right: 0.08em;
+  color: var(--ink);
+}
+.brand-title .brand-sub { display: inline-block; }
+
+/* Text filled with a gradient, on the element and on any brand-sub inside it. */
+.brand-loom,
+.brand-loom .brand-sub,
+.brand-health,
+.brand-predictlab,
+.brand-bank-churn,
+.brand-lazyhire .brand-sub,
+.brand-bank-churn .brand-sub {
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Loom.ai: gold italic serif over black, the domain set small. */
+.brand-loom {
+  --brand-scale: 1.22;
+  font-family: 'Instrument Serif', Georgia, serif;
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  background-image: linear-gradient(176deg, #fbeec4 0%, #e8c278 46%, #b8862f 100%);
+  filter: drop-shadow(0 0 0.35em rgb(232 194 120 / 0.22));
+}
+.brand-loom .brand-sub { font-size: 0.6em; margin-left: 0.02em; background-image: inherit; }
+
+/* LazyHire: heavy geometric sans, white "Lazy", amber "Hire". */
+.brand-lazyhire {
+  font-family: 'Inter Variable', 'Inter', system-ui, sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.045em;
+  color: #f5f7fc;
+}
+.brand-lazyhire .brand-sub {
+  background-image: linear-gradient(180deg, #ffcb4a 0%, #f59a1b 100%);
+  filter: drop-shadow(0 0 0.3em rgb(245 154 27 / 0.28));
+}
+
+/* Bank Churn Intelligence (ARIA): ivory Playfair, champagne italic accent. */
+.brand-bank-churn {
+  --brand-scale: 1.04;
+  font-family: 'Playfair Display', Georgia, serif;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  background-image: linear-gradient(180deg, #fbf6ec 0%, #e6dccb 100%);
+}
+.brand-bank-churn .brand-sub {
+  font-style: italic;
+  background-image: linear-gradient(176deg, #f1d9a4 0%, #d4a85e 60%, #a97c3a 100%);
+}
+
+/* Health Assistant: wide cyan HUD type with a soft glow. */
+.brand-health {
+  --brand-scale: 0.7;
+  font-family: 'Orbitron', 'Bricolage Grotesque', sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background-image: linear-gradient(90deg, #8ffcf3 0%, #34e0e6 45%, #1ea8ec 100%);
+  filter: drop-shadow(0 0 0.28em rgb(52 224 230 / 0.35));
+}
+
+/* PredictLab: extended display face, cyan to violet like its hero. */
+.brand-predictlab {
+  --brand-scale: 0.78;
+  font-family: 'Unbounded', 'Bricolage Grotesque', sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  background-image: linear-gradient(90deg, #22d3ee 0%, #5b8cff 52%, #b65cf6 100%);
+  filter: drop-shadow(0 0 0.3em rgb(91 140 255 / 0.25));
+}

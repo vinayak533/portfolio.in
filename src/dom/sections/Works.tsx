@@ -6,6 +6,7 @@ import { gsap, onTick } from '../../core/clock'
 import { holdEnd, worksTrack } from '../../core/timeline'
 import { scrollToY } from '../../core/scroll'
 import { sectionHeights } from '../../theme'
+import { ProjectTitle } from '../ui/ProjectTitle'
 
 /** Scroll position that centres exhibit i (inverse of worksTrack). */
 function scrollForWork(i: number) {
@@ -20,13 +21,10 @@ function scrollForWork(i: number) {
 export function Works() {
   const mode = useStore((s) => s.mode)
   const focused = useStore((s) => s.focusedWork)
-  const hovered = useStore((s) => s.hoveredWork)
   const set = useStore((s) => s.set)
   const webgl = mode === 'webgl'
   const titleRef = useRef<HTMLDivElement>(null)
-  const detailRef = useRef<HTMLDivElement>(null)
   const active = projects[focused]
-  const showDetail = hovered !== null || !webgl
 
   // Which exhibit is centred, from the same progress the camera uses.
   useEffect(() => {
@@ -47,10 +45,6 @@ export function Works() {
     )
   }, [focused])
 
-  useEffect(() => {
-    if (!detailRef.current) return
-    gsap.to(detailRef.current, { opacity: showDetail ? 1 : 0, y: showDetail ? 0 : 12, duration: 0.8, ease: 'expo.out' })
-  }, [showDetail, focused])
 
   const open = (i: number) => set({ openWork: i })
 
@@ -60,14 +54,30 @@ export function Works() {
         <div className="mx-auto max-w-[80rem] px-[var(--gutter)] py-[16vh]">
           <span className="mono dim">(03) Works</span>
           <h2 className="display display-m mt-5">Five systems, running live.</h2>
-          <ol className="mt-14 flex flex-col">
+          <ol className="mt-14 flex flex-col gap-14">
             {projects.map((p, i) => (
-              <li key={p.id} className="border-t border-[var(--line)]">
-                <button type="button" onClick={() => open(i)} className="group grid w-full grid-cols-[3rem_1fr] gap-6 py-8 text-left md:grid-cols-[5rem_1fr_1fr]">
-                  <span className="mono dimmer">{String(i + 1).padStart(2, '0')}</span>
-                  <span className="display display-s">{p.title}</span>
-                  <span className="body-copy col-start-2 md:col-start-3">{p.tagline}</span>
+              <li key={p.id} className="flex flex-col gap-5">
+                {/* The reel is the whole card; its story lives behind Details. */}
+                <button
+                  type="button"
+                  onClick={() => open(i)}
+                  className="relative aspect-video w-full overflow-hidden bg-[var(--base)]"
+                  style={{ boxShadow: '0 0 0 1px var(--line)' }}
+                  aria-label={`Details: ${p.title}`}
+                >
+                  {p.media?.poster && <img className="h-full w-full object-cover" src={p.media.poster} alt="" loading="lazy" decoding="async" />}
                 </button>
+                <div className="flex items-end justify-between gap-6">
+                  <div className="flex items-baseline gap-5">
+                    <span className="mono dimmer">{String(i + 1).padStart(2, '0')}</span>
+                    <h3 className="work-title-s">
+                      <ProjectTitle project={p} />
+                    </h3>
+                  </div>
+                  <button type="button" onClick={() => open(i)} className="mono shrink-0 border-b border-[var(--accent)] pb-1" aria-label={`Details: ${p.title}`}>
+                    Details <span className="accent">→</span>
+                  </button>
+                </div>
               </li>
             ))}
           </ol>
@@ -91,29 +101,19 @@ export function Works() {
           <h2 className="display-s max-w-[18rem]">Five systems, running live.</h2>
         </div>
 
-        {/* Active exhibit: title always, tagline + stack on hover / focus */}
-        <div data-w-in className="absolute bottom-[var(--gutter)] left-[var(--gutter)] right-[var(--gutter)] flex flex-col gap-4 md:right-auto md:max-w-[42rem]">
+        {/* Active exhibit's name, on the bottom margin under the reels. Its story is behind Details. */}
+        <div data-w-in className="works-title-row absolute bottom-[var(--gutter)] left-[var(--gutter)] right-[var(--gutter)] flex flex-col gap-4 md:right-auto">
           <div ref={titleRef} className="flex items-end gap-5" aria-live="polite">
             <span className="line-mask">
               <span data-roll className="mono dim block whitespace-nowrap">
                 {String(focused + 1).padStart(2, '0')} / {String(projects.length).padStart(2, '0')}
               </span>
             </span>
-            <h3 className="display display-l line-mask">
+            <h3 className="work-title line-mask">
               <span data-roll className="block">
-                {active.title}
+                <ProjectTitle project={active} />
               </span>
             </h3>
-          </div>
-          <div ref={detailRef} className="flex flex-col gap-4 opacity-0">
-            <p className="body-copy max-w-[34rem]">{active.tagline}</p>
-            <ul className="flex flex-wrap gap-2" aria-label="Stack">
-              {active.tags.map((t) => (
-                <li key={t} className="chip">
-                  {t}
-                </li>
-              ))}
-            </ul>
           </div>
         </div>
 
@@ -147,13 +147,15 @@ export function Works() {
           </ol>
         </nav>
 
+        {/* Wide screens show Details under each exhibit instead (WorksGallery). */}
         <button
           data-w-in
           type="button"
           onClick={() => open(focused)}
-          className="mono absolute bottom-[var(--gutter)] right-[var(--gutter)] flex items-center gap-2 md:hidden"
+          className="works-details mono absolute bottom-[var(--gutter)] right-[var(--gutter)] flex items-center gap-2 border-b border-[var(--accent)] pb-1"
+          aria-label={`Details: ${active.title}`}
         >
-          Open case study <span className="accent">→</span>
+          Details <span className="accent">→</span>
         </button>
       </div>
     </Section>

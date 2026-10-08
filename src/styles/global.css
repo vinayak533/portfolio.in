@@ -126,6 +126,22 @@ a { color: inherit; text-decoration: none; }
   white-space: nowrap;
 }
 
+/*
+ * Works: the active project's name, sized to sit in the band under the exhibit
+ * rather than over the reel; one line from tablet width up.
+ */
+.work-title { font-size: clamp(2rem, 3.5vw, 4.25rem); line-height: 1; text-wrap: balance; }
+@media (min-width: 768px) { .work-title { white-space: nowrap; } }
+.work-title-s { font-size: clamp(1.5rem, 2.3vw, 2.2rem); line-height: 1; }
+
+/* Works: wide screens put Details in each exhibit's corner in 3D (theme.worksWide). */
+/* Below that, the title sits above the DOM Details button instead of beside it. */
+.works-title-row { bottom: calc(var(--gutter) + 2.6rem); }
+@media (min-width: 900px) and (min-aspect-ratio: 1001/1000) {
+  .works-details { display: none; }
+  .works-title-row { bottom: var(--gutter); }
+}
+
 .glow-dot {
   width: 6px; height: 6px; border-radius: 50%;
   background: var(--accent);

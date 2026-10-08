@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { projects } from '../content'
+import { captionParts, projects } from '../content'
+import { ProjectTitle } from './ui/ProjectTitle'
 import { signals, useStore } from '../store/useStore'
 import { gsap } from '../core/clock'
 import { lockScroll } from '../core/scroll'
@@ -148,6 +149,7 @@ export function CaseStudy() {
 
   if (index === null) return null
   const p = projects[index]
+  const caption = captionParts(p.caption)
   const next = (index + 1) % projects.length
 
   return (
@@ -174,8 +176,9 @@ export function CaseStudy() {
           </button>
         </div>
 
-        <div className="mx-auto w-full max-w-[72rem] px-[var(--gutter)] pb-[16vh]">
-          <div ref={media} className="relative aspect-[16/10] w-full overflow-hidden rounded-[2px] will-change-transform" style={{ boxShadow: '0 0 0 1px var(--line), 0 40px 120px -40px rgba(124,92,255,.35)' }}>
+        {/* The reel at full width and native 16:9, so nothing is cropped (1080p, see core/reels). */}
+        <div className="mx-auto w-full max-w-[96rem] px-[var(--gutter)]">
+          <div ref={media} className="relative aspect-video w-full overflow-hidden rounded-[2px] will-change-transform" style={{ boxShadow: '0 0 0 1px var(--line), 0 40px 120px -40px rgba(124,92,255,.35)' }}>
             {p.media ? (
               /\.(mp4|webm)$/i.test(p.media.src) ? (
                 <ReelView index={index} media={p.media} />
@@ -188,11 +191,13 @@ export function CaseStudy() {
               </Suspense>
             )}
           </div>
+        </div>
 
+        <div className="mx-auto w-full max-w-[72rem] px-[var(--gutter)] pb-[16vh]">
           <div ref={content} className="mt-14 grid gap-14 md:grid-cols-[1.1fr_1fr] md:gap-20">
             <header className="flex flex-col gap-6">
               <h2 id="cs-title" data-cs-in className="display display-l">
-                {p.title}
+                <ProjectTitle project={p} />
               </h2>
               <p data-cs-in className="display-s dim max-w-[32rem]">
                 {p.tagline}
@@ -207,6 +212,18 @@ export function CaseStudy() {
                 <dt className="mono mono-sm dimmer">Role</dt>
                 <dd className="mt-2">{p.role}</dd>
               </div>
+              {p.links && p.links.length > 0 && (
+                <div className="col-span-2">
+                  <dt className="mono mono-sm dimmer">Links</dt>
+                  <dd className="mt-3 flex flex-wrap gap-5">
+                    {p.links.map((l) => (
+                      <a key={l.href} className="mono border-b border-[var(--accent)] pb-1" href={l.href} target="_blank" rel="noreferrer">
+                        {l.label} <span className="accent">↗</span>
+                      </a>
+                    ))}
+                  </dd>
+                </div>
+              )}
               <div className="col-span-2">
                 <dt className="mono mono-sm dimmer">Stack</dt>
                 <dd className="mt-3 flex flex-wrap gap-2">
@@ -219,6 +236,13 @@ export function CaseStudy() {
               </div>
             </dl>
 
+            <section data-cs-in className="flex flex-col gap-4 md:col-span-2 md:grid md:grid-cols-[1.1fr_1fr] md:gap-20">
+              <h3 className="mono dim">Overview</h3>
+              <p className="body-copy">
+                {caption.lead && <span className="mb-3 block text-[var(--ink)]">{caption.lead}</span>}
+                {caption.body}
+              </p>
+            </section>
             <section data-cs-in className="flex flex-col gap-4 md:col-span-2 md:grid md:grid-cols-[1.1fr_1fr] md:gap-20">
               <h3 className="mono dim">Summary</h3>
               <p className="body-copy text-[var(--ink)]">{p.summary}</p>
