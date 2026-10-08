@@ -12,8 +12,42 @@ uniform float uAspect;  // width / height
 uniform vec3 uAccent;
 uniform vec3 uInk;
 uniform float uOpacity;
+uniform sampler2D uMedia;   // project reel (or its poster while it loads)
+uniform float uMediaMix;    // 0 generative scene, 1 media
+uniform float uMediaAspect; // media width / height
+uniform float uMediaDecode; // 1: texels are sRGB-encoded (three uploads video frames raw)
 
 varying vec2 vUv;
+
+// The post stack tone-maps the whole frame with ACES (three's fit). Pre-apply
+// its inverse so the reel reaches the screen in its own colours. Whites are
+// capped below where the inverse runs away, which also keeps bloom to a glow.
+vec3 inverseACES(vec3 c) {
+  const mat3 invOut = mat3(vec3(0.64304, 0.05927, 0.00596), vec3(0.31119, 0.93144, 0.06393), vec3(0.04578, 0.00929, 0.93012));
+  const mat3 invIn = mat3(vec3(1.76474, -0.14703, -0.03634), vec3(-0.67578, 1.16025, -0.16244), vec3(-0.08896, -0.01322, 1.19877));
+  vec3 y = clamp(invOut * min(c, vec3(0.86)), 0.0, 0.95);
+  // Solve RRTAndODTFit(v) = y for v.
+  vec3 a = 1.0 - 0.983729 * y;
+  vec3 b = 0.0245786 - 0.432951 * y;
+  vec3 k = -(0.000090537 + 0.238081 * y);
+  vec3 v = (-b + sqrt(max(b * b - 4.0 * a * k, 0.0))) / (2.0 * a);
+  return max(invIn * v * 0.6, 0.0);
+}
+
+vec3 media(vec2 uv) {
+  // Cover-fit: crop whichever axis overflows.
+  vec2 s = uMediaAspect > uAspect ? vec2(uAspect / uMediaAspect, 1.0) : vec2(1.0, uMediaAspect / uAspect);
+  vec3 c = texture2D(uMedia, (uv - 0.5) * s + 0.5).rgb;
+  if (uMediaDecode > 0.5) c = mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c));
+  // Soft shoulder on luminance (hue kept): white panels read as a lit screen
+  // instead of flaring through the bloom pass.
+  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  float knee = 0.32;
+  float top = 0.62;
+  float lc = l < knee ? l : knee + (top - knee) * (1.0 - exp(-(l - knee) / (top - knee)));
+  c *= lc / max(l, 1e-4);
+  return inverseACES(c);
+}
 
 float box(vec2 p, vec2 b) { vec2 d = abs(p) - b; return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0); }
 float seg(vec2 p, vec2 a, vec2 b) { vec2 pa = p - a, ba = b - a; float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0); return length(pa - ba * h); }
@@ -235,6 +269,13 @@ vec3 scene(vec2 uv, float t) {
   return sceneRecsys(uv, t);
 }
 
+// Uniform branches: once the reel is in, the procedural scene is not evaluated.
+vec3 screen(vec2 uv, float t) {
+  if (uMediaMix > 0.999) return media(uv);
+  if (uMediaMix < 0.001) return scene(uv, t);
+  return mix(scene(uv, t), media(uv), uMediaMix);
+}
+
 void main() {
   vec2 uv = vUv;
   float t = uTime;
@@ -247,19 +288,23 @@ void main() {
   vec3 col;
   if (uHover > 0.01) {
     vec2 sh = vec2(0.006 * uHover, 0.0);
-    col = vec3(scene(uv + sh, t).r, scene(uv, t).g, scene(uv - sh, t).b);
+    col = vec3(screen(uv + sh, t).r, screen(uv, t).g, screen(uv - sh, t).b);
   } else {
-    col = scene(uv, t);
+    col = screen(uv, t);
   }
 
   // Screen treatment: faint grid, scanlines, inner vignette, base glass tint.
+  // Lighter over media, so the reel stays legible.
+  float m = uMediaMix;
   vec2 gp = fract(vUv * vec2(uAspect, 1.0) * 12.0);
   float grid = (line(gp.x, 0.02) + line(gp.y, 0.02)) * 0.025;
-  col += uAccent * grid;
-  col *= 0.88 + 0.12 * sin(vUv.y * 900.0);
+  col += uAccent * grid * (1.0 - 0.7 * m);
+  float scan = sin(vUv.y * 900.0);
+  col *= mix(0.88 + 0.12 * scan, 0.97 + 0.03 * scan, m);
   vec2 vv = vUv - 0.5;
-  col *= smoothstep(0.85, 0.25, length(vv * vec2(1.0, 1.3)));
-  col += uAccent * 0.025;
+  float vr = length(vv * vec2(1.0, 1.3));
+  col *= mix(smoothstep(0.85, 0.25, vr), smoothstep(1.05, 0.45, vr), m);
+  col += uAccent * 0.025 * (1.0 - m);
   col *= mix(0.35, 1.0, uFocus) * (1.0 + uHover * 0.25);
 
   gl_FragColor = vec4(col * uOpacity, 1.0);

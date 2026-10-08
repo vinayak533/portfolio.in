@@ -2,10 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import {
   AdditiveBlending,
+  Box3,
   InstancedBufferAttribute,
   InstancedBufferGeometry,
   PlaneGeometry,
   ShaderMaterial,
+  Sphere,
   SRGBColorSpace,
   Texture,
   Vector2,
@@ -91,6 +93,14 @@ export function PortraitScan() {
     g.setAttribute('aData', new InstancedBufferAttribute(sample.data, 4))
     g.setAttribute('aScale', new InstancedBufferAttribute(sample.scale, 1))
     g.instanceCount = sample.count
+    // Real bounds: every crystal lies between its dust and target positions,
+    // plus the flow arc, pointer push and its own size. With them three can
+    // cull the whole instanced draw once the camera has moved on to Works,
+    // instead of drawing tens of thousands of crystals off screen.
+    const box = new Box3()
+    const v = new Vector3()
+    for (const a of [sample.target, sample.dust]) for (let i = 0; i < a.length; i += 3) box.expandByPoint(v.set(a[i], a[i + 1], a[i + 2]))
+    g.boundingSphere = box.expandByScalar(2.5).getBoundingSphere(new Sphere())
     material.uniforms.uSize.value = sample.spacing * 0.74
     material.uniforms.uPhotoSize.value.set(sample.width, sample.height)
     return g
@@ -176,7 +186,7 @@ export function PortraitScan() {
   const beamY = (0.5 - (signals.scan * 1.42 - 0.12)) * sample.height
   return (
     <group ref={ref}>
-      <mesh geometry={geometry} material={material} frustumCulled={false} />
+      <mesh geometry={geometry} material={material} />
       <BeamMesh sample={sample} beam={beam} initialY={beamY} />
     </group>
   )

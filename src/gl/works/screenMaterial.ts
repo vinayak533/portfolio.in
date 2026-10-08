@@ -1,4 +1,4 @@
-import { ShaderMaterial, Vector2 } from 'three'
+import { ShaderMaterial, Vector2, type Texture } from 'three'
 import screenVert from '../shaders/works/screen.vert'
 import screenFrag from '../shaders/works/screen.frag'
 import { colors } from '../world'
@@ -24,6 +24,10 @@ export function createScreenMaterial(kind: VisualKind, aspect: number, standalon
       uMouse: { value: new Vector2(0.5, 0.5) },
       uAspect: { value: aspect },
       uOpacity: { value: 1 },
+      uMedia: { value: null as Texture | null },
+      uMediaMix: { value: 0 },
+      uMediaAspect: { value: 16 / 9 },
+      uMediaDecode: { value: 0 },
       uAccent: { value: colors.accent },
       uInk: { value: colors.ink },
     },

@@ -1,7 +1,7 @@
-import { Suspense, useEffect, useState } from 'react'
-import { Canvas, useThree } from '@react-three/fiber'
+import { Suspense, useEffect, useRef, useState } from 'react'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { PerformanceMonitor } from '@react-three/drei'
-import { NoToneMapping, SRGBColorSpace } from 'three'
+import { HalfFloatType, NoToneMapping, SRGBColorSpace, WebGLRenderTarget } from 'three'
 import { onTick } from '../core/clock'
 import { scrollToY } from '../core/scroll'
 import { complete } from '../core/loading'
@@ -92,24 +92,80 @@ function Driver() {
   return null
 }
 
-/** Compiles every program up front (async where supported) so scrolling never hitches. */
-function Warmup() {
+/**
+ * Compiles every program up front (async where supported) so scrolling never
+ * hitches. three only compiles visible objects, and every act but the current
+ * one is hidden, so all of them are revealed while the compile is queued.
+ */
+function Warmup({ post }: { post: boolean }) {
   const { gl, scene, camera } = useThree()
   useEffect(() => {
     let cancelled = false
-    const run = async () => {
-      try {
-        await gl.compileAsync(scene, camera)
-      } catch {
-        gl.compile(scene, camera)
+    const timers: number[] = []
+    const run = async (first: boolean) => {
+      // Let late materials (glyph text, shards) attach first.
+      await new Promise((r) => setTimeout(r, 0))
+      if (cancelled) return
+      const revealAll = () => {
+        const hidden: { visible: boolean }[] = []
+        scene.traverse((o) => {
+          if (!o.visible) {
+            hidden.push(o)
+            o.visible = true
+          }
+        })
+        return () => hidden.forEach((o) => (o.visible = false))
       }
-      if (!cancelled) complete('compile')
+      // With post on, the scene renders into a linear HDR target, which is a
+      // different program variant from the canvas one: compile that variant.
+      const target = post ? new WebGLRenderTarget(64, 64, { type: HalfFloatType }) : null
+      const previous = gl.getRenderTarget()
+      let restore = revealAll()
+      gl.setRenderTarget(target)
+      try {
+        // The traversal happens synchronously inside the call; the wait is only for the driver.
+        const pending = gl.compileAsync(scene, camera)
+        restore()
+        gl.setRenderTarget(previous)
+        await pending
+      } catch {
+        restore = revealAll()
+        gl.setRenderTarget(target)
+        gl.compile(scene, camera)
+        restore()
+        gl.setRenderTarget(previous)
+      }
+      // Then draw everything once, off screen. ANGLE on D3D11 (Chrome on
+      // Windows) builds the final pixel shader at a program's first draw, which
+      // otherwise lands mid-scroll as a 100 ms+ freeze.
+      if (target && !cancelled) {
+        restore = revealAll()
+        const culled: { frustumCulled: boolean }[] = []
+        scene.traverse((o) => {
+          if (o.frustumCulled) {
+            culled.push(o)
+            o.frustumCulled = false
+          }
+        })
+        gl.setRenderTarget(target)
+        gl.render(scene, camera)
+        gl.setRenderTarget(previous)
+        culled.forEach((o) => (o.frustumCulled = true))
+        restore()
+      }
+      target?.dispose()
+      if (first && !cancelled) complete('compile')
     }
-    run()
+    run(true)
+    // Some meshes only exist once async data lands (portrait particles, glyph
+    // text, shards): sweep again so they are compiled before they are seen.
+    // Programs already built are cache hits, so a sweep costs little.
+    for (const ms of [2000, 5000, 9000]) timers.push(window.setTimeout(() => run(false), ms))
     return () => {
       cancelled = true
+      timers.forEach(clearTimeout)
     }
-  }, [gl, scene, camera])
+  }, [gl, scene, camera, post])
   return null
 }
 
@@ -117,18 +173,56 @@ function Warmup() {
 const debug = new URLSearchParams(import.meta.env.DEV ? location.search : '')
 const deviceDpr = () => window.devicePixelRatio || 1
 
+type TierConfig = (typeof tier)[keyof typeof tier]
+
+/**
+ * Adaptive resolution, applied through R3F's own store. Holding the DPR in
+ * Stage state re-rendered the whole tree on every step, which rebuilt the post
+ * chain (a shader recompile: a 100 ms+ freeze), which dropped the frame rate,
+ * which stepped the DPR again: a stutter loop.
+ */
+function AdaptiveDpr({ cfg }: { cfg: TierConfig }) {
+  const setDpr = useThree((s) => s.setDpr)
+  const dpr = useRef(Math.min(deviceDpr(), cfg.startDpr))
+  const want = useRef(dpr.current)
+  const still = useRef(0)
+  useEffect(() => {
+    dpr.current = want.current = Math.min(deviceDpr(), cfg.startDpr)
+    setDpr(dpr.current)
+  }, [cfg, setDpr])
+  // A resolution step reallocates every post buffer (~70 ms on integrated
+  // GPUs): take it only once scrolling has settled, never mid-gesture.
+  useFrame((_, dt) => {
+    still.current = Math.abs(signals.velocity) < 0.02 ? still.current + dt : 0
+    if (want.current !== dpr.current && still.current > 0.35) {
+      dpr.current = want.current
+      setDpr(dpr.current)
+    }
+  })
+  const apply = (d: number) => {
+    want.current = d
+  }
+  return (
+    <PerformanceMonitor
+      bounds={() => [50, 58]}
+      flipflops={4}
+      onDecline={() => apply(Math.max(cfg.minDpr, +(want.current - 0.15).toFixed(2)))}
+      onIncline={() => apply(Math.min(cfg.maxDpr, deviceDpr(), +(want.current + 0.15).toFixed(2)))}
+      onFallback={() => apply(cfg.minDpr)}
+    />
+  )
+}
+
 export default function Stage() {
   const quality = useStore((s) => (s.lite ? 'low' : s.quality))
   const cfg = tier[quality]
-  const [dpr, setDpr] = useState(() => Math.min(deviceDpr(), cfg.startDpr))
-
-  useEffect(() => setDpr(Math.min(deviceDpr(), cfg.startDpr)), [cfg.startDpr])
+  const [startDpr] = useState(() => Math.min(deviceDpr(), cfg.startDpr))
 
   return (
     <div data-stage className="fixed inset-0 z-0" aria-hidden="true">
       <Canvas
         frameloop="never"
-        dpr={dpr}
+        dpr={startDpr}
         flat
         eventSource={document.getElementById('root')!}
         eventPrefix="client"
@@ -147,20 +241,14 @@ export default function Stage() {
         }}
       >
         <Driver />
-        <PerformanceMonitor
-          bounds={() => [50, 58]}
-          flipflops={4}
-          onDecline={() => setDpr((d) => Math.max(cfg.minDpr, +(d - 0.15).toFixed(2)))}
-          onIncline={() => setDpr((d) => Math.min(cfg.maxDpr, deviceDpr(), +(d + 0.15).toFixed(2)))}
-          onFallback={() => setDpr(cfg.minDpr)}
-        />
+        <AdaptiveDpr cfg={cfg} />
         <CameraRig />
         {!debug.has('nosky') && <Atmosphere />}
         <Suspense fallback={null}>
           <PortraitScan />
           <WorksGallery />
           <ExperiencePath />
-          <Warmup />
+          <Warmup post={!debug.has('nopost')} />
         </Suspense>
         {!debug.has('nopost') && <Effects />}
       </Canvas>

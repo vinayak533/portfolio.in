@@ -1,7 +1,23 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { Text } from '@react-three/drei'
-import { Group, Mesh, PlaneGeometry, ShaderMaterial, Vector3, type Intersection, type Object3D, type PerspectiveCamera, type Raycaster } from 'three'
+import {
+  Group,
+  ImageBitmapLoader,
+  LinearFilter,
+  LinearMipmapLinearFilter,
+  Mesh,
+  PlaneGeometry,
+  ShaderMaterial,
+  SRGBColorSpace,
+  Texture,
+  Vector3,
+  VideoTexture,
+  type Intersection,
+  type Object3D,
+  type PerspectiveCamera,
+  type Raycaster,
+} from 'three'
 import { projects, type Project } from '../../content'
 import { visibility } from '../../theme'
 import { colors, world } from '../world'
@@ -11,6 +27,7 @@ import { worksTrack } from '../../core/timeline'
 import { useAct } from '../useAct'
 import { createScreenMaterial } from './screenMaterial'
 import { exhibitRects } from '../../core/registry'
+import { driveExhibits, hiResExhibits, peekReel } from '../../core/reels'
 import screenVert from '../shaders/works/screen.vert'
 import frameFrag from '../shaders/works/frame.frag'
 
@@ -35,9 +52,37 @@ function gatedRaycast(this: Mesh, raycaster: Raycaster, hits: Intersection[]) {
   if (interactive(this)) Mesh.prototype.raycast.call(this, raycaster, hits)
 }
 
+/** Posters decode off the main thread, so they never hitch the scroll. */
+const posterLoader = new ImageBitmapLoader().setOptions({ imageOrientation: 'flipY' })
+function loadPoster(url: string) {
+  return new Promise<Texture>((resolve, reject) =>
+    posterLoader.load(
+      url,
+      (bitmap) => {
+        const t = new Texture(bitmap)
+        t.flipY = false
+        t.colorSpace = SRGBColorSpace
+        t.needsUpdate = true
+        resolve(t)
+      },
+      undefined,
+      reject,
+    ),
+  )
+}
+
+/**
+ * GPU uploads (posters, first video frames) are spread one per frame: five
+ * landing together would stall a frame for tens of milliseconds.
+ */
+const uploads: (() => void)[] = []
+const queueUpload = (fn: () => void) => uploads.push(fn)
+
 /** Act III. Five floating glass exhibits the camera tracks past. */
 export function WorksGallery() {
   const { ref } = useAct(visibility.works)
+  useEffect(driveExhibits, [])
+  useFrame(() => uploads.shift()?.(), -50)
   return (
     <group ref={ref}>
       {projects.map((p, i) => (
@@ -74,6 +119,17 @@ function Exhibit({ project, index }: { project: Project; index: number }) {
     [],
   )
   const st = useMemo(() => ({ hover: 0, focus: 0, tiltX: 0, tiltY: 0, mouse: new Vector3(0.5, 0.5, 0) }), [])
+  const gl = useThree((s) => s.gl)
+  // Poster first (fades in over the generative scene), then the live reel once
+  // it is decoded at the poster's frame, so the swap is invisible.
+  const media = useMemo(() => ({ asked: false, pending: false, poster: null as Texture | null, video: null as VideoTexture | null, mix: 0 }), [])
+  useEffect(
+    () => () => {
+      media.poster?.dispose()
+      media.video?.dispose()
+    },
+    [media],
+  )
   const base = useMemo(
     () => new Vector3(world.works.startX + index * world.works.spacing, (index % 2 === 0 ? 0.12 : -0.18), world.works.z - (index % 2) * 0.6),
     [index],
@@ -122,6 +178,41 @@ function Exhibit({ project, index }: { project: Project; index: number }) {
     g.rotation.set(st.tiltX, st.tiltY, Math.sin(time * 0.3 + index) * 0.008)
 
     const u = mat.uniforms
+    const m = project.media
+    if (m?.poster && !media.asked && signals.t > visibility.works[0] - 0.8) {
+      media.asked = true
+      loadPoster(m.poster)
+        .then((t) => {
+          t.anisotropy = Math.min(8, gl.capabilities.getMaxAnisotropy())
+          queueUpload(() => {
+            gl.initTexture(t)
+            media.poster = t
+            if (!media.video) u.uMedia.value = t
+          })
+        })
+        .catch(() => {})
+    }
+    const r = peekReel(index)
+    if (r?.ready && !media.video && !media.pending && r.video.videoWidth) {
+      media.pending = true
+      queueUpload(() => {
+        // Hi-res tier: mipmapped + anisotropic, so UI text stays crisp when the
+        // screen is small or tilted instead of shimmering. Uploaded before it is
+        // on screen, one texture per frame.
+        const hi = hiResExhibits()
+        const v = new VideoTexture(r.video, undefined, undefined, undefined, LinearFilter, hi ? LinearMipmapLinearFilter : LinearFilter)
+        v.generateMipmaps = hi
+        if (hi) v.anisotropy = Math.min(8, gl.capabilities.getMaxAnisotropy())
+        v.needsUpdate = true
+        gl.initTexture(v)
+        media.video = v
+        u.uMedia.value = v
+        u.uMediaDecode.value = 1
+        u.uMediaAspect.value = r.video.videoWidth / r.video.videoHeight
+      })
+    }
+    media.mix = damp(media.mix, u.uMedia.value ? 1 : 0, 2.2, dt)
+    u.uMediaMix.value = media.mix > 0.998 ? 1 : media.mix
     u.uTime.value = time
     u.uHover.value = st.hover
     u.uFocus.value = 0.25 + st.focus * 0.75

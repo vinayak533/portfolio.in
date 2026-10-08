@@ -14,14 +14,34 @@ export interface Project {
   tags: string[]
   /** Procedural shader used for the exhibit screen when no media is supplied. */
   visual: VisualKind
-  /** Optional: '/works/rag.mp4' or '/works/rag.webp'. Poster is used while video loads. */
-  media?: { src: string; poster?: string }
+  /**
+   * Optional reel or image. For video, `preview` (720p) plays on the 3D exhibit
+   * and on small screens, `src` (1080p) in the case study, and `poster` is the
+   * frame at `start` seconds, where playback begins. Built by `npm run videos`.
+   */
+  media?: ProjectMedia
   summary: string
   problem: string
   approach: string[]
-  outcomes: { value: string; label: string }[]
+  /** Key numbers, shown under "At a glance". */
+  facts: { value: string; label: string }[]
   links?: { label: string; href: string }[]
 }
+
+export interface ProjectMedia {
+  src: string
+  preview?: string
+  poster?: string
+  start?: number
+}
+
+/** Paths written by scripts/prepare-videos.mjs for reel `id`. */
+const reel = (id: string, start: number): ProjectMedia => ({
+  src: `/works/${id}-1080.mp4`,
+  preview: `/works/${id}-720.mp4`,
+  poster: `/works/${id}.webp`,
+  start,
+})
 
 export interface Role {
   company: string
@@ -67,118 +87,131 @@ export const about = {
 
 export const projects: Project[] = [
   {
-    id: 'atlas-rag',
-    title: 'Atlas',
-    tagline: 'A retrieval assistant that cites every sentence it says.',
-    year: '2025',
-    role: 'Lead ML Engineer',
-    tags: ['RAG', 'Hybrid search', 'Reranking', 'LLM eval', 'pgvector'],
-    visual: 'rag',
-    summary:
-      'Enterprise knowledge assistant over 2.1M internal documents with sentence-level citations and an abstain-when-unsure policy.',
-    problem:
-      'Support engineers spent ~18 minutes per ticket hunting through wikis, runbooks and past incidents. A first chatbot hallucinated policy and lost trust in a week.',
-    approach: [
-      'Hybrid BM25 + dense retrieval with a cross-encoder reranker, chunked on document structure rather than token windows.',
-      'Answer generation constrained to retrieved spans; every claim is linked to a source sentence or the model abstains.',
-      'Offline eval harness of 1,400 graded questions gating every prompt, model and index change in CI.',
-    ],
-    outcomes: [
-      { value: '-41%', label: 'time to resolution' },
-      { value: '96.2%', label: 'citation precision' },
-      { value: '0.8s', label: 'p50 answer latency' },
-    ],
-  },
-  {
-    id: 'iris-vision',
-    title: 'Iris',
-    tagline: 'Defect detection that runs on a $90 edge board.',
-    year: '2024',
-    role: 'ML Engineer, Vision',
-    tags: ['Computer vision', 'Distillation', 'INT8', 'TensorRT', 'Active learning'],
-    visual: 'vision',
-    summary:
-      'Real-time surface-defect detection for a manufacturing line, distilled from a large teacher into an INT8 student running at the edge.',
-    problem:
-      'Manual inspection missed hairline cracks at line speed, and cloud inference added 400ms of round trip the line could not afford.',
-    approach: [
-      'Teacher-student distillation from a ViT-L detector into a compact CNN, quantised to INT8 with calibration on hard negatives.',
-      'Active-learning loop surfacing low-confidence frames to inspectors, cutting labelling cost per useful sample.',
-      'Shadow deployment for six weeks before taking over the reject gate.',
-    ],
-    outcomes: [
-      { value: '98.7%', label: 'recall on critical defects' },
-      { value: '14ms', label: 'per-frame on device' },
-      { value: '-72%', label: 'labelling cost' },
-    ],
-  },
-  {
-    id: 'conduit-pipeline',
-    title: 'Conduit',
-    tagline: 'Feature pipelines with contracts, lineage and one-click backfills.',
-    year: '2024',
-    role: 'ML Platform Engineer',
-    tags: ['Feature store', 'Airflow', 'Spark', 'Data contracts', 'MLOps'],
-    visual: 'pipeline',
-    summary:
-      'An internal ML pipeline platform: typed feature definitions, point-in-time correct training sets and reproducible backfills.',
-    problem:
-      'Twelve teams maintained bespoke training pipelines; silent schema drift broke models in production twice a quarter.',
-    approach: [
-      'Declarative feature specs compiled into batch and streaming jobs from a single definition.',
-      'Data contracts enforced at ingestion with lineage tracked down to each model version.',
-      'Point-in-time joins to eliminate label leakage in training sets.',
-    ],
-    outcomes: [
-      { value: '12', label: 'teams migrated' },
-      { value: '0', label: 'drift incidents in 3 quarters' },
-      { value: '6x', label: 'faster backfills' },
-    ],
-  },
-  {
-    id: 'relay-agents',
-    title: 'Relay',
-    tagline: 'An agent framework that knows when to hand off to a human.',
-    year: '2025',
-    role: 'Founding Engineer',
-    tags: ['Agents', 'Tool use', 'Planning', 'Guardrails', 'Tracing'],
+    id: 'loom',
+    title: 'Loom.ai',
+    tagline: 'One AI workspace to chat, code in a live sandbox, study and delegate.',
+    year: '2026',
+    role: 'Solo build',
+    tags: ['LangGraph', 'FastAPI', 'Next.js', 'E2B sandbox', 'pgvector'],
     visual: 'agents',
+    media: reel('loom', 2.5),
     summary:
-      'A typed, observable agent runtime for multi-step operations workflows with budgeted tool calls and explicit escalation.',
+      'Four workspaces on one backend: tool-free Chat, sandboxed Code, source-grounded Learn and ten specialist Agents, sharing auth, model routing and streaming.',
     problem:
-      'Prototype agents looped, overspent and failed silently; nobody could explain a bad run after the fact.',
+      'A chat window cannot run code or check an answer against your own documents. Coding, research and study each need a different way of working.',
     approach: [
-      'Planner-executor split with typed tool contracts and per-run token and cost budgets.',
-      'Calibrated confidence gates that escalate to a human with a replayable trace instead of guessing.',
-      'Full span tracing of every thought, tool call and retry, searchable by outcome.',
+      'The Code agent works in a real Linux sandbox (shell, files, web search, dev servers) and streams every tool call into a live trace and preview.',
+      'Learn turns PDFs, links and YouTube transcripts into cited answers and graded courses, backed by pgvector.',
+      'LangGraph routes each turn across eight models from Groq, OpenRouter and OpenCode, by hand or on Auto with fallback.',
     ],
-    outcomes: [
-      { value: '71%', label: 'tickets fully automated' },
-      { value: '-58%', label: 'cost per resolved task' },
-      { value: '100%', label: 'runs replayable' },
+    facts: [
+      { value: '4', label: 'workspaces, one backend' },
+      { value: '10', label: 'specialist agents' },
+      { value: '8', label: 'models, auto-routed' },
     ],
+    links: [{ label: 'GitHub', href: 'https://github.com/vinayak533/loom.ai' }],
   },
   {
-    id: 'orbit-recsys',
-    title: 'Orbit',
-    tagline: 'Two-tower recommendations that learn within a session.',
-    year: '2023',
-    role: 'ML Engineer, Ranking',
-    tags: ['Recommender systems', 'Two-tower', 'ANN', 'Online learning', 'A/B testing'],
-    visual: 'recsys',
+    id: 'lazyhire',
+    title: 'LazyHire',
+    tagline: 'Where AI finds the job that finds you.',
+    year: '2026',
+    role: 'Solo build',
+    tags: ['Next.js', 'TypeScript', 'SQLite + FTS5', 'MiniLM embeddings', 'Groq'],
+    visual: 'rag',
+    media: reel('lazyhire', 3),
     summary:
-      'Candidate generation and ranking for a content platform with session-aware embeddings refreshed in near real time.',
+      'A job-search workspace for Kerala that merges listings from many boards, ranks them against your profile and explains every match.',
     problem:
-      'Daily batch recommendations ignored what a user did five minutes ago, and cold-start items never surfaced.',
+      'Kerala job listings are scattered across many sites, full of duplicates, missing dates and apply links that only lead to a company homepage.',
     approach: [
-      'Two-tower retrieval with ANN serving and a lightweight session encoder updated on every interaction.',
-      'Exploration budget for new items with calibrated uplift estimates.',
-      'Interleaving experiments to read ranking changes in days instead of weeks.',
+      'Source-aware search across Technopark, Infopark, UL CyberPark and more, with duplicate merging and apply-link validation.',
+      'Transparent fit ranking on freshness, location, role, skills and preferences, so every score can be inspected.',
+      'CV scoring and guarded AI tailoring that rejects invented experience, numbers or credentials.',
     ],
-    outcomes: [
-      { value: '+9.4%', label: 'session watch time' },
-      { value: '+31%', label: 'new-item exposure' },
-      { value: '22ms', label: 'p99 retrieval' },
+    facts: [
+      { value: '9', label: 'job sources merged' },
+      { value: '4', label: 'application stages tracked' },
+      { value: 'PDF · DOCX', label: 'private CV review' },
+    ],
+    links: [{ label: 'GitHub', href: 'https://github.com/vinayak533/lazyhire' }],
+  },
+  {
+    id: 'bank-churn',
+    title: 'Bank Churn Intelligence',
+    tagline: 'Predicts which customers will leave, then explains why in plain words and voice.',
+    year: '2026',
+    role: 'Solo build',
+    tags: ['XGBoost', 'SMOTE', 'FastAPI', 'Llama 3.3 70B', 'ElevenLabs'],
+    visual: 'pipeline',
+    media: reel('aria', 6),
+    summary:
+      'ARIA turns a customer profile into a churn probability, a risk tier and the model’s key drivers, then lets staff ask an AI advisor what to do next.',
+    problem:
+      'A churn score alone is not enough: bank staff need a risk assessment they can understand and talk through with the customer.',
+    approach: [
+      'XGBoost classifier trained on 10,000 customer records, with SMOTE for class imbalance and one scaler shared by training and inference.',
+      'A FastAPI service returns the churn probability, a low / medium / high tier and the top five model drivers.',
+      'Llama 3.3 70B on Groq explains each result in plain language, and ElevenLabs reads it aloud.',
+    ],
+    facts: [
+      { value: '10k', label: 'customer records' },
+      { value: '3', label: 'risk tiers' },
+      { value: '5', label: 'drivers surfaced' },
+    ],
+    links: [{ label: 'GitHub', href: 'https://github.com/vinayak533/bank-churn-intelligence-platform' }],
+  },
+  {
+    id: 'health',
+    title: 'Health Assistant',
+    tagline: 'Ask a health question out loud, show an image, hear the answer.',
+    year: '2026',
+    role: 'Solo build',
+    tags: ['Whisper large-v3', 'Llama 4 Scout', 'ElevenLabs', 'Groq', 'Gradio'],
+    visual: 'vision',
+    media: reel('health', 14),
+    summary:
+      'A voice and vision assistant that transcribes a spoken question, reads it together with a medical image, and replies in text and speech. A learning project, not a clinical tool.',
+    problem:
+      'Answering a spoken question about an image takes three models (speech-to-text, vision and text-to-speech) working inside one request.',
+    approach: [
+      'Whisper large-v3 on Groq transcribes the question recorded in the browser.',
+      'Llama 4 Scout reasons over the transcript and the uploaded image together.',
+      'ElevenLabs speaks the reply; empty recordings are rejected before any API call.',
+    ],
+    facts: [
+      { value: '3', label: 'models in one flow' },
+      { value: 'Voice + image', label: 'input' },
+      { value: 'Text + speech', label: 'output' },
+    ],
+    links: [{ label: 'GitHub', href: 'https://github.com/vinayak533/AI-Medical-Voice-Vision-Assistant' }],
+  },
+  {
+    id: 'predictlab',
+    title: 'PredictLab',
+    tagline: 'From raw health data to real insights.',
+    year: '2026',
+    role: 'Solo build',
+    tags: ['scikit-learn', 'FastAPI', 'Llama 3.1', 'Docker', 'Hugging Face'],
+    visual: 'recsys',
+    media: reel('predictlab', 1.5),
+    summary:
+      'A full-stack ML app that predicts diabetes, stroke and heart-disease risk from health metrics, with an AI assistant that explains each result.',
+    problem:
+      'A bare “Diabetic / Not Diabetic” label raises more questions than it answers for someone without an ML background.',
+    approach: [
+      'Three scikit-learn models: SVM for diabetes, Random Forest for stroke and Logistic Regression for heart disease.',
+      'One FastAPI service serves the pages, the prediction endpoints and the assistant, with no frontend build step.',
+      'Each result and its inputs go to Llama 3.1 on Groq for a plain-language explanation and follow-up questions.',
+    ],
+    facts: [
+      { value: '3', label: 'disease models' },
+      { value: '30', label: 'health inputs' },
+      { value: 'Live', label: 'on Hugging Face Spaces' },
+    ],
+    links: [
+      { label: 'Live demo', href: 'https://huggingface.co/spaces/VINAYAKKV/Predict-Ai' },
+      { label: 'GitHub', href: 'https://github.com/vinayak533/PredictLab-' },
     ],
   },
 ]

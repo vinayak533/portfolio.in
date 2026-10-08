@@ -4,6 +4,8 @@ import { signals, useStore } from '../store/useStore'
 import { gsap } from '../core/clock'
 import { lockScroll } from '../core/scroll'
 import { exhibitRects } from '../core/registry'
+import { handBackReel, mountReel, unmountReel } from '../core/reels'
+import type { ProjectMedia } from '../content'
 
 // The live media pulls in three.js; load it only when a case study opens.
 const LiveScreen = lazy(() => import('./LiveScreen').then((m) => ({ default: m.LiveScreen })))
@@ -85,6 +87,7 @@ export function CaseStudy() {
     if (closing.current || index === null || !media.current) return
     closing.current = true
     signals.paused = false
+    handBackReel()
     const current = media.current.getBoundingClientRect()
     const to = exhibitRects[index]?.() ?? null
     const tl = gsap.timeline({
@@ -175,7 +178,7 @@ export function CaseStudy() {
           <div ref={media} className="relative aspect-[16/10] w-full overflow-hidden rounded-[2px] will-change-transform" style={{ boxShadow: '0 0 0 1px var(--line), 0 40px 120px -40px rgba(124,92,255,.35)' }}>
             {p.media ? (
               /\.(mp4|webm)$/i.test(p.media.src) ? (
-                <video className="h-full w-full object-cover" src={p.media.src} poster={p.media.poster} autoPlay muted loop playsInline />
+                <ReelView index={index} media={p.media} />
               ) : (
                 <img className="h-full w-full object-cover" src={p.media.src} alt="" />
               )
@@ -236,9 +239,9 @@ export function CaseStudy() {
               </ol>
             </section>
             <section data-cs-in className="md:col-span-2">
-              <h3 className="mono dim">Outcomes</h3>
+              <h3 className="mono dim">At a glance</h3>
               <ul className="mt-6 grid gap-8 border-t border-[var(--line)] pt-8 sm:grid-cols-3">
-                {p.outcomes.map((o) => (
+                {p.facts.map((o) => (
                   <li key={o.label} className="flex flex-col gap-2">
                     <span className="display display-m">{o.value}</span>
                     <span className="mono mono-sm dimmer">{o.label}</span>
@@ -275,5 +278,24 @@ export function CaseStudy() {
         </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * The case-study reel. The shared preview element moves in mid-play (see
+ * core/reels), over the poster so there is never an empty frame.
+ */
+function ReelView({ index, media }: { index: number; media: ProjectMedia }) {
+  const host = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    mountReel(index, host.current!)
+    return unmountReel
+  }, [index])
+  return (
+    <div
+      ref={host}
+      className="relative h-full w-full bg-[var(--base)] bg-cover bg-center"
+      style={media.poster ? { backgroundImage: `url(${media.poster})` } : undefined}
+    />
   )
 }

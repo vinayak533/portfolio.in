@@ -7,3 +7,5 @@ dist
 .env.*
 !.env.example
 .claude/
+# Reel masters: encoded into public/works/ by `npm run videos`
+src/project-videos/
