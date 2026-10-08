@@ -1,12 +1,13 @@
-import { useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
-import { Bloom, ChromaticAberration, EffectComposer, ToneMapping } from '@react-three/postprocessing'
+import { ChromaticAberration, EffectComposer, ToneMapping } from '@react-three/postprocessing'
 import { ToneMappingMode, type ChromaticAberrationEffect } from 'postprocessing'
 import { Vector2 } from 'three'
 import { useStore, signals } from '../store/useStore'
 import { tier } from '../core/quality'
 import { damp } from '../core/clock'
 import { FilmEffect } from './post/FilmEffect'
+import { LeanBloom } from './post/LeanBloom'
 
 /** Cinematic post stack: bloom, scroll-reactive chromatic aberration, ACES, then mono film grain + vignette. */
 export function Effects() {
@@ -23,16 +24,12 @@ export function Effects() {
     ca.current.offset.set(amount.current, amount.current * 0.6)
   })
 
-  const bloom = (
-    <Bloom
-      mipmapBlur
-      intensity={quality === 'low' ? 0.7 : 0.85}
-      luminanceThreshold={0.62}
-      luminanceSmoothing={0.28}
-      radius={0.66}
-      levels={cfg.bloomLevels}
-    />
+  const bloomFx = useMemo(
+    () => new LeanBloom({ intensity: quality === 'low' ? 0.7 : 0.85, luminanceThreshold: 0.62, luminanceSmoothing: 0.28, radius: 0.66, levels: cfg.bloomLevels }),
+    [quality, cfg.bloomLevels],
   )
+  useEffect(() => () => bloomFx.dispose(), [bloomFx])
+  const bloom = <primitive object={bloomFx} />
   const film = useMemo(() => new FilmEffect({ grain: 0.07, vignette: 0.6 }), [])
   const tone = <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
   const grain = <primitive object={film} />

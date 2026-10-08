@@ -95,7 +95,7 @@ export function Works() {
         <div data-w-in className="absolute bottom-[var(--gutter)] left-[var(--gutter)] right-[var(--gutter)] flex flex-col gap-4 md:right-auto md:max-w-[42rem]">
           <div ref={titleRef} className="flex items-end gap-5" aria-live="polite">
             <span className="line-mask">
-              <span data-roll className="mono dim block">
+              <span data-roll className="mono dim block whitespace-nowrap">
                 {String(focused + 1).padStart(2, '0')} / {String(projects.length).padStart(2, '0')}
               </span>
             </span>
