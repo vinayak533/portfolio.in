@@ -7,9 +7,9 @@
   --accent: #a78bfa;
   --accent-glow: #7c5cff;
   --line: rgba(167, 139, 250, 0.25);
-  --about-grad: linear-gradient(100deg, #c4b5fd 0%, #8b5cf6 50%, #c4b5fd 100%);
+  --violet: #a78bfa;
   --about-ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --about-h1: clamp(2.8rem, 5.5vw, 5rem);
+  --about-h1: clamp(2.6rem, 4.6vw, 4.25rem);
   /* 8px spacing scale, tightened on short viewports below. */
   --sp-1: 0.75rem; /* 12px */
   --sp-2: 1rem; /* 16px */
@@ -106,7 +106,7 @@
   pointer-events: none;
 }
 .about-heading-lead {
-  color: var(--text-hi);
+  color: var(--violet);
   font-size: var(--about-h1);
   font-weight: 600;
   line-height: 1.02;
@@ -116,7 +116,6 @@
 .about-heading-line { margin-top: 0.04em; }
 .about-heading-accent {
   display: inline-block;
-  /* Room for the italic overhang, which background-clip would otherwise crop. */
   padding: 0 0.12em 0.1em 0.02em;
   margin-left: -0.02em;
   font-family: var(--font-about-serif);
@@ -126,83 +125,34 @@
   line-height: 1;
   letter-spacing: -0.035em;
   white-space: nowrap;
-  background: var(--about-grad);
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
-  /* drop-shadow, not text-shadow: a text-shadow would paint over the clipped gradient. */
-  filter: drop-shadow(0 0 40px rgba(124, 92, 255, 0.35));
-}
-/* Starts once "beyond the demo" has landed (the last line in the stagger). */
-.is-in .about-heading-accent {
-  animation: about-shimmer 8s linear calc(0.9s + var(--i, 0) * 90ms) infinite;
-}
-@keyframes about-shimmer {
-  to { background-position: 200% 0; }
+  color: var(--violet);
+  text-shadow: 0 0 40px rgba(124, 92, 255, 0.35);
 }
 
 /* Intro */
 .about-intro {
   margin-top: var(--sp-4) !important;
-  color: var(--text-mid);
+  color: var(--text-hi);
   font-size: 1.4rem;
   line-height: 1.5;
   letter-spacing: -0.015em;
   text-wrap: pretty;
 }
 .about-name {
-  position: relative;
-  color: var(--text-hi);
   font-weight: 600;
   white-space: nowrap;
 }
-.about-name::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -0.1em;
-  height: 2px;
-  border-radius: 2px;
-  background: rgba(167, 139, 250, 0.4);
-  transform: scaleX(0);
-  transform-origin: left;
-  transition: transform 0.9s var(--about-ease) calc(var(--i, 0) * 90ms + 450ms);
-}
-.is-in .about-name::after { transform: scaleX(1); }
 
 /* Paragraph */
 .about-body {
   max-width: 46ch;
   margin-top: var(--sp-2) !important;
-  color: var(--text-low);
-  font-size: 1.05rem;
+  color: var(--text-hi);
+  font-size: 1.125rem;
   line-height: 1.75;
   letter-spacing: -0.005em;
   text-wrap: pretty;
 }
-.about-key {
-  position: relative;
-  color: var(--text-hi);
-  white-space: nowrap;
-}
-.about-key::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -0.05em;
-  height: 1px;
-  background: rgba(167, 139, 250, 0.45);
-  transform: scaleX(0);
-  transform-origin: left;
-  /* Grow after the paragraph itself has settled, one keyword after another. */
-  transition: transform 0.9s var(--about-ease) calc(var(--i, 0) * 90ms + 750ms + var(--k, 0) * 120ms);
-}
-.is-in .about-key::after { transform: scaleX(1); }
-
 /* Divider */
 .about-divider {
   height: 1px;
@@ -216,8 +166,8 @@
   align-items: center;
   gap: 0.85rem;
   margin-top: var(--sp-3) !important;
-  color: var(--accent);
-  font-size: 0.75rem;
+  color: var(--text-hi);
+  font-size: 0.8rem;
   font-weight: 500;
   line-height: 1;
   letter-spacing: 0.28em;
@@ -228,7 +178,7 @@
   flex: none;
   width: 24px;
   height: 1px;
-  background: var(--accent);
+  background: var(--text-hi);
 }
 .about-closing {
   width: fit-content;
@@ -239,11 +189,7 @@
   font-style: italic;
   line-height: 1.2;
   letter-spacing: -0.015em;
-  background: var(--about-grad);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
+  color: var(--text-hi);
 }
 
 /* Render toggle */
@@ -332,7 +278,7 @@
 /* Short desktop viewports: let the headline follow the height too and tighten the rhythm. */
 @media (max-height: 56rem) and (min-width: 48rem) {
   .about-layout {
-    --about-h1: clamp(2.6rem, min(5.5vw, 8vh), 5rem);
+    --about-h1: clamp(2.4rem, min(4.6vw, 7vh), 4.25rem);
     --sp-3: 1.25rem;
     --sp-4: 1.5rem;
     --sp-6: 2.25rem;
@@ -344,7 +290,7 @@
 
 @media (max-height: 46rem) and (min-width: 48rem) {
   .about-layout {
-    --about-h1: clamp(2.4rem, min(5.5vw, 7.2vh), 5rem);
+    --about-h1: clamp(2.2rem, min(4.6vw, 6.4vh), 4.25rem);
     --sp-3: 1rem;
     --sp-4: 1.25rem;
     --sp-6: 1.75rem;
@@ -375,7 +321,7 @@
   }
   .about-heading { margin-top: 1rem; }
   .about-intro { font-size: 1.2rem; }
-  .about-body { font-size: 1rem; line-height: 1.65; }
+  .about-body { font-size: 1.05rem; line-height: 1.65; }
   .about-closing { font-size: 1.5rem; }
   .about-render { margin-top: var(--sp-3); }
 }
@@ -383,13 +329,9 @@
 /* Reduced motion: everything is simply there. */
 @media (prefers-reduced-motion: reduce) {
   .about-reveal { opacity: 1; transform: none; filter: none; transition: none; }
-  .about-name::after,
-  .about-key::after { transform: scaleX(1); transition: none; }
-  .is-in .about-heading-accent { animation: none; }
 }
 
-/* LITE: no shimmer, blur or glow. */
+/* LITE: no blur or glow. */
 .is-lite .about-reveal { filter: none; }
-.is-lite .about-heading-accent,
-.is-lite .is-in .about-heading-accent { animation: none; filter: none; }
+.is-lite .about-heading-accent { text-shadow: none; }
 .is-lite .about-heading::before { display: none; }

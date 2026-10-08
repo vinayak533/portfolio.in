@@ -13,8 +13,6 @@ const EMAIL = 'vinayakkv2004@gmail.com'
 const LINKS = [
   { label: 'GitHub', href: 'https://github.com/vinayak533' },
   { label: 'LinkedIn', href: 'https://www.linkedin.com/in/YOUR-LINKEDIN-HANDLE' },
-  /** Drop the PDF at public/resume.pdf. */
-  { label: 'Résumé', href: '/resume.pdf' },
 ]
 
 const EASE = CustomEase.create('ct-out', '0.16,1,0.3,1')
@@ -22,7 +20,7 @@ const docTop = (el: HTMLElement) => el.getBoundingClientRect().top + window.scro
 
 /**
  * Act V, the deepest point. Almost black and very quiet: one headline, the
- * address, three links, and a single soft light that follows the pointer.
+ * address, two links, and a single soft light that follows the pointer.
  * In the WebGL layout the section underlaps the end of Experience: as that
  * hand-off scrolls, the 3D world lifts and dims, the dark settles in beneath
  * it, and the type rises once it has.
@@ -216,9 +214,16 @@ export function Contact() {
 
         <div className="ct-frame">
           <div className="ct-main">
-            <h2 ref={title} className="ct-title">
-              Let’s build something that matters.
-            </h2>
+            <div className="ct-head">
+              <h2 ref={title} className="ct-title">
+                Let’s build something real
+              </h2>
+              <p className="ct-lede" data-ct-fade>
+                Got an idea that needs building?
+                <br />
+                Tell me what you’re working on.
+              </p>
+            </div>
 
             <div className="ct-email" data-ct-fade>
               <a
@@ -251,7 +256,11 @@ export function Contact() {
           </div>
 
           <footer className="ct-foot" data-ct-fade>
-            <p>Vinayak K V · AI / ML Engineer · Kochi, India</p>
+            <div className="ct-sign">
+              <p className="ct-sign-name">Vinayak K V</p>
+              <p>AI/ML Engineer, Kochi, India</p>
+            </div>
+            <p className="ct-motto">Building AI that works.</p>
             <a
               href="#hero"
               className="ct-top"
