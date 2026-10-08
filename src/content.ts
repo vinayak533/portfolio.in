@@ -86,14 +86,12 @@ export const site = {
 
 export const about = {
   kicker: 'About',
-  heading: ['Building AI that works', 'beyond the demo'],
+  heading: ['Building AI that actually ships', 'Beyond the demo'],
   /** Rendered as: <before><name><after>, with the name emphasised. */
-  intro: { before: "I'm ", name: 'Vinayak', after: ', an AI/ML Engineer.' },
-  body: 'I build Generative AI, agentic systems, and RAG, and I connect them to real backends so they ship as products people use.',
-  /** Phrases in `body` that get the keyword underline. */
-  highlights: ['Generative AI', 'agentic systems', 'RAG', 'real backends'],
-  eyebrow: 'AI is the foundation.',
-  closing: 'Impact is the goal.',
+  intro: { before: 'I’m ', name: 'Vinayak', after: ', an AI/ML engineer building production-grade AI systems.' },
+  body: 'I work across generative AI agents, RAG, and LLM applications, connecting models to real data, APIs and backends so they become products, not prototypes.',
+  eyebrow: 'The model is only the start',
+  closing: 'The real work is making it useful.',
 }
 
 export const projects: Project[] = [

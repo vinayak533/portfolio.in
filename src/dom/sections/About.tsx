@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { Section } from '../Section'
 import { about, site } from '../../content'
 import { signals, useStore } from '../../store/useStore'
@@ -22,21 +22,6 @@ const SHIMMER_END = 0.6
 /** Reveal order: "beyond the demo" lands last, then starts its shimmer. */
 const ORDER = { lead: 0, intro: 1, body: 2, divider: 3, eyebrow: 4, closing: 5, accent: 6 } as const
 const reveal = (i: number) => ({ '--i': i }) as CSSProperties
-
-/** Wraps each highlight phrase of `text` in a keyword span, in order of appearance. */
-function withHighlights(text: string, phrases: readonly string[]) {
-  const pattern = new RegExp(`(${phrases.map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'g')
-  let k = 0
-  return text.split(pattern).map((part, i) =>
-    phrases.includes(part) ? (
-      <span key={i} className="about-key" style={{ '--k': k++ } as CSSProperties}>
-        {part}
-      </span>
-    ) : (
-      <Fragment key={i}>{part}</Fragment>
-    ),
-  )
-}
 
 export function About() {
   const mode = useStore((s) => s.mode)
@@ -107,7 +92,7 @@ export function About() {
             </p>
 
             <p className="about-reveal about-body" style={reveal(ORDER.body)}>
-              {withHighlights(about.body, about.highlights)}
+              {about.body}
             </p>
 
             <div aria-hidden="true" className="about-reveal about-divider" style={reveal(ORDER.divider)} />

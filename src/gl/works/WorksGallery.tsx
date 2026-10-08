@@ -33,7 +33,6 @@ import screenVert from '../shaders/works/screen.vert'
 import frameFrag from '../shaders/works/frame.frag'
 
 const displayFont = '/fonts/bricolage-grotesque-latin-600-normal.woff'
-const monoFont = '/fonts/jetbrains-mono-latin-400-normal.woff'
 /** The reels are 16:9; the screen matches so the whole frame shows, uncropped. */
 const ASPECT = 16 / 9
 /** The reel spans the whole card; a thin frame border sits around it. */
@@ -47,10 +46,11 @@ const FRAME_H = H + INSET * 2
  * "Details" chip in each reel's bottom-right corner. It has no handlers of its
  * own, so pointer events fall through to the screen, which opens the case study.
  */
-const CHIP_W = 0.86
-const CHIP_H = 0.26
-const CHIP_MARGIN = 0.14
-const chipInk = new Color(colors.accent).lerp(colors.ink, 0.45)
+const CHIP_W = 1.24
+const CHIP_H = 0.36
+const CHIP_MARGIN = 0.16
+/** A solid violet pill with bright type, so it reads over any frame of the reel. */
+const chipEdge = new Color(colors.accent).lerp(colors.ink, 0.55)
 
 /**
  * R3F raycasts every mesh with handlers, visible or not. The exhibits only take
@@ -282,15 +282,15 @@ function Exhibit({ project, index }: { project: Project; index: number }) {
       {showDetails && (
         <group ref={chip} position={[W / 2 - CHIP_MARGIN - CHIP_W / 2, -H / 2 + CHIP_MARGIN + CHIP_H / 2, 0]}>
           <mesh position={[0, 0, 0.004]} renderOrder={3}>
-            <planeGeometry args={[CHIP_W + 0.012, CHIP_H + 0.012]} />
-            <meshBasicMaterial color={chipInk} transparent opacity={0.55} depthWrite={false} />
+            <planeGeometry args={[CHIP_W + 0.02, CHIP_H + 0.02]} />
+            <meshBasicMaterial color={chipEdge} transparent opacity={0.9} depthWrite={false} />
           </mesh>
           <mesh position={[0, 0, 0.006]} renderOrder={3}>
             <planeGeometry args={[CHIP_W, CHIP_H]} />
-            <meshBasicMaterial color={colors.base} transparent opacity={0.82} depthWrite={false} />
+            <meshBasicMaterial color={colors.accent} transparent opacity={0.96} depthWrite={false} />
           </mesh>
-          <Text font={monoFont} fontSize={0.075} letterSpacing={0.16} color={chipInk} anchorX="center" anchorY="middle" position={[0, 0, 0.01]} renderOrder={4}>
-            {'DETAILS  →'}
+          <Text font={displayFont} fontSize={0.13} letterSpacing={0.04} color="#ffffff" anchorX="center" anchorY="middle" position={[0, 0, 0.01]} renderOrder={4}>
+            {'Details  →'}
           </Text>
         </group>
       )}
