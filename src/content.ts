@@ -9,6 +9,11 @@ export interface Project {
   id: string
   title: string
   tagline: string
+  /**
+   * Pitch shown as the Overview in the details view. An optional first line
+   * before `\n` is set as a lead, brighter than the rest.
+   */
+  caption: string
   year: string
   role: string
   tags: string[]
@@ -26,6 +31,12 @@ export interface Project {
   /** Key numbers, shown under "At a glance". */
   facts: { value: string; label: string }[]
   links?: { label: string; href: string }[]
+}
+
+/** A caption's optional lead line and the body after it. */
+export function captionParts(caption: string) {
+  const i = caption.indexOf('\n')
+  return i < 0 ? { lead: '', body: caption } : { lead: caption.slice(0, i), body: caption.slice(i + 1) }
 }
 
 export interface ProjectMedia {
@@ -90,6 +101,8 @@ export const projects: Project[] = [
     id: 'loom',
     title: 'Loom.ai',
     tagline: 'One AI workspace to chat, code in a live sandbox, study and delegate.',
+    caption:
+      'Chatbots talk about code. Loom actually runs it.\nI built an agentic workspace that replaces generic chat prompts with real developer horsepower: ten specialized AI agents, isolated Linux sandboxes and citation-backed grounding, all routed dynamically in under five seconds using LangGraph and FastAPI.',
     year: '2026',
     role: 'Solo build',
     tags: ['LangGraph', 'FastAPI', 'Next.js', 'E2B sandbox', 'pgvector'],
@@ -115,6 +128,8 @@ export const projects: Project[] = [
     id: 'lazyhire',
     title: 'LazyHire',
     tagline: 'Where AI finds the job that finds you.',
+    caption:
+      'I engineered LazyHire, a private AI career workspace combining local semantic retrieval, automated job deduplication, transparent match scoring and evidence-guarded LLM pipelines for zero-hallucination CV tailoring.',
     year: '2026',
     role: 'Solo build',
     tags: ['Next.js', 'TypeScript', 'SQLite + FTS5', 'MiniLM embeddings', 'Groq'],
@@ -140,6 +155,8 @@ export const projects: Project[] = [
     id: 'bank-churn',
     title: 'Bank Churn Intelligence',
     tagline: 'Predicts which customers will leave, then explains why in plain words and voice.',
+    caption:
+      'Empowered frontline banking staff to prevent customer attrition by pairing predictive XGBoost classification with real-time generative AI explanations and voice synthesis in a unified FastAPI decision platform.',
     year: '2026',
     role: 'Solo build',
     tags: ['XGBoost', 'SMOTE', 'FastAPI', 'Llama 3.3 70B', 'ElevenLabs'],
@@ -165,6 +182,8 @@ export const projects: Project[] = [
     id: 'health',
     title: 'Health Assistant',
     tagline: 'Ask a health question out loud, show an image, hear the answer.',
+    caption:
+      'I engineered a modular multimodal pipeline orchestrating Whisper, Llama vision models and neural speech synthesis to transform spoken patient inquiries and medical imagery into synchronized visual and vocal clinical insights.',
     year: '2026',
     role: 'Solo build',
     tags: ['Whisper large-v3', 'Llama 4 Scout', 'ElevenLabs', 'Groq', 'Gradio'],
@@ -190,6 +209,8 @@ export const projects: Project[] = [
     id: 'predictlab',
     title: 'PredictLab',
     tagline: 'From raw health data to real insights.',
+    caption:
+      'Architected and deployed a full-stack predictive health platform combining scikit-learn classification pipelines with FastAPI and Groq-powered Llama 3.1 models to deliver real-time chronic disease risk screening and contextual, patient-friendly AI explanations.',
     year: '2026',
     role: 'Solo build',
     tags: ['scikit-learn', 'FastAPI', 'Llama 3.1', 'Docker', 'Hugging Face'],

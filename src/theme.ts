@@ -42,8 +42,17 @@ export const sectionHeights = {
 /** Plain-number layout shared by DOM and WebGL (no three.js here). */
 export const layout = {
   worksStartX: 0,
-  worksSpacing: 7.2,
+  worksSpacing: 7.6,
+  /** Width of each exhibit's 16:9 reel, in world units: the reel is the whole card. */
+  worksScreen: 5.0,
 }
+
+/**
+ * Wide landscape viewports: each exhibit carries its own Details label in 3D.
+ * Below that it would be too small to tap, so a DOM button stands in.
+ * Mirrored by the `.works-details` breakpoint in global.css.
+ */
+export const worksWide = (aspect: number, width = window.innerWidth) => aspect > 1 && width >= 900
 
 /** Ranges of the global t where each act's 3D group is mounted and visible. */
 export const visibility = {

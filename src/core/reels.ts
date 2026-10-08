@@ -187,7 +187,9 @@ export function mountReel(i: number, host: HTMLElement) {
   owner = i
   startTicking()
 
-  const wide = host.clientWidth * Math.min(window.devicePixelRatio || 1, 2) > 1400
+  // The details view is where the reel is watched: HD from any box the 720p
+  // file would not already fill pixel for pixel, short of data saver.
+  const wide = host.clientWidth * Math.min(window.devicePixelRatio || 1, 2) > 960
   const hdSrc = wide && !saveData() ? m.src : (m.preview ?? m.src)
 
   if (store.reducedMotion) {

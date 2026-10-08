@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { Text } from '@react-three/drei'
 import {
+  Color,
   Group,
   ImageBitmapLoader,
   LinearFilter,
@@ -19,7 +20,7 @@ import {
   type Raycaster,
 } from 'three'
 import { projects, type Project } from '../../content'
-import { visibility } from '../../theme'
+import { layout, visibility, worksWide } from '../../theme'
 import { colors, world } from '../world'
 import { signals, useStore } from '../../store/useStore'
 import { damp } from '../../core/clock'
@@ -32,9 +33,24 @@ import screenVert from '../shaders/works/screen.vert'
 import frameFrag from '../shaders/works/frame.frag'
 
 const displayFont = '/fonts/bricolage-grotesque-latin-600-normal.woff'
-const W = 4.6
-const H = 2.88
-const ASPECT = W / H
+const monoFont = '/fonts/jetbrains-mono-latin-400-normal.woff'
+/** The reels are 16:9; the screen matches so the whole frame shows, uncropped. */
+const ASPECT = 16 / 9
+/** The reel spans the whole card; a thin frame border sits around it. */
+const W = layout.worksScreen
+const H = W / ASPECT
+const INSET = 0.07
+const FRAME_W = W + INSET * 2
+const FRAME_H = H + INSET * 2
+
+/**
+ * "Details" chip in each reel's bottom-right corner. It has no handlers of its
+ * own, so pointer events fall through to the screen, which opens the case study.
+ */
+const CHIP_W = 0.86
+const CHIP_H = 0.26
+const CHIP_MARGIN = 0.14
+const chipInk = new Color(colors.accent).lerp(colors.ink, 0.45)
 
 /**
  * R3F raycasts every mesh with handlers, visible or not. The exhibits only take
@@ -97,8 +113,11 @@ function Exhibit({ project, index }: { project: Project; index: number }) {
   const screen = useRef<Mesh>(null)
   const camera = useThree((s) => s.camera) as PerspectiveCamera
   const size = useThree((s) => s.size)
+  // Small screens get a DOM Details button instead (Works.tsx).
+  const showDetails = worksWide(size.width / size.height, size.width)
   const geo = useMemo(() => new PlaneGeometry(W, H), [])
-  const frameGeo = useMemo(() => new PlaneGeometry(W + 0.14, H + 0.14), [])
+  const frameGeo = useMemo(() => new PlaneGeometry(FRAME_W, FRAME_H), [])
+  const chip = useRef<Group>(null)
   const mat = useMemo(() => createScreenMaterial(project.visual, ASPECT), [project.visual])
   const frameMat = useMemo(
     () =>
@@ -110,7 +129,7 @@ function Exhibit({ project, index }: { project: Project; index: number }) {
         uniforms: {
           uHover: { value: 0 },
           uFocus: { value: 0 },
-          uAspect: { value: (W + 0.14) / (H + 0.14) },
+          uAspect: { value: FRAME_W / FRAME_H },
           uTime: { value: 0 },
           uAccent: { value: colors.accent },
           uInk: { value: colors.ink },
@@ -221,6 +240,7 @@ function Exhibit({ project, index }: { project: Project; index: number }) {
     frameMat.uniforms.uHover.value = st.hover
     frameMat.uniforms.uFocus.value = st.focus
     frameMat.uniforms.uTime.value = time
+    if (chip.current) chip.current.visible = !isOpen
   })
 
   const over = (e: ThreeEvent<PointerEvent>) => {
@@ -259,6 +279,21 @@ function Exhibit({ project, index }: { project: Project; index: number }) {
         {String(index + 1).padStart(2, '0')}
       </Text>
       <mesh geometry={frameGeo} material={frameMat} position={[0, 0, -0.02]} renderOrder={2} />
+      {showDetails && (
+        <group ref={chip} position={[W / 2 - CHIP_MARGIN - CHIP_W / 2, -H / 2 + CHIP_MARGIN + CHIP_H / 2, 0]}>
+          <mesh position={[0, 0, 0.004]} renderOrder={3}>
+            <planeGeometry args={[CHIP_W + 0.012, CHIP_H + 0.012]} />
+            <meshBasicMaterial color={chipInk} transparent opacity={0.55} depthWrite={false} />
+          </mesh>
+          <mesh position={[0, 0, 0.006]} renderOrder={3}>
+            <planeGeometry args={[CHIP_W, CHIP_H]} />
+            <meshBasicMaterial color={colors.base} transparent opacity={0.82} depthWrite={false} />
+          </mesh>
+          <Text font={monoFont} fontSize={0.075} letterSpacing={0.16} color={chipInk} anchorX="center" anchorY="middle" position={[0, 0, 0.01]} renderOrder={4}>
+            {'DETAILS  →'}
+          </Text>
+        </group>
+      )}
       <mesh
         ref={screen}
         geometry={geo}

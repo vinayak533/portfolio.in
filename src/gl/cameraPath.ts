@@ -2,6 +2,7 @@ import { CatmullRomCurve3, Vector3 } from 'three'
 import { world } from './world'
 import { clamp, easeInOutCubic, remap } from '../core/clock'
 import { experienceHead, holdEnd, worksTrack } from '../core/timeline'
+import { layout } from '../theme'
 
 export interface Pose {
   pos: Vector3
@@ -45,9 +46,13 @@ const about: PoseFn = (p, out, aspect) => {
 const works: PoseFn = (p, out, aspect) => {
   const { x } = worksTrack(p)
   // Far enough back that a whole exhibit (plus margin) fits the frame width.
-  const back = Math.max(8.6, 5.8 / (2 * Math.tan((36 * Math.PI) / 360) * aspect))
-  out.pos.set(x - (aspect > 1 ? 0.6 : 0), 0.25, world.works.z + back)
-  out.look.set(x, 0, world.works.z)
+  // Landscape sits the card off-centre by the camera's side offset.
+  const side = aspect > 1 ? 0.6 : 0
+  const span = layout.worksScreen + 1.2 + side * 2
+  const back = Math.max(8.6, span / (2 * Math.tan((36 * Math.PI) / 360) * aspect))
+  // Sits the exhibits a little high, clear of the title and index below them.
+  out.pos.set(x - side, 0.05, world.works.z + back)
+  out.look.set(x, -0.2, world.works.z)
   out.fov = 36
   out.roll = 0
 }
