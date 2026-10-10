@@ -219,7 +219,9 @@ export default function Stage() {
   const [startDpr] = useState(() => Math.min(deviceDpr(), cfg.startDpr))
 
   return (
-    <div data-stage className="fixed inset-0 z-0" aria-hidden="true">
+    // Sized to the large viewport, not inset-0: a phone's URL bar showing or hiding
+    // must not resize the canvas (that reallocates every post buffer mid-scroll).
+    <div data-stage className="fixed inset-x-0 top-0 z-0 h-lvh" aria-hidden="true">
       <Canvas
         frameloop="never"
         dpr={startDpr}

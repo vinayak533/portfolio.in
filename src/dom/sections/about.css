@@ -326,6 +326,29 @@
   .about-render { margin-top: var(--sp-3); }
 }
 
+/* Short phones (and most phones while the URL bar shows): tighten again so the copy fits. */
+@media (max-width: 47.99rem) and (max-height: 45rem) {
+  .about-layout {
+    --about-h1: clamp(1.9rem, 8.6vw, 2.4rem);
+    --sp-1: 0.5rem;
+    --sp-2: 0.75rem;
+    --sp-3: 0.75rem;
+    --sp-4: 1rem;
+    --sp-6: 1.25rem;
+  }
+  .about-layout--immersive { top: calc(var(--gutter) + 3.5rem); bottom: calc(var(--gutter) + 1rem); }
+  .about-heading { margin-top: 0.75rem; }
+  .about-intro { font-size: 1.1rem; }
+  .about-body { font-size: 0.98rem; line-height: 1.6; }
+  .about-closing { font-size: 1.35rem; }
+}
+
+/* Touch: never a nested scroller. A swipe that starts on the copy would scroll this
+   box instead of the page, and iOS never hands that gesture on: the page sticks. */
+@media (pointer: coarse) {
+  .about-layout--immersive { overflow-y: visible; }
+}
+
 /* Reduced motion: everything is simply there. */
 @media (prefers-reduced-motion: reduce) {
   .about-reveal { opacity: 1; transform: none; filter: none; transition: none; }

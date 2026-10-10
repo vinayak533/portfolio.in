@@ -47,8 +47,10 @@ const works: PoseFn = (p, out, aspect) => {
   const { x } = worksTrack(p)
   // Far enough back that a whole exhibit (plus margin) fits the frame width.
   // Landscape sits the card off-centre by the camera's side offset.
+  // Portrait (phones) is width-bound: a slim margin lets the reel fill ~92% of the screen.
   const side = aspect > 1 ? 0.6 : 0
-  const span = layout.worksScreen + 1.2 + side * 2
+  const margin = aspect < 1 ? 0.45 : 1.2
+  const span = layout.worksScreen + margin + side * 2
   const back = Math.max(8.6, span / (2 * Math.tan((36 * Math.PI) / 360) * aspect))
   // Sits the exhibits a little high, clear of the title and index below them.
   out.pos.set(x - side, 0.05, world.works.z + back)
