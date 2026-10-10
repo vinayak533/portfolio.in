@@ -6,14 +6,13 @@ import { signals, useStore } from '../../store/useStore'
 import { easeInOutCubic, gsap, ScrollTrigger, smoothstep, SplitText } from '../../core/clock'
 import { scrollToSection } from '../../core/scroll'
 import type { Abyss } from '../contact/abyss'
+import { ContactForm } from '../contact/ContactForm'
 import '@fontsource-variable/inter/opsz.css'
 import './contact.css'
 
 const EMAIL = 'vinayakkv2004@gmail.com'
-const LINKS = [
-  { label: 'GitHub', href: 'https://github.com/vinayak533' },
-  { label: 'LinkedIn', href: 'https://www.linkedin.com/in/YOUR-LINKEDIN-HANDLE' },
-]
+/** Add LinkedIn here once the profile URL is confirmed: { label: 'LinkedIn', href: 'https://www.linkedin.com/in/…' }. */
+const LINKS = [{ label: 'GitHub', href: 'https://github.com/vinayak533' }]
 
 const EASE = CustomEase.create('ct-out', '0.16,1,0.3,1')
 const docTop = (el: HTMLElement) => el.getBoundingClientRect().top + window.scrollY
@@ -218,41 +217,47 @@ export function Contact() {
               <h2 ref={title} className="ct-title">
                 Let’s build something real
               </h2>
+            </div>
+
+            <div className="ct-aside">
               <p className="ct-lede" data-ct-fade>
                 Got an idea that needs building?
                 <br />
                 Tell me what you’re working on.
               </p>
+
+              <div className="ct-email" data-ct-fade>
+                <a
+                  ref={email}
+                  className="ct-email-link"
+                  href={`mailto:${EMAIL}`}
+                  onPointerEnter={() => abyss.current?.setBoost(true)}
+                  onPointerLeave={() => abyss.current?.setBoost(false)}
+                  onFocus={() => abyss.current?.setBoost(true)}
+                  onBlur={() => abyss.current?.setBoost(false)}
+                >
+                  {EMAIL}
+                </a>
+              </div>
+
+              <ul className="ct-links" aria-label="Elsewhere">
+                {LINKS.map((l) => (
+                  <li key={l.label} data-ct-fade>
+                    <a href={l.href} target="_blank" rel="noopener noreferrer" className="ct-link">
+                      <span>{l.label}</span>
+                      <span className="ct-arrow" aria-hidden="true">
+                        ↗
+                      </span>
+                      <span className="sr-only"> (opens in a new tab)</span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
             </div>
 
-            <div className="ct-email" data-ct-fade>
-              <a
-                ref={email}
-                className="ct-email-link"
-                href={`mailto:${EMAIL}`}
-                onPointerEnter={() => abyss.current?.setBoost(true)}
-                onPointerLeave={() => abyss.current?.setBoost(false)}
-                onFocus={() => abyss.current?.setBoost(true)}
-                onBlur={() => abyss.current?.setBoost(false)}
-              >
-                {EMAIL}
-              </a>
-              <CopyEmail ripple={!reduced} />
+            <div className="ct-form" data-ct-fade>
+              <ContactForm email={EMAIL} />
             </div>
-
-            <ul className="ct-links" aria-label="Elsewhere">
-              {LINKS.map((l) => (
-                <li key={l.label} data-ct-fade>
-                  <a href={l.href} target="_blank" rel="noopener noreferrer" className="ct-link">
-                    <span>{l.label}</span>
-                    <span className="ct-arrow" aria-hidden="true">
-                      ↗
-                    </span>
-                    <span className="sr-only"> (opens in a new tab)</span>
-                  </a>
-                </li>
-              ))}
-            </ul>
           </div>
 
           <footer className="ct-foot" data-ct-fade>
@@ -278,50 +283,5 @@ export function Contact() {
         <div ref={lamp} className="ct-lamp" aria-hidden="true" />
       </div>
     </Section>
-  )
-}
-
-async function copyText(text: string) {
-  try {
-    await navigator.clipboard.writeText(text)
-    return true
-  } catch {
-    // Older / insecure contexts.
-    const t = document.createElement('textarea')
-    t.value = text
-    t.setAttribute('readonly', '')
-    t.style.cssText = 'position:fixed;opacity:0;pointer-events:none'
-    document.body.appendChild(t)
-    t.select()
-    const ok = document.execCommand('copy')
-    t.remove()
-    return ok
-  }
-}
-
-function CopyEmail({ ripple }: { ripple: boolean }) {
-  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle')
-  const [wave, setWave] = useState(0)
-  const timer = useRef(0)
-  useEffect(() => () => window.clearTimeout(timer.current), [])
-
-  const copy = async () => {
-    const ok = await copyText(EMAIL)
-    setState(ok ? 'copied' : 'failed')
-    if (ok && ripple) setWave((n) => n + 1)
-    window.clearTimeout(timer.current)
-    timer.current = window.setTimeout(() => setState('idle'), 1800)
-  }
-
-  return (
-    <>
-      <button type="button" className="ct-copy" onClick={copy}>
-        {wave > 0 && <span key={wave} className="ct-ripple" aria-hidden="true" />}
-        {state === 'copied' ? 'Copied' : state === 'failed' ? 'Copy failed' : 'Copy email'}
-      </button>
-      <span className="sr-only" role="status" aria-live="polite">
-        {state === 'copied' ? 'Email address copied to clipboard' : state === 'failed' ? `Couldn’t copy. The address is ${EMAIL}` : ''}
-      </span>
-    </>
   )
 }
