@@ -118,7 +118,7 @@ export function ContactForm({ email }: { email: string }) {
           </svg>
         </span>
         <p className="ctf-done-title">Message sent{status.name ? `, thanks ${status.name}` : ''}.</p>
-        <p className="ctf-done-copy">It’s in my inbox. I’ll reply to the email address you gave.</p>
+        <p className="ctf-done-copy">I’ll reply to the email address you gave.</p>
         <button type="button" className="ctf-ghost" onClick={again}>
           Send another message
         </button>

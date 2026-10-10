@@ -102,6 +102,11 @@ function webglTransition(o: TransitionOptions): TransitionHandle {
     host.classList.toggle('is-parting', parting)
     stage.style.pointerEvents = parting ? 'none' : ''
     stage.style.setProperty('--hero-cue', String(1 - smoothstep(0, 0.05, pv)))
+    // The intro leaves with the first push; hidden once gone, so its links drop out of the tab order.
+    const intro = 1 - smoothstep(0, 0.07, Math.max(pv, raw))
+    stage.style.setProperty('--hero-intro', String(intro))
+    const introEl = stage.querySelector<HTMLElement>('[data-hero-intro]')
+    if (introEl) introEl.style.visibility = intro <= 0.001 ? 'hidden' : ''
 
     // The clouds clear the canvas themselves; the stage only steps aside at the very
     // end. Raw scroll wins so a fast fling never leaves a wisp behind.
@@ -248,7 +253,8 @@ function webglTransition(o: TransitionOptions): TransitionHandle {
       tl?.scrollTrigger?.kill()
       tl?.kill()
       host.classList.remove('is-parting')
-      for (const prop of ['opacity', 'visibility', 'will-change', 'pointer-events', '--hero-cue']) stage.style.removeProperty(prop)
+      for (const prop of ['opacity', 'visibility', 'will-change', 'pointer-events', '--hero-cue', '--hero-intro']) stage.style.removeProperty(prop)
+      stage.querySelector<HTMLElement>('[data-hero-intro]')?.style.removeProperty('visibility')
       const about = o.about()
       about?.classList.remove('hero-hold')
       about?.style.removeProperty('--hero-hold-h')
@@ -267,7 +273,8 @@ function crossfade(o: TransitionOptions): TransitionHandle {
   const { section, stage } = o
   const about = o.about()
   const fade = gsap.timeline({ paused: true, defaults: { duration: 0.4, ease: 'power1.inOut' } })
-  fade.fromTo(stage, { opacity: 1 }, { opacity: 0 }, 0)
+  // autoAlpha: hidden at 0, so the intro's links leave the tab order with it.
+  fade.fromTo(stage, { autoAlpha: 1 }, { autoAlpha: 0 }, 0)
   if (about) fade.fromTo(about, { opacity: 0 }, { opacity: 1 }, 0)
 
   const st = ScrollTrigger.create({
@@ -293,6 +300,7 @@ function crossfade(o: TransitionOptions): TransitionHandle {
       st.kill()
       fade.kill()
       stage.style.removeProperty('opacity')
+      stage.style.removeProperty('visibility')
       about?.style.removeProperty('opacity')
     },
   }

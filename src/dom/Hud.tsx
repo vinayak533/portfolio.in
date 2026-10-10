@@ -1,11 +1,15 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { sections, site } from '../content'
 import { useStore } from '../store/useStore'
 import { scrollToSection } from '../core/scroll'
 import { writeLitePreference } from '../core/quality'
 import { gsap } from '../core/clock'
+import { useResumeUrl } from './useResumeUrl'
 
-/** Fixed chrome: mark, centred pill navigation with a sliding indicator, lite-mode switch. */
+/**
+ * Fixed chrome: mark, centred pill navigation with a sliding indicator, lite-mode switch.
+ * Below md the pill gives way to a Menu button with the same links (plus the résumé).
+ */
 export function Hud() {
   const section = useStore((s) => s.section)
   const loaded = useStore((s) => s.loaded)
@@ -17,6 +21,31 @@ export function Hud() {
   const pill = useRef<HTMLOListElement>(null)
   const [indicator, setIndicator] = useState({ left: 0, width: 0 })
   const index = sections.findIndex((s) => s.id === section)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuId = useId()
+  const menuBtn = useRef<HTMLButtonElement>(null)
+  const menu = useRef<HTMLDivElement>(null)
+  const resume = useResumeUrl()
+
+  // Menu: Esc closes and returns focus; a press anywhere outside closes it.
+  useEffect(() => {
+    if (!menuOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      setMenuOpen(false)
+      menuBtn.current?.focus()
+    }
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Node
+      if (!menu.current?.contains(t) && !menuBtn.current?.contains(t)) setMenuOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('pointerdown', onDown)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('pointerdown', onDown)
+    }
+  }, [menuOpen])
 
   useEffect(() => {
     if (!loaded) return
@@ -77,9 +106,20 @@ export function Hud() {
         </nav>
 
         <div className="flex items-center gap-5">
-          <span data-hud className="mono dim opacity-0 md:hidden">
+          <span data-hud className="mono dim opacity-0 md:hidden" aria-hidden="true">
             {String(index + 1).padStart(2, '0')} / {String(sections.length).padStart(2, '0')}
           </span>
+          <button
+            ref={menuBtn}
+            data-hud
+            type="button"
+            className="hud-menu-btn pointer-events-auto mono opacity-0 md:hidden"
+            aria-expanded={menuOpen}
+            aria-controls={menuId}
+            onClick={() => setMenuOpen((o) => !o)}
+          >
+            {menuOpen ? 'Close' : 'Menu'}
+          </button>
           {mode === 'webgl' && (
             <button
               data-hud
@@ -99,6 +139,35 @@ export function Hud() {
               <span className="sr-only">Lite mode</span>
             </button>
           )}
+        </div>
+
+        <div ref={menu} id={menuId} className="hud-menu pointer-events-auto md:hidden" hidden={!menuOpen}>
+          <nav aria-label="Sections">
+            <ul>
+              {sections.map((s) => (
+                <li key={s.id}>
+                  <a
+                    href={`#${s.id}`}
+                    aria-current={s.id === section ? 'true' : undefined}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      setMenuOpen(false)
+                      scrollToSection(s.id)
+                    }}
+                  >
+                    {s.id === 'hero' ? 'Home' : s.label}
+                  </a>
+                </li>
+              ))}
+              {resume && (
+                <li>
+                  <a href={resume} target="_blank" rel="noopener noreferrer" onClick={() => setMenuOpen(false)}>
+                    Résumé <span className="sr-only">(PDF, opens in a new tab)</span>
+                  </a>
+                </li>
+              )}
+            </ul>
+          </nav>
         </div>
       </header>
     </div>

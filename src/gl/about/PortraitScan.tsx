@@ -29,6 +29,7 @@ import { tier } from '../../core/quality'
 import { track, complete } from '../../core/loading'
 import { damp, gsap, smoothstep } from '../../core/clock'
 import { useAct } from '../useAct'
+import { fit } from '../cameraPath'
 
 /**
  * The portrait is never shown flat: tens of thousands of instanced crystals
@@ -151,12 +152,22 @@ export function PortraitScan() {
     u.uOpacity.value = 0.25 + 0.75 * presence.current
 
     // Layout: centred in the right half on wide screens, with headroom under the
-    // nav; on narrow ones it sits in the top third, copy below it on a scrim.
+    // nav; on phones it fills the slot the copy leaves above itself (About.tsx).
     const aspect = camera.aspect
     const wide = aspect > 1.05
-    const halfH = Math.tan((38 * Math.PI) / 360) * 11.5 // About pose: fov 38, 11.5 back (cameraPath.ts)
-    g.position.set(wide ? halfH * aspect * 0.5 : 0, wide ? -0.32 : 2.8, world.about.center.z)
-    g.scale.setScalar(wide ? 0.8 : 0.58)
+    const slot = signals.aboutSlot
+    if (!wide && slot) {
+      // Sized at the end of the About dolly (cameraPath.ts), when it is largest,
+      // so the push-in never carries it over the copy.
+      const halfH = Math.tan((38 * Math.PI) / 360) * (11.5 * fit(aspect) - 1.1)
+      const s = Math.min((slot.h * 2 * halfH) / sample.height, (slot.w * 2 * halfH * aspect) / sample.width)
+      g.position.set((slot.x - 0.5) * 2 * halfH * aspect, (0.5 - slot.y) * 2 * halfH, world.about.center.z)
+      g.scale.setScalar(s)
+    } else {
+      const halfH = Math.tan((38 * Math.PI) / 360) * 11.5 // About pose: fov 38, 11.5 back (cameraPath.ts)
+      g.position.set(wide ? halfH * aspect * 0.5 : 0, wide ? -0.32 : 2.8, world.about.center.z)
+      g.scale.setScalar(wide ? 0.8 : 0.58)
+    }
 
     // Pointer onto the portrait plane, in local space, spring-damped.
     const pr = signals.pointer

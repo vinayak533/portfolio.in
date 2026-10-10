@@ -7,12 +7,12 @@ import { easeInOutCubic, gsap, ScrollTrigger, smoothstep, SplitText } from '../.
 import { scrollToSection } from '../../core/scroll'
 import type { Abyss } from '../contact/abyss'
 import { ContactForm } from '../contact/ContactForm'
+import { contact } from '../../content'
+import { useResumeUrl } from '../useResumeUrl'
 import '@fontsource-variable/inter/opsz.css'
 import './contact.css'
 
-const EMAIL = 'vinayakkv2004@gmail.com'
-/** Add LinkedIn here once the profile URL is confirmed: { label: 'LinkedIn', href: 'https://www.linkedin.com/in/…' }. */
-const LINKS = [{ label: 'GitHub', href: 'https://github.com/vinayak533' }]
+const EMAIL = contact.email
 
 const EASE = CustomEase.create('ct-out', '0.16,1,0.3,1')
 const docTop = (el: HTMLElement) => el.getBoundingClientRect().top + window.scrollY
@@ -44,6 +44,8 @@ export function Contact() {
   const [near, setNear] = useState(false)
   const [entered, setEntered] = useState(false)
   const lit = entered || reduced
+  const resume = useResumeUrl()
+  const links = resume ? [...contact.links, { label: 'Résumé (PDF)', href: resume }] : contact.links
 
   // The font and the light load only once the section is within a couple of screens.
   useEffect(() => {
@@ -215,15 +217,15 @@ export function Contact() {
           <div className="ct-main">
             <div className="ct-head">
               <h2 ref={title} className="ct-title">
-                Let’s build something real
+                {contact.heading}
               </h2>
             </div>
 
             <div className="ct-aside">
               <p className="ct-lede" data-ct-fade>
-                Got an idea that needs building?
+                {contact.lede[0]}
                 <br />
-                Tell me what you’re working on.
+                {contact.lede[1]}
               </p>
 
               <div className="ct-email" data-ct-fade>
@@ -241,7 +243,7 @@ export function Contact() {
               </div>
 
               <ul className="ct-links" aria-label="Elsewhere">
-                {LINKS.map((l) => (
+                {links.map((l) => (
                   <li key={l.label} data-ct-fade>
                     <a href={l.href} target="_blank" rel="noopener noreferrer" className="ct-link">
                       <span>{l.label}</span>

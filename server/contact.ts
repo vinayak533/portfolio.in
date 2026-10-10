@@ -14,6 +14,7 @@ import {
   type ContactResponse,
   type ContactValues,
 } from '../src/core/contact.js'
+import { contact } from '../src/content.js'
 
 export interface ContactEnv {
   /** Resend API key (server-only). Required. */
@@ -24,7 +25,8 @@ export interface ContactEnv {
   CONTACT_FROM_EMAIL?: string
 }
 
-const DEFAULT_TO = 'vinayakkv2004@gmail.com'
+/** The address the site shows, so a visitor's message lands where they expect it to. */
+const DEFAULT_TO = contact.email
 /** Resend's shared test sender: it only delivers to the Resend account owner's own address. */
 const DEFAULT_FROM = 'Portfolio contact <onboarding@resend.dev>'
 const MAX_BODY_BYTES = 16 * 1024

@@ -30,7 +30,45 @@ export function About() {
   const set = useStore((s) => s.set)
   const webgl = mode === 'webgl'
   const panel = useRef<HTMLDivElement>(null)
+  const stage = useRef<HTMLDivElement>(null)
+  const slot = useRef<HTMLDivElement>(null)
   const [entered, setEntered] = useState(false)
+
+  // Phones: the portrait sits in the top-right corner beside the headline, never
+  // under the copy. The slot is that corner; the 3D portrait fits itself into it and the
+  // scrim starts at its bottom edge. Offsets, not rects, so the exit's transform
+  // never skews the measurement.
+  useEffect(() => {
+    const s = slot.current
+    const st = stage.current
+    if (!webgl || !s || !st) return
+    const measure = () => {
+      if (!s.offsetHeight || !st.offsetHeight) {
+        signals.aboutSlot = null
+        st.style.removeProperty('--about-slot-end')
+        return
+      }
+      const box = s.offsetParent as HTMLElement
+      const top = box.offsetTop + s.offsetTop
+      const left = box.offsetLeft + s.offsetLeft
+      const W = st.offsetWidth
+      const H = st.offsetHeight
+      signals.aboutSlot = {
+        x: (left + s.offsetWidth / 2) / W,
+        y: (top + s.offsetHeight / 2) / H,
+        w: s.offsetWidth / W,
+        h: s.offsetHeight / H,
+      }
+      st.style.setProperty('--about-slot-end', `${top + s.offsetHeight}px`)
+    }
+    const ro = new ResizeObserver(measure)
+    ro.observe(s)
+    ro.observe(st)
+    return () => {
+      ro.disconnect()
+      signals.aboutSlot = null
+    }
+  }, [webgl])
 
   useEffect(() => {
     if (webgl) {
@@ -62,7 +100,7 @@ export function About() {
         tl.to(root.querySelector('[data-a-copy]'), { opacity: 0, y: -50, duration: 0.06, ease: 'power2.in' }, exitAt)
       }}
     >
-      <div className="relative h-full w-full">
+      <div ref={stage} className="relative h-full w-full">
         {webgl && <div aria-hidden="true" className="about-scrim" />}
         <div
           data-a-copy
@@ -70,6 +108,7 @@ export function About() {
           data-lenis-prevent={webgl ? '' : undefined}
         >
           <div ref={panel} className={`about-panel${entered ? ' is-in' : ''}`}>
+            {webgl && <div ref={slot} aria-hidden="true" className="about-portrait-slot" />}
             <span data-a-head className="about-kicker">
               <span aria-hidden="true" className="about-index">02</span>
               <span aria-hidden="true" className="about-kicker-rule" />

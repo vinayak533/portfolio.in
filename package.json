@@ -10,6 +10,9 @@
     "typecheck": "tsc -b --noEmit",
     "test:hero": "node --test scripts/hero-resolution.test.mjs",
     "test:contact": "node --test scripts/contact.test.mjs",
+    "test:content": "node --test scripts/content.test.mjs",
+    "test:assistant": "node --test scripts/assistant.test.mjs",
+    "social": "node scripts/prepare-social.mjs",
     "portrait": "node scripts/prepare-portrait.mjs",
     "hero": "node scripts/prepare-hero.mjs",
     "videos": "node scripts/prepare-videos.mjs"

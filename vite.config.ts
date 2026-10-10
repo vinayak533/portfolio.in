@@ -1,4 +1,4 @@
-import { defineConfig, loadEnv, type Plugin, type ViteDevServer } from 'vite'
+import { defineConfig, loadEnv, type HtmlTagDescriptor, type Plugin, type ViteDevServer } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import glsl from 'vite-plugin-glsl'
@@ -66,8 +66,39 @@ function contactApi(): Plugin {
   }
 }
 
+/**
+ * Social-card tags that need the site's absolute URL. It comes from SITE_URL
+ * (e.g. https://example.com) or, on Vercel, the project's production domain.
+ * Without one, og:image stays relative and there is no canonical / og:url.
+ */
+function siteMeta(): Plugin {
+  let url = ''
+  return {
+    name: 'site-meta',
+    configResolved(config) {
+      const env = loadEnv(config.mode, config.root, '')
+      const raw = env.SITE_URL || (env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${env.VERCEL_PROJECT_PRODUCTION_URL}` : '')
+      url = raw.trim().replace(/\/+$/, '')
+    },
+    transformIndexHtml() {
+      const image = `${url}/og.jpg`
+      const tags: HtmlTagDescriptor[] = [
+        { tag: 'meta', attrs: { property: 'og:image', content: image }, injectTo: 'head' },
+        { tag: 'meta', attrs: { name: 'twitter:image', content: image }, injectTo: 'head' },
+      ]
+      if (url) {
+        tags.push(
+          { tag: 'meta', attrs: { property: 'og:url', content: `${url}/` }, injectTo: 'head' },
+          { tag: 'link', attrs: { rel: 'canonical', href: `${url}/` }, injectTo: 'head' },
+        )
+      }
+      return tags
+    },
+  }
+}
+
 export default defineConfig(({ command }) => ({
-  plugins: [react(), tailwindcss(), glsl({ minify: command === 'build' }), contactApi()],
+  plugins: [react(), tailwindcss(), glsl({ minify: command === 'build' }), contactApi(), siteMeta()],
   // OneDrive turns node_modules files into reparse points; without this the
   // Rolldown resolver treats them as broken symlinks and fails to resolve deps.
   resolve: { preserveSymlinks: true },

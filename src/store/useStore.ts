@@ -74,4 +74,6 @@ export const signals = {
   /** True while the opaque Contact stage covers the whole viewport: the fixed stage behind it is skipped. */
   contactCovers: false,
   pointer: { x: 0, y: 0, nx: 0, ny: 0, vx: 0, vy: 0, lastMove: 0, active: false },
+  /** Phones: the box the About copy leaves for the portrait, as fractions of the stage (centre x/y, width, height). */
+  aboutSlot: null as { x: number; y: number; w: number; h: number } | null,
 }
