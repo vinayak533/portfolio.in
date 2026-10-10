@@ -72,6 +72,8 @@ function webglTransition(o: TransitionOptions): TransitionHandle {
   let raw = 0
   let p = 0
   let tl: gsap.core.Timeline | null = null
+  /** True between ScrollTrigger's refreshInit and refresh: About stays unlifted while it measures. */
+  let measuring = false
 
   const setPin = () => section.style.setProperty('--hero-pin', `${transitionProfile().pinVh}vh`)
   setPin()
@@ -117,11 +119,12 @@ function webglTransition(o: TransitionOptions): TransitionHandle {
     const a = done ? 1 : smoothstep(0, 0.45, Math.max(shot.arrive, shotAt(raw).arrive))
     about.style.opacity = a >= 1 ? '' : String(a)
     // ...held still in frame: while the pin runs, About's top is still below the
-    // fold, so it is lifted by exactly that much. It is discovered, not scrolled in.
-    const st = tl?.scrollTrigger
-    const below = st && raw < 1 ? (1 - raw) * (st.end - st.start) : 0
-    about.style.transform = a > 0 && below > 0.5 ? `translate3d(0, ${(-below).toFixed(1)}px, 0)` : ''
-    about.style.willChange = a > 0 && a < 1 ? 'opacity, transform' : ''
+    // fold, so a sticky bottom edge lifts it to the top of the viewport. It is
+    // discovered, not scrolled in. Sticky, not a per-frame transform: the browser
+    // applies it in the same frame as the scroll, so a native touch scroll cannot
+    // run a frame ahead of it and shake the page.
+    if (!measuring) about.classList.toggle('hero-hold', a > 0 && raw < 1)
+    about.style.willChange = a > 0 && a < 1 ? 'opacity' : ''
 
     // Kicker, then heading: a short rise and a soft arrival, staggered, settling with the camera.
     heads().forEach((el, i) => {
@@ -210,14 +213,23 @@ function webglTransition(o: TransitionOptions): TransitionHandle {
   }
   mq.addEventListener('change', onBreakpoint)
 
-  // About's hold-still lift is a transform on an ancestor of its section: lift it while
+  // About's hold-still lift is a sticky offset on an ancestor of its section: drop it while
   // ScrollTrigger measures, so every trigger below is laid out where it really is.
-  const unlift = () => o.about()?.style.removeProperty('transform')
-  const relift = () => apply(transitionDebug.freeze ? transitionDebug.progress : p)
+  const unlift = () => {
+    measuring = true
+    o.about()?.classList.remove('hero-hold')
+  }
+  const relift = () => {
+    measuring = false
+    const about = o.about()
+    // The lift that puts About's top at the top of the viewport: its own height, less one screen.
+    about?.style.setProperty('--hero-hold-h', `${about.offsetHeight}px`)
+    apply(transitionDebug.freeze ? transitionDebug.progress : p)
+  }
   ScrollTrigger.addEventListener('refreshInit', unlift)
   ScrollTrigger.addEventListener('refresh', relift)
 
-  apply(0)
+  relift()
 
   return {
     sync: () => apply(transitionDebug.freeze ? transitionDebug.progress : p),
@@ -238,6 +250,8 @@ function webglTransition(o: TransitionOptions): TransitionHandle {
       host.classList.remove('is-parting')
       for (const prop of ['opacity', 'visibility', 'will-change', 'pointer-events', '--hero-cue']) stage.style.removeProperty(prop)
       const about = o.about()
+      about?.classList.remove('hero-hold')
+      about?.style.removeProperty('--hero-hold-h')
       for (const prop of ['opacity', 'transform', 'will-change']) {
         about?.style.removeProperty(prop)
         for (const el of heads()) el.style.removeProperty(prop)

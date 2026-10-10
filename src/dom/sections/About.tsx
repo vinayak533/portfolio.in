@@ -19,8 +19,8 @@ import './about.css'
 const SCAN_END = 0.46
 const SHIMMER_END = 0.6
 
-/** Reveal order: "beyond the demo" lands last, then starts its shimmer. */
-const ORDER = { lead: 0, intro: 1, body: 2, divider: 3, eyebrow: 4, closing: 5, accent: 6 } as const
+/** Reveal order: the accent line of the heading lands last. */
+const ORDER = { lead: 0, intro: 1, body: 2, divider: 3, closing: 4, accent: 5 } as const
 const reveal = (i: number) => ({ '--i': i }) as CSSProperties
 
 export function About() {
@@ -91,15 +91,14 @@ export function About() {
               {about.intro.after}
             </p>
 
-            <p className="about-reveal about-body" style={reveal(ORDER.body)}>
-              {about.body}
-            </p>
+            {about.body.map((text, i) => (
+              <p key={i} className="about-reveal about-body" style={reveal(ORDER.body + i * 0.5)}>
+                {text}
+              </p>
+            ))}
 
             <div aria-hidden="true" className="about-reveal about-divider" style={reveal(ORDER.divider)} />
 
-            <p className="about-reveal about-eyebrow" style={reveal(ORDER.eyebrow)}>
-              {about.eyebrow}
-            </p>
             <p className="about-reveal about-closing" style={reveal(ORDER.closing)}>
               {about.closing}
             </p>

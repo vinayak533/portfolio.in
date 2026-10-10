@@ -21,6 +21,16 @@ npm run preview
 
 Requires Node 20+. QA switches: `?static` forces the no-WebGL / reduced-motion layout. In dev only, `?nosky` and `?nopost` disable the sky and post stack, and `window.__lattice.gpu(40)` reports real GPU time per frame (timer queries, not vsync-bound).
 
+## Contact form
+
+The form in Contact posts to `POST /api/contact`. `server/contact.ts` validates it (the same rules as the browser, from `src/core/contact.ts`), checks a honeypot field and a minimum fill time, rate-limits each IP to 5 messages per 10 minutes, and sends the message through [Resend](https://resend.com). The visitor's address is set as **Reply-To**, never as the sender. The page shows "sent" only after Resend returns a message id; any failure shows an error and keeps the text so the visitor can retry.
+
+- **Production (Vercel):** `api/contact.ts` is the Vercel Function. In Vercel → Project → Settings → Environment Variables, set `RESEND_API_KEY` (and optionally `CONTACT_TO_EMAIL`, `CONTACT_FROM_EMAIL`; see `.env.example`), then redeploy.
+- **Local:** copy `.env.example` to `.env.local` and fill in the key. `npm run dev` serves the same handler at `/api/contact`. `npm run preview` does not, so use `npx vercel dev` to test a production build with the API.
+- **Sender:** with no `CONTACT_FROM_EMAIL`, mail is sent from `onboarding@resend.dev`. Resend only delivers that sender to the address the Resend account was registered with, so create the account with `vinayakkv2004@gmail.com`. To send from your own address, verify a domain in Resend (DNS records) and set `CONTACT_FROM_EMAIL=Portfolio <contact@yourdomain.com>`.
+- **Tests:** `npm run test:contact` runs the handler against a stubbed Resend (no network, no key needed).
+- The rate limit lives in memory, so it is per warm function instance and resets on cold starts. For stricter limits, back it with Vercel KV / Upstash.
+
 > **OneDrive note.** This folder lives in OneDrive, which turns `node_modules` files into reparse points that Vite 8's Rolldown resolver cannot follow. `vite.config.ts` sets `resolve.preserveSymlinks: true` to work around it. Keeping the repo outside OneDrive (or excluding `node_modules` from sync) is still the better long-term fix.
 
 ## Swap your photo

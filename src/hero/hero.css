@@ -55,6 +55,16 @@
   width: 100%;
 }
 
+/* About, held at the top of the viewport while the pin still has scroll to run
+   (src/hero/transition.ts). Its bottom edge may not drop below one screen under
+   its own height, so its top never sits below the viewport top. dvh follows the
+   URL bar, as the sticky constraint does. */
+.hero-hold {
+  position: sticky;
+  bottom: calc(100vh - var(--hero-hold-h, 0px));
+  bottom: calc(100dvh - var(--hero-hold-h, 0px));
+}
+
 /* The canvas turns transparent where the cloud bank parts onto About. */
 .hero-cinematic.is-parting {
   background: transparent;
