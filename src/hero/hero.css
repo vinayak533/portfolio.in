@@ -70,6 +70,115 @@
   background: transparent;
 }
 
+/* ---- Intro: who, what and the ways in, set over the sky ------------------- */
+
+/* Arrives as the loader curtain parts; src/hero/transition.ts fades it out
+   (--hero-intro) as soon as the camera starts to move. */
+.hero-intro {
+  position: absolute;
+  left: var(--gutter, 1.5rem);
+  right: var(--gutter, 1.5rem);
+  top: calc(var(--gutter, 1.5rem) + 3.4rem + env(safe-area-inset-top, 0px));
+  max-width: 40rem;
+  opacity: 0;
+  transform: translate3d(0, 14px, 0);
+  transition:
+    opacity 1.2s var(--ease-out) 1.1s,
+    transform 1.4s var(--ease-out) 1.1s;
+  pointer-events: none;
+}
+
+.hero-intro[data-on] {
+  opacity: 1;
+  transform: none;
+}
+
+.hero-intro__inner {
+  position: relative;
+  z-index: 0;
+  opacity: var(--hero-intro, 1);
+  pointer-events: auto;
+  /* Lifts small type off busy texture (grass, cloud edges). */
+  text-shadow: 0 0 2px rgb(7 7 13 / 0.85), 0 1px 14px rgb(7 7 13 / 0.9);
+}
+
+/* A soft pool of night behind the copy, so it reads over cloud as well as sky. */
+.hero-intro__inner::before {
+  content: '';
+  position: absolute;
+  inset: -40% -30% -35% -25%;
+  z-index: -1;
+  background: radial-gradient(closest-side, rgb(7 7 13 / 0.66), rgb(7 7 13 / 0.34) 60%, transparent);
+  pointer-events: none;
+}
+
+.hero-intro__meta {
+  margin: 0 0 0.9rem;
+  color: rgb(236 234 242 / 0.82);
+}
+
+.hero-intro__name {
+  margin: 0;
+  font-size: clamp(2.7rem, 7.4vw, 6.4rem);
+  line-height: 0.92;
+  color: var(--ink);
+}
+
+.hero-intro__pitch {
+  margin: 1rem 0 0;
+  max-width: 31rem;
+  font-size: clamp(1rem, 1.3vw, 1.18rem);
+  line-height: 1.5;
+  letter-spacing: -0.008em;
+  color: rgb(236 234 242 / 0.88);
+  text-wrap: pretty;
+}
+
+.hero-intro__status {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.9rem 0 0;
+  color: rgb(236 234 242 / 0.82);
+}
+
+/* Buttons carry their own fills; no halo on their labels. */
+.hero-intro__actions a {
+  text-shadow: none;
+}
+
+.hero-intro__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 1.4rem;
+}
+
+.hero-intro__actions a {
+  min-height: 44px;
+  font-size: 0.92rem;
+}
+
+/* Phones and portrait screens: the figure sits high in the frame, so the copy
+   takes the lower third, clear of the scroll cue. */
+@media (max-width: 767px), (orientation: portrait) {
+  .hero-intro {
+    top: auto;
+    bottom: calc(var(--gutter, 1.5rem) + 5.4rem + env(safe-area-inset-bottom, 0px));
+  }
+  .hero-intro__inner::before {
+    inset: -30% -20% -25% -20%;
+    background: radial-gradient(closest-side, rgb(7 7 13 / 0.78), rgb(7 7 13 / 0.45) 60%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-intro {
+    transform: none;
+    transition-delay: 0s;
+  }
+}
+
 /* Scroll affordance: fades in after the intro, fades out on the first scroll. */
 .hero-cue {
   position: absolute;

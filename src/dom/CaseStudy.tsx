@@ -217,8 +217,9 @@ export function CaseStudy() {
                   <dt className="mono mono-sm dimmer">Links</dt>
                   <dd className="mt-3 flex flex-wrap gap-5">
                     {p.links.map((l) => (
-                      <a key={l.href} className="mono border-b border-[var(--accent)] pb-1" href={l.href} target="_blank" rel="noreferrer">
-                        {l.label} <span className="accent">↗</span>
+                      <a key={l.href} className="mono border-b border-[var(--accent)] pb-1" href={l.href} target="_blank" rel="noopener noreferrer">
+                        {l.label} <span className="accent" aria-hidden="true">↗</span>
+                        <span className="sr-only"> (opens in a new tab)</span>
                       </a>
                     ))}
                   </dd>
@@ -277,8 +278,9 @@ export function CaseStudy() {
               <ul data-cs-in className="flex flex-wrap gap-6 md:col-span-2">
                 {p.links.map((l) => (
                   <li key={l.href}>
-                    <a className="mono border-b border-[var(--accent)] pb-1" href={l.href} target="_blank" rel="noreferrer">
+                    <a className="mono border-b border-[var(--accent)] pb-1" href={l.href} target="_blank" rel="noopener noreferrer">
                       {l.label}
+                      <span className="sr-only"> (opens in a new tab)</span>
                     </a>
                   </li>
                 ))}

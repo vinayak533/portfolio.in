@@ -17,7 +17,8 @@
   --accent: #7c5cff;
   /* Tints of the three colours above, never new hues. */
   --ink-2: rgb(236 234 242 / 0.62);
-  --ink-3: rgb(236 234 242 / 0.38);
+  /* 0.52 keeps small text at WCAG AA (about 4.9:1 on --base). */
+  --ink-3: rgb(236 234 242 / 0.52);
   --line: rgb(236 234 242 / 0.12);
   --accent-glow: rgb(124 92 255 / 0.45);
   --gutter: clamp(1rem, 3.2vw, 3rem);
@@ -133,10 +134,20 @@ a { color: inherit; text-decoration: none; }
 .work-title { font-size: clamp(2rem, 3.5vw, 4.25rem); line-height: 1; text-wrap: balance; }
 @media (min-width: 768px) { .work-title { white-space: nowrap; } }
 .work-title-s { font-size: clamp(1.5rem, 2.3vw, 2.2rem); line-height: 1; }
+/* What the project is, in one line, without opening Details. */
+.works-tagline {
+  max-width: 34rem;
+  font-size: clamp(0.95rem, 1.1vw, 1.1rem);
+  line-height: 1.45;
+  letter-spacing: -0.006em;
+  color: rgb(236 234 242 / 0.84);
+  text-shadow: 0 1px 12px rgb(0 0 0 / 0.6);
+  text-wrap: pretty;
+}
 
 /* Works: wide screens put Details in each exhibit's corner in 3D (theme.worksWide). */
-/* Below that, the title sits above the DOM Details button instead of beside it. */
-.works-title-row { bottom: calc(var(--gutter) + 3.6rem); }
+/* Below that, the title sits above the DOM Details button (and the chat robot beside it) instead of beside it. */
+.works-title-row { bottom: calc(var(--gutter) + 4.25rem); }
 
 /* Details: a solid violet pill, so it reads at a glance. */
 .details-btn {
@@ -230,6 +241,42 @@ a { color: inherit; text-decoration: none; }
   background: rgb(236 234 242 / 0.08);
   box-shadow: inset 0 0 0 1px rgb(124 92 255 / 0.35), 0 0 24px -6px rgb(124 92 255 / 0.6);
   transition: left 0.9s var(--ease-out), width 0.9s var(--ease-out);
+}
+
+/* ---------------------------------------------------------------- mobile menu */
+/* Below md the pill gives way to this panel (Hud.tsx). No display here: [hidden] must win. */
+.hud-menu-btn {
+  min-height: 44px;
+  padding: 0 0.25rem;
+  color: var(--ink);
+}
+.hud-menu {
+  position: absolute;
+  top: calc(100% - var(--gutter) + 0.4rem);
+  right: var(--gutter);
+  min-width: 12.5rem;
+  padding: 0.4rem;
+  border-radius: 14px;
+  background: rgb(14 14 24 / 0.88);
+  border: 1px solid rgb(236 234 242 / 0.1);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  box-shadow: 0 24px 60px -24px rgb(0 0 0 / 0.8);
+}
+.hud-menu ul { list-style: none; margin: 0; padding: 0; }
+.hud-menu a {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 0.9rem;
+  border-radius: 10px;
+  font-size: 1rem;
+  color: var(--ink-2);
+}
+.hud-menu a:hover,
+.hud-menu a[aria-current='true'] {
+  color: var(--ink);
+  background: rgb(236 234 242 / 0.06);
 }
 
 /* Cursor "tag": a tiny label set beside the ring rather than inside it. */

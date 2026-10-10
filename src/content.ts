@@ -73,8 +73,8 @@ export const site = {
   timezone: 'Asia/Kolkata',
   timezoneLabel: 'IST',
   intro:
-    'I build machine-learning systems that leave the notebook: retrieval, vision and agents running in production, measured in latency, cost and trust.',
-  availability: 'Open to senior ML / applied AI roles',
+    'I build LLM applications and agent systems: tool-using agents, retrieval with citations, and the FastAPI and Next.js backends behind them.',
+  availability: 'Open to AI/ML engineering roles',
   portrait: {
     /** Background-removed cutout produced by `npm run portrait`. */
     cutout: '/portrait/about.cutout.png',
@@ -91,7 +91,7 @@ export const about = {
   intro: {
     before: 'I’m ',
     name: 'Vinayak',
-    after: ', an AI/ML engineer in Kochi building production-grade AI systems, and a HackerRank Orchestrate finalist.',
+    after: ', an AI/ML engineer at AMnova Technologies in Kochi, building multi-agent workflows and LLM pipelines, and a HackerRank Orchestrate finalist.',
   },
   /** One paragraph per entry. */
   body: [
@@ -107,7 +107,7 @@ export const projects: Project[] = [
     title: 'Loom.ai',
     tagline: 'One AI workspace to chat, code in a live sandbox, study and delegate.',
     caption:
-      'Chatbots talk about code. Loom actually runs it.\nI built an agentic workspace that replaces generic chat prompts with real developer horsepower: ten specialized AI agents, isolated Linux sandboxes and citation-backed grounding, all routed dynamically in under five seconds using LangGraph and FastAPI.',
+      'Chatbots talk about code. Loom actually runs it.\nOne FastAPI and LangGraph backend behind four workspaces: Chat, a Code agent in an E2B Linux sandbox, cited Learn notebooks and ten specialist agents. Each turn routes across eight models from Groq, OpenRouter and OpenCode, with provider fallback. Caching the transcript cut the measured median time to first token from 8.9 s to 5.0 s on an ~80k-token test conversation.',
     year: '2026',
     role: 'Solo build',
     tags: ['LangGraph', 'FastAPI', 'Next.js', 'E2B sandbox', 'pgvector'],
@@ -119,7 +119,7 @@ export const projects: Project[] = [
       'A chat window cannot run code or check an answer against your own documents. Coding, research and study each need a different way of working.',
     approach: [
       'The Code agent works in a real Linux sandbox (shell, files, web search, dev servers) and streams every tool call into a live trace and preview.',
-      'Learn turns PDFs, links and YouTube transcripts into cited answers and graded courses, backed by pgvector.',
+      'Learn turns PDFs, links and YouTube transcripts into cited answers and graded courses; notebook retrieval uses lexical hashed vectors stored in pgvector.',
       'LangGraph routes each turn across eight models from Groq, OpenRouter and OpenCode, by hand or on Auto with fallback.',
     ],
     facts: [
@@ -134,7 +134,7 @@ export const projects: Project[] = [
     title: 'LazyHire',
     tagline: 'Where AI finds the job that finds you.',
     caption:
-      'I engineered LazyHire, a private AI career workspace combining local semantic retrieval, automated job deduplication, transparent match scoring and evidence-guarded LLM pipelines for zero-hallucination CV tailoring.',
+      'I built LazyHire, a private AI career workspace: local semantic retrieval, job deduplication, transparent match scoring, and guarded CV tailoring that rejects any edit adding experience, numbers or credentials that cannot be traced to your CV.',
     year: '2026',
     role: 'Solo build',
     tags: ['Next.js', 'TypeScript', 'SQLite + FTS5', 'MiniLM embeddings', 'Groq'],
@@ -161,25 +161,25 @@ export const projects: Project[] = [
     title: 'Bank Churn Intelligence',
     tagline: 'Predicts which customers will leave, then explains why in plain words and voice.',
     caption:
-      'Empowered frontline banking staff to prevent customer attrition by pairing predictive XGBoost classification with real-time generative AI explanations and voice synthesis in a unified FastAPI decision platform.',
+      'A prototype decision tool for bank staff: an XGBoost churn classifier trained on a 10,000-customer dataset, served by FastAPI with a risk tier and the model’s top features, then explained in plain language by Llama 3.3 70B and read aloud with ElevenLabs.',
     year: '2026',
     role: 'Solo build',
     tags: ['XGBoost', 'SMOTE', 'FastAPI', 'Llama 3.3 70B', 'ElevenLabs'],
     visual: 'pipeline',
     media: reel('aria', 6),
     summary:
-      'ARIA turns a customer profile into a churn probability, a risk tier and the model’s key drivers, then lets staff ask an AI advisor what to do next.',
+      'The app, ARIA, turns a customer profile into a churn probability and a risk tier, shows the model’s top features, then lets staff ask an AI advisor what to do next.',
     problem:
       'A churn score alone is not enough: bank staff need a risk assessment they can understand and talk through with the customer.',
     approach: [
       'XGBoost classifier trained on 10,000 customer records, with SMOTE for class imbalance and one scaler shared by training and inference.',
-      'A FastAPI service returns the churn probability, a low / medium / high tier and the top five model drivers.',
+      'A FastAPI service returns the churn probability and a low / medium / high tier; the interface shows the model’s global feature rankings.',
       'Llama 3.3 70B on Groq explains each result in plain language, and ElevenLabs reads it aloud.',
     ],
     facts: [
       { value: '10k', label: 'customer records' },
       { value: '3', label: 'risk tiers' },
-      { value: '5', label: 'drivers surfaced' },
+      { value: '5', label: 'top features shown' },
     ],
     links: [{ label: 'GitHub', href: 'https://github.com/vinayak533/bank-churn-intelligence-platform' }],
   },
@@ -188,9 +188,9 @@ export const projects: Project[] = [
     title: 'Health Assistant',
     tagline: 'Ask a health question out loud, show an image, hear the answer.',
     caption:
-      'I engineered a modular multimodal pipeline orchestrating Whisper, Llama vision models and neural speech synthesis to transform spoken patient inquiries and medical imagery into synchronized visual and vocal clinical insights.',
+      'A learning project, built on open-source code.\nIt extends the AI Doctor 2.0 voice-and-vision demo by AIwithHassan, which chains Groq Whisper, a Llama 4 Scout vision model and ElevenLabs speech. I rebuilt its single-form interface as a custom Gradio Blocks layout and adapted the pipeline modules. Not a clinical tool.',
     year: '2026',
-    role: 'Solo build',
+    role: 'Extended open-source project',
     tags: ['Whisper large-v3', 'Llama 4 Scout', 'ElevenLabs', 'Groq', 'Gradio'],
     visual: 'vision',
     media: reel('health', 14),
@@ -208,14 +208,17 @@ export const projects: Project[] = [
       { value: 'Voice + image', label: 'input' },
       { value: 'Text + speech', label: 'output' },
     ],
-    links: [{ label: 'GitHub', href: 'https://github.com/vinayak533/AI-Medical-Voice-Vision-Assistant' }],
+    links: [
+      { label: 'GitHub', href: 'https://github.com/vinayak533/AI-Medical-Voice-Vision-Assistant' },
+      { label: 'Original project', href: 'https://github.com/AIwithhassan/ai-doctor-2.0-voice-and-vision' },
+    ],
   },
   {
     id: 'predictlab',
     title: 'PredictLab',
     tagline: 'From raw health data to real insights.',
     caption:
-      'Architected and deployed a full-stack predictive health platform combining scikit-learn classification pipelines with FastAPI and Groq-powered Llama 3.1 models to deliver real-time chronic disease risk screening and contextual, patient-friendly AI explanations.',
+      'A FastAPI app, deployed on Hugging Face Spaces, that serves three scikit-learn classifiers for diabetes, stroke and heart-disease screening from 30 health inputs, with Llama 3.1 8B on Groq explaining each result in plain language.',
     year: '2026',
     role: 'Solo build',
     tags: ['scikit-learn', 'FastAPI', 'Llama 3.1', 'Docker', 'Hugging Face'],
@@ -233,7 +236,7 @@ export const projects: Project[] = [
     facts: [
       { value: '3', label: 'disease models' },
       { value: '30', label: 'health inputs' },
-      { value: 'Live', label: 'on Hugging Face Spaces' },
+      { value: 'Demo', label: 'on Hugging Face (may take a minute to wake)' },
     ],
     links: [
       { label: 'Live demo', href: 'https://huggingface.co/spaces/VINAYAKKV/Predict-Ai' },
@@ -260,7 +263,7 @@ export const experience: Role[] = [
     highlights: ['demand forecasting', 'churn prediction', 'XGBoost'],
   },
   {
-    company: 'Cognify Technologies',
+    company: 'Cognifyz Technologies',
     title: 'Data Science Intern',
     start: 'Aug 2025',
     end: 'Sep 2025',
@@ -269,22 +272,21 @@ export const experience: Role[] = [
   },
 ]
 
+/**
+ * The one place for contact details: the hero, the menu, Contact, the form's
+ * fallback and index.html's <noscript> all use these. The server's delivery
+ * default (server/contact.ts) matches `email`.
+ */
 export const contact = {
-  index: '05',
-  kicker: 'Contact',
-  heading: ['Let’s build', 'something', 'that matters.'],
-  lede: ['Have an ambitious idea?', 'Let’s turn it into something worth building.'],
-  email: 'vinayakkv04@gmail.com',
-  phone: { label: '+91 9077252290', href: 'tel:+919077252290' },
-  location: 'Kochi, Kerala, India',
-  /** Shown beside the location as a quiet alignment cue. */
-  coordinates: '9.93° N  76.27° E',
+  heading: 'Let’s build something real',
+  lede: ['Hiring for an AI/ML or backend role?', 'Email me or send a message below.'],
+  email: 'vinayakkv2004@gmail.com',
   links: [
-    { label: 'GitHub', href: 'https://github.com/vinayak523' },
-    { label: 'LinkedIn', href: 'https://www.linkedin.com/in/vinayak-k-v6' },
-    /** Drop the PDF at public/resume.pdf. */
-    { label: 'Résumé', href: '/resume.pdf' },
+    { label: 'GitHub', href: 'https://github.com/vinayak533' },
+    { label: 'LinkedIn', href: 'https://www.linkedin.com/in/vinayak-kv-ds' },
   ],
+  /** Linked only once this file is actually served (src/dom/useResumeUrl.ts): drop the PDF at public/resume.pdf. */
+  resume: '/resume.pdf',
 }
 
 export const sections = [

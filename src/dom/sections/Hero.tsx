@@ -1,17 +1,26 @@
-import { useEffect, useRef, type CSSProperties } from 'react'
+import { useEffect, useRef, type CSSProperties, type MouseEvent } from 'react'
 import { site } from '../../content'
 import { signals, useStore } from '../../store/useStore'
+import { scrollToSection } from '../../core/scroll'
+import { useResumeUrl } from '../useResumeUrl'
 import type { HeroHandle } from '../../hero'
 import { transitionProfile } from '../../hero/config'
 import { createHeroTransition, type TransitionHandle } from '../../hero/transition'
 import '../../hero/hero.css'
 
+const jump = (id: string) => (e: MouseEvent) => {
+  e.preventDefault()
+  scrollToSection(id)
+}
+
 /**
- * The opening frame: the night island photograph alone, brought to life by
- * the framework-free WebGL engine in src/hero. The section is a tall track
- * with a sticky stage (the pin); src/hero/transition.ts scrubs one camera move:
- * a push toward the figure, then a flight through the clouds onto About. This component only provides
- * the containers and forwards site state (loader done, overlay pause, lite).
+ * The opening frame: the night island photograph, brought to life by the
+ * framework-free WebGL engine in src/hero, with the name, role, a one-line
+ * pitch and the ways in set over its sky. The section is a tall track with a
+ * sticky stage (the pin); src/hero/transition.ts scrubs one camera move:
+ * a push toward the figure, then a flight through the clouds onto About, and
+ * fades the intro out as it starts. This component only provides the
+ * containers and forwards site state (loader done, overlay pause, lite).
  */
 export function Hero() {
   const track = useRef<HTMLElement>(null)
@@ -23,6 +32,7 @@ export function Hero() {
   const mode = useStore((s) => s.mode)
   const lowPower = useStore((s) => s.lite || s.quality === 'low')
   const webgl = mode === 'webgl'
+  const resume = useResumeUrl()
 
   useEffect(() => {
     let cancelled = false
@@ -86,9 +96,32 @@ export function Hero() {
             <span className="hero-cue__line" />
           </span>
         </div>
-        <h1 className="sr-only">
-          {site.name}, {site.role}
-        </h1>
+        <div className="hero-intro" data-on={loaded || undefined} data-hero-intro>
+          <div className="hero-intro__inner">
+            <p className="mono hero-intro__meta">
+              {site.role} <span aria-hidden="true">·</span> {site.location}
+            </p>
+            <h1 className="display hero-intro__name">{site.name}</h1>
+            <p className="hero-intro__pitch">{site.intro}</p>
+            <p className="mono hero-intro__status">
+              <span className="glow-dot" aria-hidden="true" />
+              {site.availability}
+            </p>
+            <div className="hero-intro__actions">
+              <a href="#works" className="btn-solid" onClick={jump('works')}>
+                View projects <span aria-hidden="true">→</span>
+              </a>
+              <a href="#contact" className="btn-line" onClick={jump('contact')}>
+                Contact
+              </a>
+              {resume && (
+                <a href={resume} className="btn-line" target="_blank" rel="noopener noreferrer">
+                  Résumé <span className="sr-only">(PDF, opens in a new tab)</span>
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
     </section>
   )

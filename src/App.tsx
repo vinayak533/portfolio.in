@@ -14,6 +14,7 @@ import { Works } from './dom/sections/Works'
 import { Experience } from './dom/sections/Experience'
 import { Contact } from './dom/sections/Contact'
 import { CaseStudy } from './dom/CaseStudy'
+import { ChatWidget } from './dom/chat/ChatWidget'
 
 const Stage = lazy(() => import('./gl/Stage'))
 
@@ -95,6 +96,7 @@ export function App() {
         <Experience />
         <Contact />
       </main>
+      <ChatWidget />
       <CaseStudy />
       {!isTouch && <Cursor />}
       <Loader />

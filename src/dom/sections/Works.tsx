@@ -65,6 +65,7 @@ export function Works() {
                     Details <span aria-hidden="true">→</span>
                   </button>
                 </div>
+                <p className="works-tagline">{p.tagline}</p>
               </li>
             ))}
           </ol>
@@ -87,19 +88,37 @@ export function Works() {
           <h2 className="mono dim">(03) Works</h2>
         </div>
 
-        {/* Active exhibit's name, on the bottom margin under the reels. Its story is behind Details. */}
+        {/* Every project, for screen readers: only the centred exhibit has visible DOM. Out of the tab order (the visible Details button is in it). */}
+        <ol className="sr-only" aria-label="All projects">
+          {projects.map((p, i) => (
+            <li key={p.id}>
+              <button type="button" tabIndex={-1} onClick={() => open(i)}>
+                {`${p.title}: ${p.tagline} Open details.`}
+              </button>
+            </li>
+          ))}
+        </ol>
+
+        {/* Active exhibit's name and one-line purpose, on the bottom margin under the reels. Its full story is behind Details. */}
         <div data-w-in className="works-title-row absolute bottom-[var(--gutter)] left-[var(--gutter)] right-[var(--gutter)] flex flex-col gap-4 md:right-auto">
-          <div ref={titleRef} className="flex items-end gap-5" aria-live="polite">
-            <span className="line-mask">
-              <span data-roll className="mono dim block whitespace-nowrap">
-                {String(focused + 1).padStart(2, '0')} / {String(projects.length).padStart(2, '0')}
+          <div ref={titleRef} className="flex flex-col gap-3" aria-hidden="true">
+            <div className="flex items-end gap-5">
+              <span className="line-mask">
+                <span data-roll className="mono dim block whitespace-nowrap">
+                  {String(focused + 1).padStart(2, '0')} / {String(projects.length).padStart(2, '0')}
+                </span>
               </span>
-            </span>
-            <h3 className="work-title line-mask">
+              <h3 className="work-title line-mask">
+                <span data-roll className="block">
+                  <ProjectTitle project={active} />
+                </span>
+              </h3>
+            </div>
+            <p className="works-tagline line-mask">
               <span data-roll className="block">
-                <ProjectTitle project={active} />
+                {active.tagline}
               </span>
-            </h3>
+            </p>
           </div>
         </div>
 

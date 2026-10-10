@@ -19,7 +19,7 @@ const tmp = new Vector3()
 const tmp2 = new Vector3()
 
 /** Narrow screens need the camera further back to keep subjects in frame. */
-const fit = (aspect: number) => (aspect < 1 ? 1 + (1 - aspect) * 1.25 : 1)
+export const fit = (aspect: number) => (aspect < 1 ? 1 + (1 - aspect) * 1.25 : 1)
 
 type PoseFn = (p: number, out: Pose, aspect: number) => void
 
