@@ -3,6 +3,7 @@ import { useStore } from '../../store/useStore'
 import { assistant } from '../../assistant'
 import type { ChatPanelProps } from './ChatPanel'
 import { Robot, type Mood } from './Robot'
+import { robotLink, useRobotDock } from '../../hero/robot/bridge'
 import './chat.css'
 
 type PanelModule = { ChatPanel: ComponentType<ChatPanelProps> }
@@ -191,6 +192,12 @@ function useLauncherMood(active: boolean, engaged: boolean, nudge: boolean, redu
  * Bottom-right launcher for the portfolio assistant. Appears once the intro has
  * finished, steps out of the way while a case study is open, and lifts above
  * Works' Details button on the screens where that button sits in this corner.
+ *
+ * Its face is the hero robot's own head (src/hero/robot/bridge.ts): while the
+ * robot stands in the hero (or is flying here) the launcher waits, empty and
+ * out of reach, so there is only ever one robot; once the head lands it lives
+ * in the icon slot as the 3D render, wearing this widget's moods. Without the
+ * 3D robot the launcher draws the same head as SVG.
  */
 export function ChatWidget() {
   const introDone = useStore((s) => s.introDone)
@@ -205,8 +212,13 @@ export function ChatWidget() {
   const launcher = useRef<HTMLButtonElement>(null)
   const root = useRef<HTMLDivElement>(null)
   const rest = useRef<HTMLSpanElement>(null)
+  const slot = useRef<HTMLSpanElement>(null)
   const launcherSize = useCallback(() => launcher.current?.offsetWidth ?? 56, [])
   const panelId = useId()
+  const dock = useRobotDock((s) => s.state)
+  const gl = useRobotDock((s) => s.gl)
+  // The robot is still in the hero (or on its way here): nothing to show or press yet, unless the panel is open.
+  const away = dock === 'away' && !open
 
   const ensurePanel = useCallback(async () => {
     if (Panel) return true
@@ -246,9 +258,9 @@ export function ChatWidget() {
     return () => cancel(handle)
   }, [introDone])
 
-  // One gentle pulse, once per visit, a little after the launcher appears. Never with reduced motion.
+  // One gentle pulse, once per visit, a little after the robot lands. Never with reduced motion.
   useEffect(() => {
-    if (!introDone || reducedMotion) return
+    if (!introDone || reducedMotion || away) return
     let seen = false
     try {
       seen = sessionStorage.getItem(NUDGE_KEY) === '1'
@@ -265,11 +277,27 @@ export function ChatWidget() {
       }
     }, 6000)
     return () => window.clearTimeout(t)
-  }, [introDone, reducedMotion])
+  }, [introDone, reducedMotion, away])
 
   const { lift, shift } = useCornerLift(introDone && !caseStudyOpen, rest, launcherSize)
   const fieldFocused = useFieldFocus(root)
-  const mood = useLauncherMood(introDone && !open && !caseStudyOpen, engaged, nudge, reducedMotion)
+  const mood = useLauncherMood(introDone && !open && !caseStudyOpen && !away, engaged, nudge, reducedMotion)
+
+  // Tell the 3D head where to land, where to live, and what to feel.
+  useEffect(() => {
+    if (!introDone) return
+    robotLink.anchor = launcher.current
+    robotLink.slot = gl ? slot.current : null
+    return () => {
+      robotLink.anchor = null
+      robotLink.slot = null
+    }
+  }, [introDone, gl])
+  useEffect(() => {
+    robotLink.mood = mood
+    robotLink.live = !open
+    robotLink.open = open
+  }, [mood, open])
 
   if (!introDone) return null
 
@@ -287,10 +315,11 @@ export function ChatWidget() {
       {/* Where the launcher rests, unaffected by lift or animation: corner checks measure from here. */}
       <span ref={rest} className="chat-rest" aria-hidden="true" />
       {Panel && <Panel id={panelId} open={open} onClose={close} />}
-      <div className="chat-launcher-wrap" data-open={open || undefined}>
+      <div className="chat-launcher-wrap" data-open={open || undefined} data-robot={away ? 'away' : undefined} data-gl={gl || undefined}>
         <button
           ref={launcher}
           type="button"
+          inert={away}
           className="chat-launcher"
           data-nudge={nudge || undefined}
           aria-label={open ? 'Close chat' : assistant.launcherLabel}
@@ -311,7 +340,12 @@ export function ChatWidget() {
           onAnimationEnd={(e) => e.animationName === 'robot-hop' && setNudge(false)}
         >
           <span className="chat-launcher-orb" aria-hidden="true" />
-          <Robot className="chat-launcher-icon chat-launcher-icon--robot" mood={mood} live={!open} />
+          {gl ? (
+            // The 3D head's canvas is placed in here once it lands (src/hero/robot/engine.ts).
+            <span ref={slot} className="chat-launcher-icon chat-launcher-icon--robot chat-launcher-head" />
+          ) : (
+            <Robot className="chat-launcher-icon chat-launcher-icon--robot" mood={mood} live={!open} />
+          )}
           <svg className="chat-launcher-icon chat-launcher-icon--close" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
             <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" stroke="currentColor" strokeWidth="2" strokeLinecap="round" fill="none" />
           </svg>

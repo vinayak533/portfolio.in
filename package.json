@@ -15,6 +15,7 @@
     "social": "node scripts/prepare-social.mjs",
     "portrait": "node scripts/prepare-portrait.mjs",
     "hero": "node scripts/prepare-hero.mjs",
+    "space": "node scripts/prepare-space.mjs",
     "videos": "node scripts/prepare-videos.mjs"
   },
   "dependencies": {

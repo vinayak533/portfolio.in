@@ -1,45 +1,55 @@
-import { useEffect, useRef, type CSSProperties, type MouseEvent } from 'react'
+import { useEffect, useRef, type CSSProperties } from 'react'
 import { site } from '../../content'
 import { signals, useStore } from '../../store/useStore'
-import { scrollToSection } from '../../core/scroll'
-import { useResumeUrl } from '../useResumeUrl'
-import type { HeroHandle } from '../../hero'
+import type { RobotHandle } from '../../hero/robot/dom'
 import { transitionProfile } from '../../hero/config'
 import { createHeroTransition, type TransitionHandle } from '../../hero/transition'
+import { isTouchDevice } from '../../core/quality'
 import '../../hero/hero.css'
-
-const jump = (id: string) => (e: MouseEvent) => {
-  e.preventDefault()
-  scrollToSection(id)
-}
+import '../../hero/robot/robot.css'
+import '@fontsource-variable/space-grotesk/index.css'
+import '@fontsource-variable/inter/opsz.css'
 
 /**
- * The opening frame: the night island photograph, brought to life by the
- * framework-free WebGL engine in src/hero, with the name, role, a one-line
- * pitch and the ways in set over its sky. The section is a tall track with a
- * sticky stage (the pin); src/hero/transition.ts scrubs one camera move:
- * a push toward the figure, then a flight through the clouds onto About, and
- * fades the intro out as it starts. This component only provides the
- * containers and forwards site state (loader done, overlay pause, lite).
+ * The opening frame: an interactive 3D robot (src/hero/robot) seated at its
+ * desk, coding on its laptop on a spotlit stage, with no copy beside it (the
+ * name is kept for screen readers and search only). Its head and eyes follow
+ * the pointer. The section is a tall track with a sticky stage (the pin);
+ * src/hero/transition.ts scrubs the hand-over to About: the camera closes on
+ * the robot's head as its body dissolves away, then the head flies down into
+ * the bottom-right corner and becomes the chat launcher (src/dom/chat).
+ * Without WebGL it is a still render. The stage behind it is made of light
+ * dots: the beam and the floor's glow pool are CSS in hero.css; the halftone
+ * field, the horizon wave, the dot floor, the edge streams and the two
+ * far-field panels are drawn by src/hero/robot/stage.ts. This component only
+ * provides the containers and forwards site state (loader done, overlay
+ * pause, lite).
  */
 export function Hero() {
   const track = useRef<HTMLElement>(null)
   const stage = useRef<HTMLDivElement>(null)
   const host = useRef<HTMLDivElement>(null)
-  const handle = useRef<HeroHandle | null>(null)
+  const handle = useRef<RobotHandle | null>(null)
   const transition = useRef<TransitionHandle | null>(null)
   const loaded = useStore((s) => s.loaded)
   const mode = useStore((s) => s.mode)
   const lowPower = useStore((s) => s.lite || s.quality === 'low')
+  // The landscape behind the robot (src/hero/robot/terrain.ts) has its own phone profile, so being a phone
+  // (the low tier's usual reason) does not make it lite: only the LITE toggle or a software renderer does.
+  const liteLandscape = useStore((s) => s.lite || (s.quality === 'low' && !isTouchDevice() && window.innerWidth >= 760))
   const webgl = mode === 'webgl'
-  const resume = useResumeUrl()
 
   useEffect(() => {
     let cancelled = false
-    import('../../hero').then(({ mountHero }) => {
+    let backdrop: { dispose(): void } | null = null
+    import('../../hero/robot/stage').then(({ mountStage }) => {
+      if (!cancelled && host.current) backdrop = mountStage(host.current)
+    })
+    const engine = useStore.getState().mode === 'webgl' ? import('../../hero/robot/engine') : import('../../hero/robot/still')
+    engine.then(({ mountRobot }) => {
       if (cancelled || !host.current) return
       const { lite, quality, loaded } = useStore.getState()
-      handle.current = mountHero(host.current, {
+      handle.current = mountRobot(host.current, {
         isPaused: () => signals.paused,
         lowPower: lite || quality === 'low',
         integratedGpu: quality === 'mid',
@@ -49,6 +59,7 @@ export function Hero() {
     })
     return () => {
       cancelled = true
+      backdrop?.dispose()
       handle.current?.dispose()
       handle.current = null
     }
@@ -86,41 +97,32 @@ export function Hero() {
       ref={track}
       aria-label="Introduction"
       className={webgl ? 'hero-track' : 'hero-static'}
+      data-lite={lowPower || undefined}
+      data-lite-landscape={liteLandscape || undefined}
       style={webgl ? ({ '--hero-pin': `${transitionProfile().pinVh}vh` } as CSSProperties) : undefined}
     >
       <div ref={stage} className="hero-stage">
-        <div ref={host} className="hero-cinematic" role="img" aria-label="At night, a person works on a laptop in the long grass of a small floating island above a sea of clouds, under a bright moon." />
-        <div className="hero-cue" data-on={loaded || undefined} aria-hidden="true">
-          <span className="hero-cue__inner">
-            <span className="mono mono-sm">Scroll</span>
-            <span className="hero-cue__line" />
-          </span>
-        </div>
-        <div className="hero-intro" data-on={loaded || undefined} data-hero-intro>
-          <div className="hero-intro__inner">
-            <p className="mono hero-intro__meta">
-              {site.role} <span aria-hidden="true">·</span> {site.location}
-            </p>
-            <h1 className="display hero-intro__name">{site.name}</h1>
-            <p className="hero-intro__pitch">{site.intro}</p>
-            <p className="mono hero-intro__status">
-              <span className="glow-dot" aria-hidden="true" />
-              {site.availability}
-            </p>
-            <div className="hero-intro__actions">
-              <a href="#works" className="btn-solid" onClick={jump('works')}>
-                View projects <span aria-hidden="true">→</span>
-              </a>
-              <a href="#contact" className="btn-line" onClick={jump('contact')}>
-                Contact
-              </a>
-              {resume && (
-                <a href={resume} className="btn-line" target="_blank" rel="noopener noreferrer">
-                  Résumé <span className="sr-only">(PDF, opens in a new tab)</span>
-                </a>
-              )}
+        <h1 className="sr-only">
+          {site.name}, {site.role}
+        </h1>
+        <div
+          ref={host}
+          className="hero-cinematic"
+          data-on={loaded || undefined}
+          role="img"
+          aria-label="A small white robot in headphones sits at a desk coding on a glowing laptop, on a stage of violet light dots."
+        >
+          {/* The stage, back to front, under the robot's canvas (a fixed layer above the page). */}
+          <div className="hero-scene">
+            <div className="hero-scene__in">
+              {/* stage.ts inserts its far-field panels first and its dot canvas here, under the light. */}
+              <div className="hero-beam">
+                <div className="hero-beam__light" />
+              </div>
+              <div className="hero-pool" />
             </div>
           </div>
+          <div className="hero-grain" />
         </div>
       </div>
     </section>

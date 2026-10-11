@@ -5,6 +5,8 @@ import { scrollToSection } from '../core/scroll'
 import { writeLitePreference } from '../core/quality'
 import { gsap } from '../core/clock'
 import { useResumeUrl } from './useResumeUrl'
+import '@fontsource-variable/space-grotesk/index.css'
+import '@fontsource-variable/inter/opsz.css'
 
 /**
  * Fixed chrome: mark, centred pill navigation with a sliding indicator, lite-mode switch.
@@ -52,7 +54,8 @@ export function Hud() {
     gsap.fromTo(
       root.current!.querySelectorAll('[data-hud]'),
       { opacity: 0, y: -14 },
-      { opacity: 1, y: 0, duration: 1.6, ease: 'expo.out', stagger: 0.07, delay: mode === 'webgl' ? 1.4 : 0.1 },
+      // WebGL: last in the hero's load sequence, once the robot's screen is on (src/hero/robot/engine.ts).
+      { opacity: 1, y: 0, duration: 1.6, ease: 'expo.out', stagger: 0.07, delay: mode === 'webgl' ? 3.2 : 0.1 },
     )
   }, [loaded, mode])
 
@@ -71,7 +74,7 @@ export function Hud() {
 
   return (
     <div ref={root} className="pointer-events-none fixed inset-x-0 top-0 z-[100]">
-      <header className="relative flex items-center justify-between p-[var(--gutter)]">
+      <header className="hud relative flex items-center justify-between">
         <a
           data-hud
           href="#hero"
@@ -79,13 +82,13 @@ export function Hud() {
             e.preventDefault()
             scrollToSection('hero')
           }}
-          className="pointer-events-auto mono opacity-0"
+          className="hud-mark pointer-events-auto opacity-0"
           aria-label={`${site.name}, back to top`}
         >
           {site.mark}
         </a>
 
-        <nav aria-label="Sections" data-hud className="pointer-events-auto absolute left-1/2 top-[var(--gutter)] hidden -translate-x-1/2 opacity-0 md:block">
+        <nav aria-label="Sections" data-hud className="pointer-events-auto absolute inset-y-0 left-1/2 hidden -translate-x-1/2 items-center opacity-0 md:flex">
           <ol ref={pill} className="nav-pill">
             <li aria-hidden="true" role="presentation" className="nav-pill-indicator" style={{ left: indicator.left, width: indicator.width }} />
             {sections.map((s) => (
@@ -106,7 +109,7 @@ export function Hud() {
         </nav>
 
         <div className="flex items-center gap-5">
-          <span data-hud className="mono dim opacity-0 md:hidden" aria-hidden="true">
+          <span data-hud className="hud-count mono opacity-0 md:hidden" aria-hidden="true">
             {String(index + 1).padStart(2, '0')} / {String(sections.length).padStart(2, '0')}
           </span>
           <button
@@ -126,15 +129,12 @@ export function Hud() {
               type="button"
               onClick={toggleLite}
               aria-pressed={lite}
-              className="pointer-events-auto mono mono-sm flex items-center gap-2 opacity-0"
+              className="hud-lite pointer-events-auto mono mono-sm flex items-center gap-2 opacity-0"
               title="Lighter 3D for slower machines"
             >
-              <span className="dimmer hidden sm:inline">Lite</span>
-              <span
-                className="relative inline-block h-[14px] w-[26px] rounded-full border border-[var(--line)] transition-colors duration-500"
-                style={{ background: lite ? 'rgba(124,92,255,.35)' : 'transparent' }}
-              >
-                <span className="absolute top-[2px] h-[8px] w-[8px] rounded-full bg-[var(--ink)] transition-all duration-500" style={{ left: lite ? 14 : 3 }} />
+              <span className="hud-lite__label hidden sm:inline">Lite</span>
+              <span className="hud-lite__track">
+                <span className="hud-lite__knob" />
               </span>
               <span className="sr-only">Lite mode</span>
             </button>

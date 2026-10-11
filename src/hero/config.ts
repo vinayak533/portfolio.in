@@ -260,13 +260,13 @@ export const heroConfig = {
       target: [0.5005, 0.4035] as [number, number], // what the camera pushes toward: the figure's back and the glow of the laptop, image uv (y down)
       frame: [0.5, 0.6] as [number, number], // where that lands on screen at the end of the push (viewport uv, y down): a touch low, looking past them at the horizon
       zoom: 2.4, // camera zoom on the figure as the bank swallows them: a push, not a crash zoom (the photo stays crisp)
-      pinVh: 380, // scroll length of the pin, viewport heights
+      pinVh: 260, // scroll length of the pin, viewport heights
     },
     mobile: {
       target: [0.5005, 0.4035] as [number, number],
       frame: [0.5, 0.58] as [number, number],
       zoom: 2.0,
-      pinVh: 280,
+      pinVh: 200,
     },
     /** Scroll progress where the idle hold ends and the camera starts to move. */
     hold: 0.04,

@@ -1,0 +1,101 @@
+/* The hero robot (src/hero/robot). Scoped to the hero host, the robot's own layer and its canvas. */
+
+/* ---- Backdrop: the spotlit stage (Hero.tsx markup, hero.css; stage.ts moves its dust). src/hero/robot
+   fades --robot-bg as About's world comes through. */
+/* Vignette: soft, so the landscape's ridges still climb bright up the left and right edges, but the
+   corners fall to near-black whatever the aspect. Sized from the height (capped by the width on phones),
+   so ultrawide screens get darker sides rather than a stretched gradient. */
+.hero-cinematic::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: var(--robot-bg, 1);
+  pointer-events: none;
+  background:
+    radial-gradient(
+      ellipse min(150vh, 92vw) min(95vh, 140vw) at 50% 46%,
+      transparent 50%,
+      rgb(4 3 9 / 0.55) 72%,
+      rgb(4 3 9 / 0.94) 88%
+    ),
+    linear-gradient(rgb(4 3 9 / 0.35), transparent 18%, transparent 88%, rgb(4 3 9 / 0.42));
+}
+/* Phones: the robot fills the width, so the landscape lives at the edges and up behind it; the vignette
+   only darkens the corners. */
+@media (max-width: 767px) {
+  .hero-cinematic::after {
+    background:
+      radial-gradient(ellipse 130vw 80vh at 50% 44%, transparent 58%, rgb(4 3 9 / 0.5) 82%, rgb(4 3 9 / 0.9) 100%),
+      linear-gradient(rgb(4 3 9 / 0.3), transparent 12%, transparent 90%, rgb(4 3 9 / 0.4));
+  }
+}
+
+/* ---- The layer: fixed over the page, never in the way of a click. As tall as the largest viewport,
+   like the hero's backdrop (hero.css), so the two always end at the same line. */
+.robot-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100vh;
+  height: 100lvh;
+  z-index: 95;
+  pointer-events: none;
+}
+
+/* The canvas covers the viewport while the robot is in the hero (and flying). */
+.robot-canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  display: block;
+  width: 100%;
+  height: 100vh;
+  height: 100lvh;
+  pointer-events: none;
+  opacity: 0;
+  /* The load sequence (hero.css): the canvas comes up with the dot floor, showing the dais; the engine
+     then scans the robot in from the feet up and powers its screen on (engine.ts INTRO). */
+  transition: opacity 0.8s ease-out 0.6s;
+}
+.robot-layer.is-revealed .robot-canvas {
+  opacity: 1;
+}
+/* Landed with no launcher on the page yet: wait unseen. */
+.robot-canvas.is-waiting {
+  visibility: hidden;
+}
+/* Landed: the head lives in the chat launcher's icon slot (chat.css sizes the slot), centred on it. */
+.robot-canvas.is-docked {
+  position: absolute;
+  inset: auto;
+  left: 50%;
+  top: 50%;
+  opacity: 1;
+  transform: translate(-50%, -50%);
+  transition: none;
+}
+
+/* ---- Still fallback (no WebGL, reduced motion, lost context): the seated coding pose at its desk, a
+   frame of the live scene, centred on the stage (engine.ts layout). The image runs from just above the
+   standing figure's height (1.02x) over the stage's centre to its front rim: 1.2515 times that height.
+   Phones may lose the stage's outer edges (the hero clips). */
+.hero-robot-still {
+  position: absolute;
+  left: var(--robot-x);
+  top: calc(var(--robot-foot) - var(--robot-h) * 1.02);
+  height: calc(var(--robot-h) * 1.2515);
+  width: auto;
+  max-width: none;
+  object-fit: contain;
+  object-position: 50% 0;
+  transform: translateX(-50%);
+  opacity: 0;
+  transition: opacity 0.8s ease-out 1s;
+  pointer-events: none;
+  user-select: none;
+  filter: drop-shadow(0 0 40px rgb(124 92 255 / 0.12));
+}
+.hero-robot-still.is-revealed {
+  opacity: 1;
+}

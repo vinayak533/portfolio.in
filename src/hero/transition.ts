@@ -21,7 +21,7 @@ import { getLenis } from '../core/scroll'
 import { signals, useStore } from '../store/useStore'
 import { heroConfig as cfg, MOBILE_QUERY, transitionProfile } from './config'
 import { shotAt } from './shot'
-import type { HeroHandle } from './engine'
+import type { RobotHandle } from './robot/dom'
 
 /** Live state for the ?debug panel: `freeze` holds the transition at `progress`. */
 export const transitionDebug = { freeze: false, progress: 0, live: 0, raw: 0 }
@@ -35,7 +35,7 @@ export interface TransitionOptions {
   host: HTMLElement
   /** Wrapper around About (App.tsx). Only its opacity is touched, never its layout. */
   about: () => HTMLElement | null
-  engine: () => HeroHandle | null
+  engine: () => RobotHandle | null
   mode: 'webgl' | 'static'
 }
 
@@ -229,7 +229,10 @@ function webglTransition(o: TransitionOptions): TransitionHandle {
     const about = o.about()
     // The lift that puts About's top at the top of the viewport: its own height, less one screen.
     about?.style.setProperty('--hero-hold-h', `${about.offsetHeight}px`)
-    apply(transitionDebug.freeze ? transitionDebug.progress : p)
+    // The proxy, not the last applied value: a refresh re-renders the timeline from 0 (with events) and
+    // restores it silently, so `p` can be left at 0 while the scroll is past the hero, and the robot
+    // (which outlives the stage) would show its opening frame.
+    apply(transitionDebug.freeze ? transitionDebug.progress : proxy.p)
   }
   ScrollTrigger.addEventListener('refreshInit', unlift)
   ScrollTrigger.addEventListener('refresh', relift)
@@ -277,23 +280,34 @@ function crossfade(o: TransitionOptions): TransitionHandle {
   fade.fromTo(stage, { autoAlpha: 1 }, { autoAlpha: 0 }, 0)
   if (about) fade.fromTo(about, { opacity: 0 }, { opacity: 1 }, 0)
 
+  // The engine (the robot's still) docks with the same crossfade.
+  const dock = (on: boolean) => o.engine()?.setProgress(on ? 1 : 0)
   const st = ScrollTrigger.create({
     trigger: section,
     start: 'top -12%',
     end: 'bottom center',
-    onEnter: () => fade.play(),
-    onLeaveBack: () => fade.reverse(),
+    onEnter: () => {
+      fade.play()
+      dock(true)
+    },
+    onLeaveBack: () => {
+      fade.reverse()
+      dock(false)
+    },
     onToggle: (self) => {
       if (self.isActive) useStore.getState().set({ section: 'hero' })
     },
   })
   // Land in the right state whatever the scroll position (anchor jumps, restored scroll).
-  const settle = () => fade.progress(window.scrollY > st.start ? 1 : 0).pause()
+  const settle = () => {
+    fade.progress(window.scrollY > st.start ? 1 : 0).pause()
+    dock(window.scrollY > st.start)
+  }
   ScrollTrigger.addEventListener('refresh', settle)
   settle()
 
   return {
-    sync: () => {},
+    sync: () => dock(window.scrollY > st.start),
     refresh: () => ScrollTrigger.refresh(),
     destroy() {
       ScrollTrigger.removeEventListener('refresh', settle)

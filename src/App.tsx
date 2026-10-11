@@ -44,8 +44,9 @@ export function App() {
       ScrollTrigger.refresh()
     })
 
+    // The hero robot's still (its fallback, and the first frame of the static layout).
     const hero = new Image()
-    hero.src = '/hero/night-1672.webp'
+    hero.src = '/hero/robot-still.webp'
     track('hero', Promise.race([hero.decode().catch(() => {}), timeout(5000)]))
 
     if (mode === 'static') {

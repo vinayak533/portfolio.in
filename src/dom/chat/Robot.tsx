@@ -1,18 +1,19 @@
-import { useEffect, useId, useState, type ReactNode } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { useStore } from '../../store/useStore'
+import { EYE_COLOR, TEAR_COLOR, faceShapes, type FaceShape, type Mood } from '../../hero/robot/face'
 
-export type Mood = 'neutral' | 'happy' | 'wink' | 'surprised' | 'sleepy' | 'sad' | 'angel' | 'thinking'
-
-const EYE = '#62e6ff'
+export type { Mood }
 
 /**
- * The assistant's face: a white helmet head with a dark screen, glowing cyan
- * LED eyes, ear pods with teal light strips and a teal antenna slit.
+ * The assistant's face: the hero robot's head (src/hero/robot), drawn flat. A
+ * warm grey shell over a black knit cap, ear knobs, a rainbow bezel around a
+ * black glass screen, and the robot's glowing eyes on it.
  *
- * `mood` picks the expression. A change plays a quick blink (the eyes close,
- * swap shape, reopen) and a small head tilt. `live` adds idle life: blinking,
- * glancing around and a slow float. All motion is CSS (chat.css) and is off
- * with prefers-reduced-motion, where moods simply switch.
+ * `mood` picks the expression (shared with the 3D head, src/hero/robot/face.ts).
+ * A change plays a quick blink (the eyes close, swap shape, reopen) and a small
+ * head tilt. `live` adds idle life: blinking, glancing around and a slow float.
+ * All motion is CSS (chat.css) and is off with prefers-reduced-motion, where
+ * moods simply switch.
  */
 export function Robot({ mood = 'neutral', live = false, className }: { mood?: Mood; live?: boolean; className?: string }) {
   const reduced = useStore((s) => s.reducedMotion)
@@ -38,68 +39,81 @@ export function Robot({ mood = 'neutral', live = false, className }: { mood?: Mo
   return (
     <svg className={`robot${className ? ` ${className}` : ''}`} viewBox="0 0 64 64" width="100%" height="100%" aria-hidden="true" focusable="false" data-mood={shown} data-live={live || undefined}>
       <defs>
-        <radialGradient id={id('shell')} cx="0.34" cy="0.24" r="0.9">
-          <stop offset="0" stopColor="#ffffff" />
-          <stop offset="0.55" stopColor="#eef0f4" />
-          <stop offset="0.85" stopColor="#c9ced8" />
-          <stop offset="1" stopColor="#9aa1ae" />
+        <radialGradient id={id('shell')} cx="0.36" cy="0.26" r="0.92">
+          <stop offset="0" stopColor="#ebe6df" />
+          <stop offset="0.5" stopColor="#cdc7be" />
+          <stop offset="0.85" stopColor="#a8a197" />
+          <stop offset="1" stopColor="#867f75" />
         </radialGradient>
-        <radialGradient id={id('screen')} cx="0.45" cy="0.3" r="0.85">
-          <stop offset="0" stopColor="#1a3560" />
-          <stop offset="0.55" stopColor="#0d1d3b" />
-          <stop offset="1" stopColor="#060d1d" />
-        </radialGradient>
-        <linearGradient id={id('pod')} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#3a414b" />
-          <stop offset="1" stopColor="#1b1f25" />
+        <linearGradient id={id('ear')} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#dad4cc" />
+          <stop offset="1" stopColor="#968f85" />
         </linearGradient>
-        <clipPath id={id('face')}>
-          <path d={SCREEN} />
+        <radialGradient id={id('screen')} cx="0.4" cy="0.25" r="0.9">
+          <stop offset="0" stopColor="#15151c" />
+          <stop offset="0.6" stopColor="#060609" />
+          <stop offset="1" stopColor="#020203" />
+        </radialGradient>
+        <clipPath id={id('bezel')}>
+          <path d={BEZEL} clipRule="evenodd" fillRule="evenodd" />
         </clipPath>
-        <pattern id={id('grid')} width="1.25" height="1.25" patternUnits="userSpaceOnUse">
-          <path d="M0 0H1.25M0 0V1.25" stroke="#04101f" strokeWidth="0.32" />
-        </pattern>
+        <clipPath id={id('face')}>
+          <rect {...SCREEN} />
+        </clipPath>
         <filter id={id('glow')} x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur stdDeviation="1.1" result="b" />
+          <feGaussianBlur stdDeviation="0.9" result="b" />
           <feMerge>
             <feMergeNode in="b" />
             <feMergeNode in="SourceGraphic" />
           </feMerge>
         </filter>
+        <filter id={id('soft')} x="-10%" y="-10%" width="120%" height="120%">
+          <feGaussianBlur stdDeviation="0.7" />
+        </filter>
       </defs>
 
       <g className="robot-float">
         <g className={beat ? 'robot-react' : undefined} key={`r${beat}`}>
-          {shown === 'angel' && <ellipse className="robot-halo" cx="32" cy="7.6" rx="12.5" ry="2.9" fill="none" stroke="#f7e6b0" strokeWidth="2.2" />}
+          {shown === 'angel' && <ellipse className="robot-halo" cx="32" cy="7.4" rx="12" ry="2.8" fill="none" stroke="#f7e6b0" strokeWidth="2.2" />}
 
-          {/* Ear pods with their light strips, then the antenna slit. */}
-          <rect x="2.6" y="27" width="7" height="16" rx="3.2" fill={url('pod')} />
-          <rect x="54.4" y="27" width="7" height="16" rx="3.2" fill={url('pod')} />
-          <rect className="robot-led" x="3.9" y="29.5" width="1.6" height="11" rx="0.8" fill="#3fe0d0" />
-          <rect className="robot-led" x="58.5" y="29.5" width="1.6" height="11" rx="0.8" fill="#3fe0d0" />
-          <rect className="robot-led" x="28.2" y="11.6" width="7.6" height="2.6" rx="1.3" fill="#3fe0d0" />
+          {/* Ear knobs. */}
+          <rect x="1.6" y="28" width="6" height="12" rx="2.6" fill={url('ear')} />
+          <rect x="56.4" y="28" width="6" height="12" rx="2.6" fill={url('ear')} />
+          <rect x="0.4" y="30.2" width="2.6" height="7.6" rx="1.3" fill={url('ear')} />
+          <rect x="61" y="30.2" width="2.6" height="7.6" rx="1.3" fill={url('ear')} />
 
-          {/* Helmet and screen. */}
-          <path d={SHELL} fill={url('shell')} />
-          <path d={SHELL} fill="none" stroke="#000" strokeOpacity="0.12" strokeWidth="0.6" />
-          <path d={SCREEN} fill={url('screen')} />
+          {/* The knit cap peeking out behind the shell, then the shell. */}
+          <rect x="6" y="11.2" width="52" height="44.2" rx="9" fill="#141417" />
+          <rect x="6.8" y="12.4" width="50.4" height="43.2" rx="8.2" fill={url('shell')} />
+          <rect x="6.8" y="12.4" width="50.4" height="43.2" rx="8.2" fill="none" stroke="#000" strokeOpacity="0.14" strokeWidth="0.6" />
+
+          {/* Rainbow bezel: a colour wheel, softened, seen through the ring. */}
+          <g className="robot-led" clipPath={url('bezel')}>
+            <g filter={url('soft')}>
+              {WEDGES.map(([d, fill]) => (
+                <path key={d} d={d} fill={fill} />
+              ))}
+            </g>
+          </g>
+          {/* Grey inner frame, then the black glass. */}
+          <rect x={32 - 16.55} y={34.5 - 13.45} width="33.1" height="26.9" rx="6" fill="#bfb8af" />
+          <rect {...SCREEN} fill={url('screen')} />
 
           <g clipPath={url('face')}>
             <g className="robot-look">
               <g className="robot-blink">
-                <g className={beat ? 'robot-swap' : undefined} key={`s${beat}`} filter={url('glow')} fill={EYE} stroke={EYE} strokeLinecap="round" strokeLinejoin="round">
-                  {face(shown)}
+                <g className={beat ? 'robot-swap' : undefined} key={`s${beat}`} filter={url('glow')}>
+                  <g transform={FACE_TRANSFORM}>{shapes(shown)}</g>
                 </g>
               </g>
             </g>
-            <rect className="robot-grid" x="10" y="16" width="44" height="38" fill={url('grid')} opacity="0.5" />
-            <path d="M18 24.5c4.2-3.6 10.4-4.8 16-4.4" fill="none" stroke="#fff" strokeOpacity="0.13" strokeWidth="1.6" strokeLinecap="round" />
+            <path d="M19.4 25.4c3.4-2.2 8.2-3 12.6-2.7" fill="none" stroke="#fff" strokeOpacity="0.16" strokeWidth="1.3" strokeLinecap="round" />
           </g>
 
           {shown === 'sleepy' && (
             <g className="robot-zzz" fill="#cfe9ff" fontFamily="system-ui, sans-serif" fontWeight="700">
-              <text x="47" y="15" fontSize="7">z</text>
-              <text x="52" y="9" fontSize="5">z</text>
+              <text x="10" y="12" fontSize="7">z</text>
+              <text x="5" y="6.5" fontSize="5">z</text>
             </g>
           )}
         </g>
@@ -108,76 +122,63 @@ export function Robot({ mood = 'neutral', live = false, className }: { mood?: Mo
   )
 }
 
-const SHELL = 'M32 13.2C47.4 13.2 57.6 22.4 57.6 35.2C57.6 48.4 47 56.4 32 56.4S6.4 48.4 6.4 35.2C6.4 22.4 16.6 13.2 32 13.2Z'
-const SCREEN = 'M32 18.2C44.6 18.2 52.4 25.6 52.4 35.6C52.4 45.6 44.4 51.6 32 51.6S11.6 45.6 11.6 35.6C11.6 25.6 19.4 18.2 32 18.2Z'
+/** The head is drawn at 48 units per model unit, centred on (32, 34); the screen's centre is (32, 34.5). */
+const SCREEN = { x: 32 - 14.65, y: 34.5 - 11.75, width: 29.3, height: 23.5, rx: 4.3 }
+/** Face space (face.ts) onto the screen. */
+const FACE_K = 29.3 / 43.8
+const FACE_TRANSFORM = `translate(32 34.5) scale(${FACE_K.toFixed(4)}) translate(-32 -34.6)`
 
-/** Eye (and mouth) shapes per mood, drawn in the screen's coordinates. */
-function face(mood: Mood): ReactNode {
-  const none = { stroke: 'none' }
-  const line = { fill: 'none', strokeWidth: 2.4 }
-  switch (mood) {
-    case 'happy':
-      // Filled crescents, as when smiling with the eyes.
-      return (
-        <>
-          <path {...none} d="M19.4 37.8C19.4 29.4 29.6 29.4 29.6 37.8C27.6 35.4 21.4 35.4 19.4 37.8Z" />
-          <path {...none} d="M34.4 37.8C34.4 29.4 44.6 29.4 44.6 37.8C42.6 35.4 36.4 35.4 34.4 37.8Z" />
-        </>
-      )
-    case 'wink':
-      return (
-        <>
-          <path {...none} d="M19.4 37.8C19.4 29.4 29.6 29.4 29.6 37.8C27.6 35.4 21.4 35.4 19.4 37.8Z" />
-          <path {...line} d="M35.4 35.8Q39.5 31.4 43.6 35.8" />
-        </>
-      )
-    case 'surprised':
-      return (
-        <>
-          <circle {...none} cx="24.5" cy="33.4" r="5.1" />
-          <circle {...none} cx="39.5" cy="33.4" r="5.1" />
-          <ellipse fill="none" strokeWidth="1.5" cx="32" cy="44.2" rx="1.7" ry="2.3" />
-        </>
-      )
-    case 'sleepy':
-      // Shut, peaceful: two low curves.
-      return (
-        <>
-          <path {...line} strokeWidth="2" d="M20.4 35.2Q24.5 38.8 28.6 35.2" />
-          <path {...line} strokeWidth="2" d="M35.4 35.2Q39.5 38.8 43.6 35.2" />
-        </>
-      )
-    case 'sad':
-      return (
-        <>
-          <path {...none} d="M19 33.4L28.9 30.3Q30.5 29.9 30.4 31.8Q30.1 38 28 42.3Q27.3 43.7 26.5 42.3Q25.5 40.5 23.4 39.9Q19.5 38.9 18.9 35.6Q18.7 34.1 19 33.4Z" />
-          <path {...none} d="M45 33.4L35.1 30.3Q33.5 29.9 33.6 31.8Q33.9 38 36 42.3Q36.7 43.7 37.5 42.3Q38.5 40.5 40.6 39.9Q44.5 38.9 45.1 35.6Q45.3 34.1 45 33.4Z" />
-          <path className="robot-tear" {...none} d="M27.2 44.6q1.1 1.7 0 2.5q-1.1-.8 0-2.5Z" />
-          <path className="robot-tear robot-tear--late" {...none} d="M36.8 44.6q1.1 1.7 0 2.5q-1.1-.8 0-2.5Z" />
-        </>
-      )
-    case 'angel':
-      return (
-        <>
-          <path {...line} d="M20.4 36.2Q24.5 31.4 28.6 36.2" />
-          <path {...line} d="M35.4 36.2Q39.5 31.4 43.6 36.2" />
-          <path fill="none" strokeWidth="1.8" d="M28.6 42.2Q32 45.2 35.4 42.2" />
-        </>
-      )
-    case 'thinking':
-      // Looking up and to the side, a little narrowed.
-      return (
-        <>
-          <ellipse {...none} cx="26" cy="32.6" rx="3.5" ry="4.4" />
-          <ellipse {...none} cx="41" cy="32.6" rx="3.5" ry="4.4" />
-        </>
-      )
-    default:
-      return (
-        <>
-          <ellipse {...none} cx="24.5" cy="34.6" rx="4.3" ry="5.7" />
-          <ellipse {...none} cx="39.5" cy="34.6" rx="4.3" ry="5.7" />
-        </>
-      )
-  }
+function roundedRect(cx: number, cy: number, w: number, h: number, r: number) {
+  const x = cx - w / 2
+  const y = cy - h / 2
+  return `M${x + r} ${y}H${x + w - r}A${r} ${r} 0 0 1 ${x + w} ${y + r}V${y + h - r}A${r} ${r} 0 0 1 ${x + w - r} ${y + h}H${x + r}A${r} ${r} 0 0 1 ${x} ${y + h - r}V${y + r}A${r} ${r} 0 0 1 ${x + r} ${y}Z`
+}
+const BEZEL = `${roundedRect(32, 34.5, 41.3, 34.6, 9.6)}${roundedRect(32, 34.5, 32.6, 26.4, 5.8)}`
+
+/** The 3D bezel's colour sweep (model.ts), as wedges around the screen's centre: 0 = right, clockwise. */
+const STOPS: [number, string][] = [
+  [0, '#ff5a2c'],
+  [0.09, '#ff8a1e'],
+  [0.24, '#ffd422'],
+  [0.37, '#b9e83c'],
+  [0.5, '#35e39a'],
+  [0.6, '#27d6ff'],
+  [0.72, '#3d7bff'],
+  [0.84, '#7a4dff'],
+  [0.93, '#e8376f'],
+  [1, '#ff5a2c'],
+]
+function sweep(t: number) {
+  let k = 0
+  while (k < STOPS.length - 2 && STOPS[k + 1][0] < t) k++
+  const [t0, c0] = STOPS[k]
+  const [t1, c1] = STOPS[k + 1]
+  const f = (t - t0) / (t1 - t0 || 1)
+  const a = parseInt(c0.slice(1), 16)
+  const b = parseInt(c1.slice(1), 16)
+  const ch = (s: number) => Math.round(((a >> s) & 255) * (1 - f) + ((b >> s) & 255) * f)
+  return `rgb(${ch(16)},${ch(8)},${ch(0)})`
+}
+const WEDGES: [string, string][] = Array.from({ length: 36 }, (_, i) => {
+  const a0 = ((i - 0.6) / 36) * Math.PI * 2
+  const a1 = ((i + 1.6) / 36) * Math.PI * 2
+  const R = 30
+  const p = (a: number) => `${(32 + Math.cos(a) * R).toFixed(2)} ${(34.5 + Math.sin(a) * R).toFixed(2)}`
+  return [`M32 34.5L${p(a0)}L${p(a1)}Z`, sweep((i + 0.5) / 36)]
+})
+
+function shapes(mood: Mood) {
+  return faceShapes(mood).map((s, i) => <Shape key={`${mood}${i}`} s={s} />)
+}
+
+function Shape({ s }: { s: FaceShape }) {
+  const tear = s.kind === 'path' && s.tear !== undefined
+  const color = tear ? TEAR_COLOR : EYE_COLOR
+  const paint =
+    s.style === 'fill'
+      ? { fill: color, stroke: 'none' }
+      : { fill: 'none', stroke: color, strokeWidth: s.width ?? 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
+  if (s.kind === 'circle') return <circle cx={s.cx} cy={s.cy} r={s.r} {...paint} />
+  if (s.kind === 'ellipse') return <ellipse cx={s.cx} cy={s.cy} rx={s.rx} ry={s.ry} {...paint} />
+  return <path className={tear ? `robot-tear${s.tear ? ' robot-tear--late' : ''}` : undefined} d={s.d} {...paint} />
 }
