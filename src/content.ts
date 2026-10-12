@@ -79,7 +79,7 @@ export const site = {
 export const about = {
   kicker: 'About',
   /** Two lines: the lead, then the accent (italic serif). */
-  heading: ['Driven by Curiosity,', 'Defined by Impact'],
+  heading: ['Exploring What’s Possible.', 'Building What Matters'],
   body: 'I enjoy exploring emerging AI technologies, solving challenging engineering problems, and turning experimentation into systems that deliver measurable value. Driven by continuous learning and thoughtful design, I strive to build technology that goes beyond innovation to make a meaningful difference.',
   /**
    * The portrait: the background-removed cutout (`npm run portrait`) the 3D crystals assemble into, and its
@@ -274,7 +274,7 @@ export const experience: Role[] = [
  */
 export const contact = {
   heading: 'Let’s build something real',
-  lede: 'Email me or send a message below.',
+  lede: 'Ideas are everywhere. Let’s turn one into something people can actually use.',
   email: 'vinayakkv2004@gmail.com',
   links: [
     { label: 'GitHub', href: 'https://github.com/vinayak533' },

@@ -1,15 +1,14 @@
 /**
  * The hero copy's entrance, played once (2.6 s): the name assembles from dots drifting in along the
  * landscape's inflow (toward the stage) and settles into solid type, the hairline draws, the tagline's words
- * fade up with "prototype chaos" resolving from a scramble, "production." arrives with an underline, then the
- * role. The timings of the CSS half are in hero.css ([data-intro=play]); this is the script half (the dots and
+ * fade up with "prototype chaos" resolving from a scramble, "production." arrives last, then the role. The timings of the CSS half are in hero.css ([data-intro=play]); this is the script half (the dots and
  * the scramble) and the clock both share.
  *
  * It is inlined into index.html straight after the pre-painted copy (vite.config.ts heroBoot), so it starts
  * with the first paint rather than after the app's bundle; the app calls it for the copy it draws itself
  * (src/dom/HeroCopy.tsx). So: no imports, nothing from the app.
  *
- * Decoration only: the real text is in the DOM, selectable and read by screen readers from the first paint;
+ * Decoration only: the real text is in the DOM (the name's, its image's alt), read by screen readers from the first paint;
  * the dots are a canvas and the scramble an aria-hidden span over the real (transparent) words. Whatever
  * happens (no frames in a background tab, an error), a timer puts the final text in place by 3.2 s. Reduced
  * motion: nothing runs, the text is simply there.
@@ -36,12 +35,10 @@ export function playIntro(target: Element | null): void {
   }
   setTimeout(finish, T.safety + 800)
 
-  // Start once the copy is laid out by its stylesheet and its display face is in (or soon: at most 400 ms).
-  const font = getComputedStyle(name)
-  const ready = Promise.race([
-    document.fonts ? document.fonts.load(`${font.fontWeight} ${font.fontSize} ${font.fontFamily}`).catch(() => {}) : null,
-    new Promise((r) => setTimeout(r, 400)),
-  ])
+  // Start once the copy is laid out by its stylesheet and the name's image (src/hero/tileType.ts) is decoded
+  // (or soon: at most 400 ms).
+  const img = name.querySelector('img')
+  const ready = Promise.race([img?.decode().catch(() => {}), new Promise((r) => setTimeout(r, 400))])
   let waited = 0
   const styled = () => getComputedStyle(root).position === 'absolute'
   const go = () => {
@@ -109,14 +106,12 @@ export function playIntro(target: Element | null): void {
     requestAnimationFrame(frame)
   }
 
-  /** The name's dots: each glyph sampled on a 6 px grid, every dot flown in from away from the stage. */
+  /** The name's dots: its letters sampled on a 6 px grid, every dot flown in from away from the stage. */
   function makeDots(): ((t: number) => void) | null {
-    const node = name!.firstChild
-    if (!node || node.nodeType !== 3) return null
-    const nb = name!.getBoundingClientRect()
+    if (!img || !img.complete || !img.naturalWidth) return null
+    const nb = img.getBoundingClientRect()
     const rb = root.getBoundingClientRect()
     if (nb.width < 4) return null
-    const cs = getComputedStyle(name!)
     const W = Math.ceil(nb.width)
     const H = Math.ceil(nb.height)
     const off = document.createElement('canvas')
@@ -124,25 +119,8 @@ export function playIntro(target: Element | null): void {
     off.height = H
     const o = off.getContext('2d', { willReadFrequently: true })
     if (!o) return null
-    o.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`
-    o.textBaseline = 'alphabetic'
-    o.fillStyle = '#fff'
-    // Each letter where the page drew it (its letter-spacing and case included).
-    const text = node.textContent ?? ''
-    const range = document.createRange()
-    for (let i = 0; i < text.length; i++) {
-      range.setStart(node, i)
-      range.setEnd(node, i + 1)
-      const r = range.getBoundingClientRect()
-      const ch = cs.textTransform === 'uppercase' ? text[i].toUpperCase() : text[i]
-      const m = o.measureText(ch)
-      // Fitted to the letter's box: right even if the face here is still a fallback's.
-      const sx = m.width > 0 ? Math.min(1.6, Math.max(0.6, (r.width - parseFloat(cs.letterSpacing || '0')) / m.width)) : 1
-      o.setTransform(sx, 0, 0, 1, r.left - nb.left, 0)
-      o.fillText(ch, 0, r.top - nb.top + (m.fontBoundingBoxAscent || r.height * 0.8))
-    }
-    o.setTransform(1, 0, 0, 1, 0, 0)
-    const img = o.getImageData(0, 0, W, H).data
+    o.drawImage(img, 0, 0, W, H)
+    const px = o.getImageData(0, 0, W, H).data
     const PITCH = 6
     const PAD = 140
     // Toward the stage (the landscape's inflow at the copy): the dais, up and to the right of the copy.
@@ -156,7 +134,9 @@ export function playIntro(target: Element | null): void {
     const list: Dot[] = []
     for (let y = PITCH / 2; y < H; y += PITCH) {
       for (let x = PITCH / 2; x < W; x += PITCH) {
-        if (img[((y | 0) * W + (x | 0)) * 4 + 3] < 128) continue
+        // The letters only: they are the image's light pixels (its tiles are dark).
+        const at4 = ((y | 0) * W + (x | 0)) * 4
+        if (px[at4 + 3] < 128 || px[at4] + px[at4 + 1] + px[at4 + 2] < 420) continue
         const d = 50 + Math.random() * 110
         const side = (Math.random() * 2 - 1) * 34
         const at = Math.random() * 300

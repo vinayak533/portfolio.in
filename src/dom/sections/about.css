@@ -28,6 +28,10 @@
   inset: calc(var(--gutter) + 4.5rem) var(--gutter) calc(var(--gutter) + 2rem);
   display: flex;
   align-items: safe flex-end;
+  /* Scrolls only down, on screens too short for the copy. Never across: the heading's overhang would otherwise
+     make it a sideways scroller, and Chrome then puts the whole box in the tab order. Clip, not hidden: hidden
+     would turn the touch rule's visible (below) into auto, a nested scroller. */
+  overflow-x: clip;
   overflow-y: auto;
   scrollbar-width: none;
 }
