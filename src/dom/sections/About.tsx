@@ -179,6 +179,16 @@ function SharpPortrait() {
   const box = useRef<HTMLDivElement>(null)
   const [loaded, setLoaded] = useState(false)
   const onLoad = useRef(() => setLoaded(true)).current
+  // The photo is fetched once the 3D portrait draws (About is on screen), not with the page: lazy loading alone
+  // would start it at load, since this box sits in the pinned stage near the top of the page until then.
+  const [near, setNear] = useState(false)
+
+  useEffect(() => {
+    if (near) return
+    return onTick(() => {
+      if (signals.aboutPhoto.frame > 0) setNear(true)
+    })
+  }, [near])
 
   useEffect(() => {
     if (!loaded) return
@@ -211,7 +221,7 @@ function SharpPortrait() {
 
   return (
     <div ref={box} className="about-sharp" style={{ opacity: 0 }}>
-      <PortraitPicture alt={photo.alt} lazy onLoad={onLoad} />
+      {near && <PortraitPicture alt={photo.alt} lazy onLoad={onLoad} />}
     </div>
   )
 }

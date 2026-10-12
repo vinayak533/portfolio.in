@@ -4,10 +4,12 @@
  * copy lays out exactly like the text's.
  *
  * The tagline is split for its entrance (src/hero/introFx.ts): each word its own span, "prototype chaos" the
- * words that resolve from a scramble and "production." the one that arrives with an underline. A tagline
+ * words that resolve from a scramble and "production." the one that arrives last. A tagline
  * without those words is split into plain words only. The real words are always in the DOM, in order, with
  * their spaces: the entrance only decorates them.
  */
+import { NAME_STYLE, ROLE_STYLE, tileText } from './tileType'
+
 const CHAOS = 'prototype chaos'
 const PROD = 'production.'
 
@@ -36,13 +38,20 @@ export function taglineHtml(tagline: string): string {
   return out.join(' ')
 }
 
+/** The name and the role in the tile lettering (src/hero/tileType.ts): an image each, its text the alt. */
+const tiles = (text: string, style: typeof NAME_STYLE, alt = text) => {
+  const t = tileText(text, style)
+  const w = Math.round(style.height * t.aspect)
+  return `<img src="${t.src}" alt="${esc(alt)}" width="${w}" height="${style.height}" decoding="sync" draggable="false">`
+}
+
 /** The block's inner markup. `heading`: the name is the page's h1 (the scrim's copy uses a div, hidden). */
 export function introHtml(copy: { tagline: string; role: string }, heading = true): string {
   const tag = heading ? 'h1' : 'div'
   return (
-    `<${tag} class="hero-intro__name"><span class="hero-intro__glyphs">Vinayak</span><span class="sr-only"> K V</span></${tag}>` +
+    `<${tag} class="hero-intro__name"><span class="hero-intro__glyphs">${tiles('Vinayak', NAME_STYLE)}</span><span class="sr-only"> K V</span></${tag}>` +
     `<span class="hero-intro__rule" aria-hidden="true"></span>` +
     `<p class="hero-intro__tagline">${taglineHtml(copy.tagline)}</p>` +
-    `<p class="hero-intro__role">${esc(copy.role)}</p>`
+    `<p class="hero-intro__role">${tiles(copy.role, ROLE_STYLE)}</p>`
   )
 }
