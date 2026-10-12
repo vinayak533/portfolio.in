@@ -74,6 +74,12 @@ export function Markdown({ src, onAnchor }: { src: string; onAnchor?: (id: strin
                 <strong>{line(b.text, `${i}`)}</strong>
               </p>
             )
+          case 'img':
+            return (
+              <p key={i} style={style} className="chat-md-figure">
+                <img src={b.src} alt={b.alt} loading="lazy" decoding="async" referrerPolicy="no-referrer" />
+              </p>
+            )
           case 'code':
             return (
               <pre key={i} style={style} tabIndex={0} aria-label={b.lang ? `${b.lang} code` : 'Code'}>

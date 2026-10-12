@@ -75,6 +75,9 @@ function contactApi(): Plugin {
  * (e.g. https://example.com) or, on Vercel, the project's production domain.
  * Without one, og:image stays relative and there is no canonical / og:url.
  */
+/** Bump after `npm run social` rewrites public/og.jpg: link previews cache the image by its URL. */
+const OG_VERSION = 2
+
 function siteMeta(): Plugin {
   let url = ''
   return {
@@ -85,7 +88,7 @@ function siteMeta(): Plugin {
       url = raw.trim().replace(/\/+$/, '')
     },
     transformIndexHtml() {
-      const image = `${url}/og.jpg`
+      const image = `${url}/og.jpg?v=${OG_VERSION}`
       const tags: HtmlTagDescriptor[] = [
         { tag: 'meta', attrs: { property: 'og:image', content: image }, injectTo: 'head' },
         { tag: 'meta', attrs: { name: 'twitter:image', content: image }, injectTo: 'head' },

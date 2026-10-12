@@ -1,14 +1,15 @@
 import '@fontsource-variable/inter/opsz.css'
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { assistant } from '../../assistant'
 import { projects } from '../../content'
+import type { TraceStep } from '../../core/assistant'
 import { toPlainText } from '../../core/markdown'
 import { lockScroll, scrollToSection } from '../../core/scroll'
 import { useStore } from '../../store/useStore'
 import { useResumeUrl } from '../useResumeUrl'
 import { Markdown } from './Markdown'
 import { Robot, type Mood } from './Robot'
-import { useChat, type ChatMessage } from './useChat'
+import { streamedText, useChat, type ChatMessage, type Thinking } from './useChat'
 
 export interface ChatPanelProps {
   id: string
@@ -52,10 +53,10 @@ function useMedia(query: string) {
  */
 export function ChatPanel({ id, open, onClose }: ChatPanelProps) {
   const resume = useResumeUrl()
-  const { messages, pending, announcement, send, stop, retry, reset } = useChat(resume)
-  const sheet = useMedia(SHEET_QUERY)
   const isTouch = useStore((s) => s.isTouch)
   const reducedMotion = useStore((s) => s.reducedMotion)
+  const { messages, thinking, stream, busy, announcement, send, stop, retry, reset } = useChat(resume, reducedMotion)
+  const sheet = useMedia(SHEET_QUERY)
   const root = useRef<HTMLDivElement>(null)
   const scroller = useRef<HTMLDivElement>(null)
   const input = useRef<HTMLTextAreaElement>(null)
@@ -67,15 +68,17 @@ export function ChatPanel({ id, open, onClose }: ChatPanelProps) {
   const lastIndex = messages.length - 1
   const last = messages[lastIndex]
 
-  // The header robot reacts to each answer for a moment, then settles.
+  // The header robot reacts to each answer once it has fully arrived, then settles.
+  const streaming = Boolean(stream)
   const [reaction, setReaction] = useState<Mood | null>(null)
   useEffect(() => {
-    if (last?.role !== 'assistant') return setReaction(null)
+    if (last?.role !== 'assistant' || streaming) return setReaction(null)
     setReaction(moodFor(last))
     const t = window.setTimeout(() => setReaction(null), 2400)
     return () => window.clearTimeout(t)
-  }, [last])
-  const headerMood: Mood = pending ? 'thinking' : (reaction ?? (last?.role === 'user' && last.state === 'failed' ? 'sad' : 'neutral'))
+  }, [last, streaming])
+  const headerMood: Mood = thinking ? 'thinking' : streaming ? 'happy' : (reaction ?? (last?.role === 'user' && last.state === 'failed' ? 'sad' : 'neutral'))
+  const phase = thinking ? 'thinking' : streaming ? 'writing' : 'idle'
 
   // The empty state says hello with a wink.
   const [greeted, setGreeted] = useState(false)
@@ -91,10 +94,11 @@ export function ChatPanel({ id, open, onClose }: ChatPanelProps) {
     else input.current?.focus({ preventScroll: true })
   }, [isTouch])
 
-  // Opening moves focus in; closing cancels a pending answer (it can be retried).
+  // Opening moves focus in. Closing cancels an answer still thinking (it can be retried);
+  // one already streaming arrives in full, so it is there when the panel opens again.
   useEffect(() => {
     if (open) focusComposer()
-    else stop()
+    else stop(true)
   }, [open, focusComposer, stop])
 
   // The sheet is modal: the page behind it must not scroll. Layout effect, so the lock is
@@ -134,7 +138,7 @@ export function ChatPanel({ id, open, onClose }: ChatPanelProps) {
     if (!el) return
     const added = messages.length > seen.current
     seen.current = messages.length
-    if (!added && !pending) return
+    if (!added && !thinking) return
     const behavior: ScrollBehavior = reducedMotion ? 'auto' : 'smooth'
     const last = messages[messages.length - 1]
     if (added && last?.role === 'assistant') {
@@ -146,7 +150,32 @@ export function ChatPanel({ id, open, onClose }: ChatPanelProps) {
       }
     }
     el.scrollTo({ top: el.scrollHeight, behavior })
-  }, [messages, pending, reducedMotion])
+  }, [messages, thinking, reducedMotion])
+
+  // While an answer streams, keep its newest words in view, until its question would scroll off
+  // the top. Scrolling away by hand stops the following, as in any chat app.
+  const follow = useRef(true)
+  useLayoutEffect(() => {
+    const el = scroller.current
+    if (!stream) {
+      follow.current = true
+      return
+    }
+    if (!el || !follow.current) return
+    const node = el.querySelector<HTMLElement>(`[data-id="${stream.id}"]`)
+    const question = node?.previousElementSibling as HTMLElement | null
+    const top = (question ?? node)?.offsetTop
+    el.scrollTop = Math.min(el.scrollHeight - el.clientHeight, top === undefined ? Infinity : top - 12)
+  }, [stream])
+  const stopFollowing = () => {
+    if (stream) follow.current = false
+  }
+
+  /** Each new trace step: keep the bottom in view if the reader is there. */
+  const onTraceStep = useCallback(() => {
+    const el = scroller.current
+    if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 140) el.scrollTop = el.scrollHeight
+  }, [])
 
   // Grow the input with its text, up to a cap.
   useLayoutEffect(() => {
@@ -232,9 +261,9 @@ export function ChatPanel({ id, open, onClose }: ChatPanelProps) {
           <h2 id={titleId} className="chat-title">
             {assistant.name}
           </h2>
-          <p className="chat-status">
+          <p className="chat-status" data-phase={phase}>
             <span className="chat-status-dot" aria-hidden="true" />
-            {assistant.status}
+            {phase === 'thinking' ? 'Thinking…' : phase === 'writing' ? 'Writing…' : assistant.status}
           </p>
         </div>
         {messages.length > 0 && (
@@ -262,6 +291,8 @@ export function ChatPanel({ id, open, onClose }: ChatPanelProps) {
         ref={scroller}
         className="chat-scroll"
         data-lenis-prevent
+        onWheel={stopFollowing}
+        onTouchMove={stopFollowing}
         onScroll={(e) => {
           const s = e.currentTarget
           setAtBottom(s.scrollHeight - s.scrollTop - s.clientHeight < 48)
@@ -300,7 +331,7 @@ export function ChatPanel({ id, open, onClose }: ChatPanelProps) {
                   {m.state && (
                     <p className="chat-note">
                       {m.state === 'stopped' ? 'Stopped.' : 'Something went wrong.'}
-                      {i === lastIndex && !pending && (
+                      {i === lastIndex && !busy && (
                         <button type="button" className="chat-note-btn" onClick={() => retry(m.id)}>
                           Retry
                         </button>
@@ -310,16 +341,25 @@ export function ChatPanel({ id, open, onClose }: ChatPanelProps) {
                 </li>
               ) : (
                 <li key={m.id} data-id={m.id} className="chat-msg chat-msg--bot">
-                  <Avatar small mood={moodFor(m)} />
                   <div className="chat-msg-body">
+                    {m.trace.length > 0 && <ThoughtFor trace={m.trace} ms={m.thoughtMs} />}
                     <span className="sr-only">{assistant.name} said: </span>
-                    <div className="chat-md">
-                      <Markdown src={m.text} onAnchor={onAnchor} />
+                    <div className="chat-md" data-streaming={stream?.id === m.id || undefined}>
+                      <Markdown src={stream?.id === m.id ? streamedText(stream) : m.text} onAnchor={onAnchor} />
                     </div>
-                    <div className="chat-actions">
-                      <CopyButton text={m.text} />
-                    </div>
-                    {i === lastIndex && !pending && m.suggestions.length > 0 && (
+                    {stream?.id !== m.id && (
+                      <div className="chat-actions">
+                        <CopyButton text={m.text} />
+                        {m.stopped && <span className="chat-stopped">Stopped</span>}
+                      </div>
+                    )}
+                    {/* The mark rests under the latest answer, and works while it is written. */}
+                    {i === lastIndex && !thinking && (
+                      <span className="chat-mark" data-active={stream?.id === m.id || undefined} aria-hidden="true">
+                        <Spark />
+                      </span>
+                    )}
+                    {i === lastIndex && !busy && !m.stopped && m.suggestions.length > 0 && (
                       <ul className="chat-suggest" aria-label="Suggested follow-ups">
                         {m.suggestions.map((s) => (
                           <li key={s}>
@@ -334,17 +374,9 @@ export function ChatPanel({ id, open, onClose }: ChatPanelProps) {
                 </li>
               ),
             )}
-            {pending && (
+            {thinking && (
               <li className="chat-msg chat-msg--bot chat-thinking">
-                <Avatar small mood="thinking" />
-                <p className="chat-thinking-label">
-                  <span className="chat-dots" aria-hidden="true">
-                    <i />
-                    <i />
-                    <i />
-                  </span>
-                  Thinking…
-                </p>
+                <LiveTrace thinking={thinking} onStep={onTraceStep} />
               </li>
             )}
           </ol>
@@ -389,8 +421,8 @@ export function ChatPanel({ id, open, onClose }: ChatPanelProps) {
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={onInputKey}
         />
-        {pending ? (
-          <button type="button" className="chat-send chat-send--stop" onClick={stop} aria-label="Stop answering">
+        {busy ? (
+          <button type="button" className="chat-send chat-send--stop" onClick={() => stop()} aria-label="Stop answering">
             <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
               <rect x="3" y="3" width="10" height="10" rx="2" fill="currentColor" />
             </svg>
@@ -410,7 +442,7 @@ export function ChatPanel({ id, open, onClose }: ChatPanelProps) {
           </span>
         ) : (
           <>
-            Answers come only from this portfolio.
+            Answers come only from Vinayak’s work.
             {!isTouch && <span className="chat-foot-keys"> Enter to send.</span>}
           </>
         )}
@@ -423,9 +455,82 @@ export function ChatPanel({ id, open, onClose }: ChatPanelProps) {
   )
 }
 
-function Avatar({ small, large, mood, live }: { small?: boolean; large?: boolean; mood?: Mood; live?: boolean }) {
+/** "→ detail" for most steps; a read shows what it read, as the tool's argument. */
+function StepArg({ step }: { step: TraceStep }) {
+  return step.tool === 'read_source' ? <span className="trace-arg">“{step.detail}”</span> : <span className="trace-arg">→ {step.detail}</span>
+}
+
+/** The trace as a pipeline: one node per tool call, joined by a rail. `active` is the one still running. */
+function TraceSteps({ steps, active, id }: { steps: TraceStep[]; active: number; id?: string }) {
   return (
-    <span className={`chat-avatar${small ? ' chat-avatar--sm' : ''}${large ? ' chat-avatar--lg' : ''}`} aria-hidden="true">
+    <ol className="trace" id={id}>
+      {steps.map((s, i) => (
+        <li key={i} className="trace-step" data-state={i === active ? 'run' : 'done'}>
+          <span className="trace-node" aria-hidden="true" />
+          <code className="trace-tool">{s.tool}</code>
+          <StepArg step={s} />
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+function Spark() {
+  return (
+    <svg className="trace-spark" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+      <path d="M8 1.5c.4 3.2 1.9 5.6 6.5 6.5-4.6.9-6.1 3.3-6.5 6.5-.4-3.2-1.9-5.6-6.5-6.5 4.6-.9 6.1-3.3 6.5-6.5z" fill="currentColor" />
+    </svg>
+  )
+}
+
+/** While an answer is worked out: its steps arrive one at a time, with a running clock. */
+function LiveTrace({ thinking, onStep }: { thinking: Thinking; onStep: () => void }) {
+  const [now, setNow] = useState(() => performance.now())
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(performance.now()), 100)
+    return () => window.clearInterval(t)
+  }, [])
+  const elapsed = Math.max(0, now - thinking.started)
+  const n = thinking.trace.length
+  const visible = thinking.stepMs ? Math.min(n, Math.floor(elapsed / thinking.stepMs) + 1) : n
+  const active = thinking.stepMs && elapsed < n * thinking.stepMs ? visible - 1 : -1
+  useEffect(() => onStep(), [visible, onStep])
+  return (
+    <div className="trace-live">
+      <p className="trace-head">
+        <Spark />
+        <span className="trace-shimmer">Thinking</span>
+        <span className="trace-time">{(elapsed / 1000).toFixed(1)}s</span>
+      </p>
+      <TraceSteps steps={thinking.trace.slice(0, visible)} active={active} />
+    </div>
+  )
+}
+
+/** After the answer: "Thought for 1.6s · read 3 sources", which opens the trace again. */
+function ThoughtFor({ trace, ms }: { trace: TraceStep[]; ms: number }) {
+  const [open, setOpen] = useState(false)
+  const id = useId()
+  const reads = trace.filter((s) => s.tool === 'read_source').length
+  return (
+    <div className="trace-done" data-open={open || undefined}>
+      <button type="button" className="trace-toggle" aria-expanded={open} aria-controls={id} onClick={() => setOpen((o) => !o)}>
+        <Spark />
+        <span>
+          Thought for {(ms / 1000).toFixed(1)}s{reads ? ` · read ${reads} source${reads === 1 ? '' : 's'}` : ''}
+        </span>
+        <svg className="trace-chevron" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+          <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {open && <TraceSteps steps={trace} active={-1} id={id} />}
+    </div>
+  )
+}
+
+function Avatar({ large, mood, live }: { large?: boolean; mood?: Mood; live?: boolean }) {
+  return (
+    <span className={`chat-avatar${large ? ' chat-avatar--lg' : ''}`} aria-hidden="true">
       <Robot mood={mood} live={live} />
     </span>
   )

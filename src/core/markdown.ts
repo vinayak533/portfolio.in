@@ -3,8 +3,10 @@
  * src/dom/chat/Markdown.tsx renders as React elements. No HTML string is ever
  * produced, so text can't turn into markup. Supported: paragraphs, line breaks,
  * - / 1. lists, # headings (shown as bold lines), ``` fences, `code`, **bold**,
- * *italic* / _italic_ and [links](…). Links survive only for https:, http:,
- * mailto: and same-page #anchors; any other target renders as plain text.
+ * *italic* / _italic_, [links](…) and ![images](…) on a line of their own.
+ * Links survive only for https:, http:, mailto: and same-page #anchors; any
+ * other target renders as plain text. Images load only from https: URLs or
+ * same-origin root paths (/certs/…), never protocol-relative //host ones.
  * No DOM here: tested by scripts/assistant.test.mjs.
  */
 
@@ -13,6 +15,7 @@ export type Block =
   | { kind: 'h'; text: string }
   | { kind: 'ul' | 'ol'; items: string[] }
   | { kind: 'code'; lang: string; text: string }
+  | { kind: 'img'; alt: string; src: string }
 
 export type Inline =
   | { kind: 'text'; text: string }
@@ -26,6 +29,7 @@ const BULLET = /^\s*[-*•]\s+(.*)$/
 const NUMBERED = /^\s*\d+[.)]\s+(.*)$/
 const HEADING = /^\s*#{1,6}\s+(.*)$/
 const FENCE = /^\s*```\s*([\w+-]*)\s*$/
+const IMAGE = /^\s*!\[([^\]\n]*)\]\((https:\/\/[^)\s]+|\/(?![/\\])[^)\s]+)\)\s*$/
 
 export function parseBlocks(src: string): Block[] {
   const lines = src.replace(/\r\n?/g, '\n').split('\n')
@@ -43,6 +47,12 @@ export function parseBlocks(src: string): Block[] {
       const code: string[] = []
       while (++i < lines.length && !FENCE.test(lines[i])) code.push(lines[i])
       blocks.push({ kind: 'code', lang: fence[1], text: code.join('\n') })
+      continue
+    }
+    const image = line.match(IMAGE)
+    if (image) {
+      flush()
+      blocks.push({ kind: 'img', alt: image[1], src: image[2] })
       continue
     }
     const item = line.match(BULLET) ?? line.match(NUMBERED)
@@ -104,10 +114,37 @@ export function toPlainText(src: string): string {
   const flat = (xs: Inline[]): string => xs.map((x) => ('children' in x ? flat(x.children) : x.text)).join('')
   return parseBlocks(src)
     .map((b) => {
+      if (b.kind === 'img') return ''
       if (b.kind === 'code') return b.text
       if (b.kind === 'p') return b.lines.map((l) => flat(parseInline(l))).join('\n')
       if (b.kind === 'h') return flat(parseInline(b.text))
       return b.items.map((it, i) => `${b.kind === 'ol' ? `${i + 1}.` : '•'} ${flat(parseInline(it))}`).join('\n')
     })
+    .filter(Boolean)
     .join('\n\n')
+}
+
+/*
+ * Streaming: an answer is revealed a chunk at a time (src/dom/chat/useChat.ts), the way a model's
+ * tokens arrive. A chunk is a word with its trailing space, except that an image line, a code fence,
+ * a [link](…), **bold**, *italic* or `code` span arrives whole, so half a link never flashes as text.
+ */
+const CHUNK =
+  /^!\[[^\]\n]*\]\([^)\s]+\)[^\S\n]*\n?|```[\s\S]*?```\s*|\[[^\]\n]+\]\([^)\s]+\)\S*\s*|\*\*[^*\n]+?\*\*\S*\s*|(?<!\*)\*(?![\s*])[^*\n]+?\*(?!\*)\S*\s*|`[^`\n]+`\S*\s*|\S+\s*|\s+/gm
+
+/** The text cut into stream chunks; joined back together they are exactly the text. */
+export function streamChunks(src: string): string[] {
+  return src.match(CHUNK) ?? []
+}
+
+/**
+ * A partial answer made safe to render: a word cut inside **bold**, `code` or a ``` fence (one that
+ * spans several chunks) gets its closing mark, so the reader never sees stray asterisks or backticks.
+ */
+export function closeOpenMarks(partial: string): string {
+  let s = partial.replace(/\s+$/, '')
+  if ((s.match(/```/g)?.length ?? 0) % 2) return `${s}\n\`\`\``
+  if ((s.replace(/```/g, '').match(/`/g)?.length ?? 0) % 2) s += '`'
+  if ((s.match(/\*\*/g)?.length ?? 0) % 2) s += '**'
+  return s
 }
