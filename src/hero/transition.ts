@@ -21,6 +21,7 @@ import { getLenis } from '../core/scroll'
 import { signals, useStore } from '../store/useStore'
 import { heroConfig as cfg, MOBILE_QUERY, transitionProfile } from './config'
 import { shotAt } from './shot'
+import { energy, heroScroll } from './motion'
 import type { RobotHandle } from './robot/dom'
 
 export interface TransitionOptions {
@@ -79,6 +80,9 @@ function webglTransition(o: TransitionOptions): TransitionHandle {
   const heads = () => Array.from(o.about()?.querySelectorAll<HTMLElement>('[data-a-head]') ?? [])
 
   function apply(pv: number) {
+    // The background's energy system (src/hero/motion.ts): scrolling inside the hero raises ENERGY.
+    if (pv !== heroScroll.p && pv > 0 && pv < 1) energy.poke('scroll', 250)
+    heroScroll.p = pv
     p = pv
     const T = cfg.transition
     const shot = shotAt(pv)
@@ -236,6 +240,7 @@ function webglTransition(o: TransitionOptions): TransitionHandle {
     },
     destroy() {
       signals.heroCovers = false
+      heroScroll.p = 0
       ScrollTrigger.removeEventListener('refreshInit', unlift)
       ScrollTrigger.removeEventListener('refresh', relift)
       window.removeEventListener('keydown', onKey)
@@ -271,7 +276,10 @@ function crossfade(o: TransitionOptions): TransitionHandle {
   if (about) fade.fromTo(about, { opacity: 0 }, { opacity: 1 }, 0)
 
   // The engine (the robot's still) docks with the same crossfade.
-  const dock = (on: boolean) => o.engine()?.setProgress(on ? 1 : 0)
+  const dock = (on: boolean) => {
+    heroScroll.p = on ? 1 : 0
+    o.engine()?.setProgress(on ? 1 : 0)
+  }
   const st = ScrollTrigger.create({
     trigger: section,
     start: 'top -12%',

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { experience, type SectionId } from '../content'
+import type { HeroTier } from '../hero/tier'
 
 export type Quality = 'high' | 'mid' | 'low'
 export type RenderMode = 'webgl' | 'static'
@@ -9,6 +10,8 @@ interface State {
   mode: RenderMode
   quality: Quality
   lite: boolean
+  /** The hero's quality tier (src/hero/tier.ts): chosen at start-up, only ever stepped down. */
+  heroTier: HeroTier
   reducedMotion: boolean
   isTouch: boolean
   /** 0..1 asset + shader warm-up progress. */
@@ -32,6 +35,7 @@ export const useStore = create<State>((set) => ({
   mode: 'webgl',
   quality: 'high',
   lite: false,
+  heroTier: 'high',
   reducedMotion: false,
   isTouch: false,
   loadProgress: 0,

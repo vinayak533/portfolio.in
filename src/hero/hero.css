@@ -80,6 +80,21 @@
   background: transparent;
 }
 
+/* ---- The tagline's fallbacks: the system serif italics, sized to Instrument Serif's set width (measured on
+   the tagline: Georgia 78.7%, Times New Roman 88.9%), so the line breaks hold when the web font swaps in. */
+@font-face {
+  font-family: 'Instrument Serif Fallback';
+  src: local('Georgia Italic'), local('Georgia-Italic');
+  font-style: italic;
+  size-adjust: 78.7%;
+}
+@font-face {
+  font-family: 'Instrument Serif Fallback Times';
+  src: local('Times New Roman Italic'), local('TimesNewRomanPS-ItalicMT');
+  font-style: italic;
+  size-adjust: 88.9%;
+}
+
 /* ---- Hero palette (the hero and its chrome only) ------------------------- */
 
 #hero,
@@ -97,6 +112,15 @@
   --h-sans: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --h-display: 'Space Grotesk Variable', 'Space Grotesk', var(--h-sans);
   --h-margin: clamp(24px, 4.4vw, 64px);
+  /* Motion tokens (src/hero/motion.ts mirrors them for the canvases). */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-hover: 150ms;
+  --dur-fast: 200ms;
+  --dur-swap: 300ms;
+  --dur-base: 400ms;
+  --dur-slow: 800ms;
 }
 
 #hero .hero-cinematic {
@@ -148,9 +172,12 @@
 .hero-scene__in {
   inset: 0;
 }
-/* The whole stage gives way to About's world with the robot's backdrop (--robot-bg). */
+/* The whole stage gives way to About's world with the robot's backdrop (--robot-bg). Before that, as the
+   hero starts to leave (--hero-leave, 0..1, engine.ts), it dims to 55% and drifts up by 12% of its height:
+   a composited transform, nothing re-rendered. */
 .hero-scene {
-  opacity: var(--robot-bg, 1);
+  opacity: calc(var(--robot-bg, 1) * (1 - 0.45 * var(--hero-leave, 0)));
+  translate: 0 calc(var(--hero-leave, 0) * -12%);
 }
 
 /* The laptop's glow on the floor (stage.ts). */
@@ -217,6 +244,36 @@
   height: calc(var(--dais-h) * 2.6 + 24px);
   translate: -50% -50%;
   background: radial-gradient(closest-side, rgb(124 92 255 / 0.28), rgb(124 92 255 / 0.11) 50%, transparent);
+}
+
+/* The poster (Hero.tsx): the scene pre-rendered, the first paint (and the page's largest), over the live
+   layers until the live scene's first frame is drawn, then a 300 ms crossfade ([data-live]). Without WebGL,
+   or with the context lost, it stays. */
+.hero-poster,
+.hero-poster img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.hero-poster img {
+  display: block;
+  object-fit: cover;
+  object-position: 50% 40%;
+  user-select: none;
+}
+.hero-poster {
+  transition: opacity var(--dur-swap) var(--ease-in-out), visibility 0s linear var(--dur-swap);
+}
+.hero-cinematic[data-live] .hero-poster {
+  opacity: 0;
+  visibility: hidden;
+}
+/* Under the poster the stage's layers are laid out (and drawn) but not shown: when the engine's layout
+   moves the beam and the floor's pool, nothing visible shifts. */
+.hero-cinematic:not([data-live]) .hero-scene {
+  visibility: hidden;
 }
 
 /* Film grain, at 3%. */
@@ -341,9 +398,6 @@
   height: 100vh;
   height: 100svh;
   pointer-events: none;
-  /* The stage's defaults (.hero-stage) until the engine's layout is copied in (HeroCopy.tsx). */
-  --robot-x: 50%;
-  --dais-w: calc(57svh * 1.4);
 }
 .hero-intro--scrim > * {
   visibility: hidden;
@@ -359,11 +413,15 @@
 }
 .hero-intro {
   --intro-left: max(var(--h-margin), calc((100% - 1600px) / 2 + var(--h-margin)));
+  /* Clear of the dais by the stage's default geometry (.hero-stage), not the engine's live layout: the copy's
+     box is set at the first paint (the pre-rendered copy, vite.config.ts heroBoot) and never moves after. */
+  --intro-stage-x: 50%;
+  --intro-dais-w: calc(57svh * 1.4);
   position: absolute;
   z-index: 2;
   left: var(--intro-left);
   bottom: 44px;
-  max-width: max(240px, min(440px, calc(var(--robot-x) - var(--dais-w) / 2 - var(--intro-left) - 32px)));
+  max-width: max(240px, min(440px, calc(var(--intro-stage-x) - var(--intro-dais-w) / 2 - var(--intro-left) - 32px)));
   opacity: var(--hero-intro, 1);
   pointer-events: none;
   isolation: isolate;
@@ -408,7 +466,7 @@
 }
 .hero-intro__tagline {
   margin: 0;
-  font-family: 'Instrument Serif', Georgia, serif;
+  font-family: 'Instrument Serif', 'Instrument Serif Fallback', 'Instrument Serif Fallback Times', Georgia, serif;
   font-style: italic;
   font-weight: 400;
   font-size: clamp(22px, 1.65vw, 26px);

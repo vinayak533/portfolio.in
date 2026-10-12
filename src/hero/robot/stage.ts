@@ -44,7 +44,7 @@ export function mountStage(host: HTMLElement): StageHandle {
   const beatNow = emptySample()
   const finePointer = window.matchMedia('(hover: hover) and (pointer: fine) and (min-width: 1025px)')
   const hero = host.closest<HTMLElement>('#hero')
-  /** The landscape's lite (automatic lite, or a software renderer; phones have their own profile). */
+  /** The LOW tier (src/hero/tier.ts; automatic lite is always LOW): still, no parallax. */
   const lite = () => !!host.closest('[data-lite-landscape]')
   /** The backdrop's fade as About's world comes through (engine.ts writes it inline on the host). */
   const backdrop = () => {

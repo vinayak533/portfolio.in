@@ -61,6 +61,11 @@
 .robot-layer.is-revealed .robot-canvas {
   opacity: 1;
 }
+/* Over the hero's poster (Hero.tsx): the canvas comes in with its first frame, crossfading with the poster
+   (300 ms, the motion tokens' ease-in-out). */
+.robot-layer.is-instant .robot-canvas {
+  transition: opacity 0.3s cubic-bezier(0.65, 0, 0.35, 1);
+}
 /* Landed with no launcher on the page yet: wait unseen. */
 .robot-canvas.is-waiting {
   visibility: hidden;
@@ -74,28 +79,4 @@
   opacity: 1;
   transform: translate(-50%, -50%);
   transition: none;
-}
-
-/* ---- Still fallback (no WebGL, reduced motion, lost context): the seated coding pose at its desk, a
-   frame of the live scene, centred on the stage (engine.ts layout). The image runs from just above the
-   standing figure's height (1.02x) over the stage's centre to its front rim: 1.2515 times that height.
-   Phones may lose the stage's outer edges (the hero clips). */
-.hero-robot-still {
-  position: absolute;
-  left: var(--robot-x);
-  top: calc(var(--robot-foot) - var(--robot-h) * 1.02);
-  height: calc(var(--robot-h) * 1.2515);
-  width: auto;
-  max-width: none;
-  object-fit: contain;
-  object-position: 50% 0;
-  transform: translateX(-50%);
-  opacity: 0;
-  transition: opacity 0.8s ease-out 1s;
-  pointer-events: none;
-  user-select: none;
-  filter: drop-shadow(0 0 40px rgb(124 92 255 / 0.12));
-}
-.hero-robot-still.is-revealed {
-  opacity: 1;
 }

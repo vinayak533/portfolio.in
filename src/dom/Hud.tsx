@@ -47,15 +47,14 @@ export function Hud() {
     }
   }, [menuOpen])
 
+  // WebGL: the navigation is there and usable from the first paint, over the hero's poster (Hero.tsx).
+  // Static: it fades in as the curtain lifts.
+  const webgl = mode === 'webgl'
   useEffect(() => {
-    if (!loaded) return
-    gsap.fromTo(
-      root.current!.querySelectorAll('[data-hud]'),
-      { opacity: 0, y: -14 },
-      // WebGL: last in the hero's load sequence, once the robot's screen is on (src/hero/robot/engine.ts).
-      { opacity: 1, y: 0, duration: 1.6, ease: 'expo.out', stagger: 0.07, delay: mode === 'webgl' ? 3.2 : 0.1 },
-    )
-  }, [loaded, mode])
+    if (!loaded || webgl) return
+    gsap.fromTo(root.current!.querySelectorAll('[data-hud]'), { opacity: 0, y: -14 }, { opacity: 1, y: 0, duration: 1.6, ease: 'expo.out', stagger: 0.07, delay: 0.1 })
+  }, [loaded, webgl])
+  const hidden = webgl ? '' : ' opacity-0'
 
   // Slide the indicator under the active link.
   useLayoutEffect(() => {
@@ -68,7 +67,7 @@ export function Hud() {
   return (
     <div ref={root} className="pointer-events-none fixed inset-x-0 top-0 z-[100]">
       <header className="hud relative flex items-center justify-end">
-        <nav aria-label="Sections" data-hud className="pointer-events-auto absolute inset-y-0 left-1/2 hidden -translate-x-1/2 items-center opacity-0 md:flex">
+        <nav aria-label="Sections" data-hud className={`pointer-events-auto absolute inset-y-0 left-1/2 hidden -translate-x-1/2 items-center md:flex${hidden}`}>
           <ol ref={pill} className="nav-pill">
             <li aria-hidden="true" role="presentation" className="nav-pill-indicator" style={{ left: indicator.left, width: indicator.width }} />
             {sections.map((s) => (
@@ -89,14 +88,14 @@ export function Hud() {
         </nav>
 
         <div className="flex items-center gap-5">
-          <span data-hud className="hud-count mono opacity-0 md:hidden" aria-hidden="true">
+          <span data-hud className={`hud-count mono md:hidden${hidden}`} aria-hidden="true">
             {String(index + 1).padStart(2, '0')} / {String(sections.length).padStart(2, '0')}
           </span>
           <button
             ref={menuBtn}
             data-hud
             type="button"
-            className="hud-menu-btn pointer-events-auto mono opacity-0 md:hidden"
+            className={`hud-menu-btn pointer-events-auto mono md:hidden${hidden}`}
             aria-expanded={menuOpen}
             aria-controls={menuId}
             onClick={() => setMenuOpen((o) => !o)}

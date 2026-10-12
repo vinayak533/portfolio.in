@@ -17,13 +17,14 @@
  * Scroll (setProgress, from src/hero/transition.ts), as a pure function of
  * progress so scrolling back replays it exactly:
  *
- *   hold      0 .. hold          the scene, large and centred
- *   glide     .. GLIDE_END       it turns to face you as the camera pushes in on its
- *                                head; the laptop powers down, the furniture, the
- *                                headphones and the body dissolve (DISSOLVE), leaving
- *                                the head alone
- *   dock      DOCK .. DOCK_END   the head shrinks and arcs down into the chat
- *                                launcher's corner, landing exactly on it
+ *   0 .. 0.30     the typing stops, the hands lift off the keys, the laptop's
+ *                 screen dims (POWER_OFF); the landscape starts to dim and drift up
+ *   0.20 .. 0.60  the chair, the table, the laptop and the body dissolve from the
+ *                 feet up into violet dots (DISSOLVE) as the camera closes on the
+ *                 head, which turns to face you
+ *   0.50 .. 1.00  the head, headphones on, lifts off the neck (DETACH: eyes wide,
+ *                 then ^ ^ for 400 ms) and arcs down into the dock in the corner,
+ *                 shrinking as it goes, landing exactly as the pin releases
  *
  * Screen placement and size are a 2D transform applied after the projection
  * (clip space), so the robot is re-rendered sharp at every size rather than
@@ -39,8 +40,14 @@
  * it moves (fine pointers only; phones are left alone), easing back to the
  * coding gaze 3 s after it stops; in the glide it takes over fully, as before.
  * The head follows on a slightly underdamped spring within neck limits.
- * Docked, it acts as the launcher robot always has: idle glances, a slow
- * float, blinks, and the launcher's moods on its screen.
+ * Docked (the chat launcher's face, in the bottom-right dock: 112 px on desktops,
+ * 96 on tablets, 72 on phones), it is quiet: its eyes follow the pointer (within
+ * +-12 deg; on touch screens they drift a cell with the scroll), it blinks every
+ * 4-6 s, floats (3 px over 4 s, +-1.5 deg of pitch), and wears ^ ^ for 400 ms as
+ * each new section comes into view; never more than one new expression in 1.5 s,
+ * never a hop. Below 500 px of height it holds still. Only the head is drawn
+ * there (the rest of the scene is hidden), at 30 frames a second unless its eyes
+ * or head are moving.
  */
 import {
   ACESFilmicToneMapping,
@@ -81,20 +88,24 @@ import { mountRobot as mountStill } from './still'
 import { beat, emptySample } from './beat'
 import { createPerformance } from './perform'
 import { PULSE, SCREEN } from './props'
+import { SLOW_FRAME, TIERS, type HeroTier } from '../tier'
+import { signals, useStore } from '../../store/useStore'
 
 const FOV = 28
 const TAN = Math.tan(((FOV / 2) * Math.PI) / 180)
 
 /** Scroll beats (hero progress). The glide starts where the transition's idle hold ends. */
-const GLIDE_END = 0.44
-const DISSOLVE: [number, number] = [0.06, 0.42]
-/** The headphones lift away in a dissolve of their own, after the body's has begun. */
-const PHONES_OFF: [number, number] = [0.16, 0.38]
-/** The laptop powers down as the glide begins. */
-const POWER_OFF: [number, number] = [0.02, 0.12]
-/** The flight overlaps the backdrop giving way to About (about 0.77..0.95), landing as About settles. */
-const DOCK = 0.52
-const DOCK_END = 0.9
+const GLIDE_END = 0.5
+/** The furniture and the body dissolve, from the feet up (the head and its headphones never do). */
+const DISSOLVE: [number, number] = [0.2, 0.6]
+/** The typing stops (the hands lift off the keys) and the laptop's screen dims. */
+const POWER_OFF: [number, number] = [0, 0.3]
+/** The head lifts off the neck (this far, world units) as its flight begins. */
+const DETACH: [number, number] = [0.5, 0.6]
+const DETACH_LIFT = 0.16
+/** The flight overlaps the backdrop giving way to About (about 0.77..0.95), landing as the pin releases. */
+const DOCK = 0.5
+const DOCK_END = 1
 
 /** Opening framing: a little above, the stage square on (model.ts SEAT sets the 3/4 view of the robot). */
 const YAW0 = 0
@@ -108,10 +119,12 @@ const ELEV1 = 0.03
 const HEAD_SHARE = { wide: 0.32, tall: 0.24 }
 /** Head centre in the close-up, NDC. */
 const HEAD_Y1 = 0.08
-/** Head height in the launcher, as a share of the launcher button. */
-const DOCK_HEAD = 0.6
-/** The docked canvas, as a multiple of the launcher button: room for tilts, hops, the halo and z's. */
-const DOCK_PAD = 1.7
+/** The dock: the head's box in the corner (px; the docked canvas), by width: desktops, tablets, phones. */
+const DOCK_BOX = { desktop: 112, tablet: 96, phone: 72 }
+/** The head's height in the dock, as a share of the box (with its headphones it is about 1.4 times as wide). */
+const DOCK_HEAD = 0.46
+/** Docked: the float (px, s), its pitch (rad), the ^ ^ on a new section (ms), the least time between expressions (ms). */
+const DOCKED = { bob: 3, period: 4, pitch: (1.5 * Math.PI) / 180, hello: 400, gap: 1500 }
 
 /** The dissolve's heights: from below the stage to past the collar (the head is never cut). */
 const CUT_FROM = -0.15
@@ -166,6 +179,7 @@ const lerpLog = (a: number, b: number, t: number) => Math.exp(lerp(Math.log(a), 
 
 export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHandle {
   const layer = createLayer()
+  if (opts.skipIntro) layer.el.classList.add('is-instant')
   const canvas = document.createElement('canvas')
   canvas.className = 'robot-canvas'
   canvas.setAttribute('aria-hidden', 'true')
@@ -178,6 +192,9 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     layer.dispose()
     return mountStill(host, opts)
   }
+  // Shader diagnostics in development only: in production they are synchronous GL queries (and print the
+  // driver's harmless warnings).
+  renderer.debug.checkShaderErrors = import.meta.env.DEV
   renderer.outputColorSpace = SRGBColorSpace
   renderer.toneMapping = ACESFilmicToneMapping
   renderer.toneMappingExposure = 1.05
@@ -240,10 +257,14 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
   const beatNow = emptySample()
   const silent = emptySample()
 
-  /** Lite: less environment, no shadows, no reflection, and the display a static emissive rather than a light. */
+  /**
+   * By tier (src/hero/tier.ts): HIGH has the shadow map and the floor reflection; MEDIUM drops both (the blob
+   * shadow under the dais stays) but keeps the glow cards and the screen's light; LOW (lowPower) also has less
+   * environment and the display as a static emissive rather than a light.
+   */
   function applyLighting() {
     scene.environmentIntensity = lowPower ? 0.36 : 0.5
-    key.shadow.intensity = lowPower ? 0 : 1
+    key.shadow.intensity = shadows ? 1 : 0
     key.shadow.radius = opts.integratedGpu ? 3 : 5
   }
 
@@ -321,20 +342,25 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
   const topPt = new Vector3()
 
   const camera = new PerspectiveCamera(FOV, 1, 0.1, 60)
-  if (import.meta.env.DEV) Object.assign(window, { __heroRobot: { robot, scene, perform, renderer, camera, stageCues } })
+  if (import.meta.env.DEV) Object.assign(window, { __heroRobot: { robot, scene, perform, renderer, camera, stageCues, dock: () => ({ docked, face: shownMood, busy: dockBusy, cost: dockCost.n ? dockCost.sum / dockCost.n : 0, drawMs: dockCost.n ? dockCost.draw / dockCost.n : 0, frames: dockCost.n, calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, box: L.box }) } })
   const tall = window.matchMedia(MOBILE_QUERY)
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)')
   const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)')
-  let lowPower = !!opts.lowPower
+  let tier: HeroTier = opts.tier ?? 'high'
+  let lowPower = tier === 'low'
+  let shadows = tier === 'high'
+  stageCues.governed = !lowPower
   applyLighting()
-  const pixelCap = () => Math.min(window.devicePixelRatio || 1, lowPower ? 1.25 : opts.integratedGpu ? 1.5 : 2) * (1 - 0.15 * Math.max(0, degrade - 6))
+  /** The robot's pixel ratio: by tier (and 1.5 on an integrated GPU). Never lowered by the governor: the head and its eyes stay sharp. */
+  const pixelCap = () => Math.min(window.devicePixelRatio || 1, TIERS[tier].robotDpr, opts.integratedGpu ? 1.5 : 2)
 
   /**
-   * Quality steps taken when the hero cannot hold its frame rate (measured over 2 s windows while the
-   * scene plays), in this order: 1-3 the backdrop's pulse waves, contour shimmer and grid density
-   * (terrain.ts reads these), 4 the glows that stand in for bloom and the floor reflection, 5 the
-   * shadow map halves, 6 the equaliser drops to 28 columns, 7-8 the pixel ratio steps down. Only ever
-   * downward (no oscillation); the head, the eyes and the laptop's screen are never touched.
+   * Quality steps taken when the hero cannot hold its frame rate (frames averaging over 24 ms across a 3 s
+   * window while the scene plays), one per window, in this order: 1-3 the backdrop's interference waves,
+   * comets and grid density (terrain.ts reads these), 4 the glows that stand in for bloom and the floor
+   * reflection, 5 the shadow map halves, 6 the equaliser drops to 28 columns; terrain.ts then lowers its
+   * own pixel ratio (7) and frame rate (8). Only ever downward (no oscillation); the head, the eyes and the
+   * laptop's screen are never touched (the robot's pixel ratio is not on the ladder).
    */
   let degrade = 0
   const perf = { sum: 0, n: 0 }
@@ -344,10 +370,10 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     if (holdQuality) return
     perf.sum += dt
     perf.n++
-    if (perf.sum < 2) return
+    if (perf.sum < SLOW_FRAME.span / 1000) return
     const avg = perf.sum / perf.n
     perf.sum = perf.n = 0
-    if (avg <= 1 / (phone ? 28 : 45) || degrade >= 8) return
+    if (avg <= SLOW_FRAME.ms / 1000 || degrade >= 8) return
     degrade++
     stageCues.degrade = degrade
     if (degrade === 5) {
@@ -356,7 +382,6 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
       key.shadow.map = null
     }
     if (degrade === 6) robot.setEqColumns(28)
-    if (degrade >= 7) sizeCanvas()
   }
 
   // ---- layout: where the robot sits, how big, where the launcher is
@@ -387,24 +412,26 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     camera.updateMatrixWorld()
   }
 
-  /** The launcher button's box (px, viewport). Before the chat widget mounts: where its CSS will put it. */
+  /** The dock's size (px) at this width. */
+  const dockSize = () => (VW > 1024 ? DOCK_BOX.desktop : VW >= 768 ? DOCK_BOX.tablet : DOCK_BOX.phone)
+
+  /** The launcher button's box (px, viewport). Before the chat widget mounts: where its CSS will put it (chat.css). */
   function anchorBox() {
     const a = robotLink.anchor?.getBoundingClientRect()
     if (a && a.width) return { x: a.left, y: a.top, w: a.width, h: a.height }
-    const wide = VW >= 768
-    const size = wide ? 60 : 56
-    const m = wide ? 24 : 16
+    const size = VW > 1024 ? 64 : VW >= 768 ? 56 : 52
+    const m = (dockSize() - size) / 2 + (VW > 1024 ? 28 : VW >= 768 ? 24 : 16)
     return { x: VW - m - size, y: VH - m - size, w: size, h: size }
   }
 
+  /** The dock: a box centred on the launcher button, the head at its share of it. */
   function measureDock() {
     const a = anchorBox()
-    const w = a.w * DOCK_PAD
-    const h = a.h * DOCK_PAD
-    L.box = { x: a.x + a.w / 2 - w / 2, y: a.y + a.h / 2 - h / 2, w, h }
+    const size = dockSize()
+    L.box = { x: a.x + a.w / 2 - size / 2, y: a.y + a.h / 2 - size / 2, w: size, h: size }
     L.dx = ((a.x + a.w / 2) / VW) * 2 - 1
     L.dy = 1 - ((a.y + a.h / 2) / VH) * 2
-    L.sd = (DOCK_HEAD * a.h) / (VH * L.headShare)
+    L.sd = (DOCK_HEAD * size) / (VH * L.headShare)
   }
 
   /** The hero stage: the layout's CSS variables go here, for the stage's light and floor (hero.css). */
@@ -603,7 +630,30 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     home()
     setDock(on ? 'docked' : 'away', true)
     head.react = 0
+    // Docked, only the head is drawn: the body (all but the head's pivot), the furniture and the stage are hidden.
+    for (const c of body.children) if (c !== headPivot) c.visible = !on
+    robot.chair.visible = robot.desk.group.visible = lap.group.visible = !on
+    // (The neck, under the head's pivot but of the body, is dissolved by then: not drawn either.)
+    for (const m of neckMeshes) m.visible = !on
+    // ...and the renderer stops walking the whole scene's matrices each frame (syncWorld updates the head's).
+    scene.matrixWorldAutoUpdate = !on
   }
+
+  /** The body's meshes under the head's pivot (the neck). */
+  const neckMeshes: Mesh[] = []
+  headPivot.traverse((o) => {
+    if (o instanceof Mesh && robot.bodyMaterials.includes(o.material as Material)) neckMeshes.push(o)
+  })
+
+  /** Docked: a quick ^ ^ as each new section comes into view (not in the hero, not when held still). */
+  let helloUntil = -Infinity
+  const offSection = useStore.subscribe((st, prev) => {
+    // (Within 1.5 s of the last new expression there is no greeting: skipped, not delayed.)
+    const now = performance.now()
+    if (st.section !== prev.section && st.section !== 'hero' && docked && !staticDock() && now - moodAt >= DOCKED.gap) helloUntil = now + DOCKED.hello
+  })
+  /** Below 500 px of height (or with reduced motion) the docked head holds still: no float, no greeting. */
+  const staticDock = () => VH < 500 || reduced.matches
 
   // ---- gaze input (the hero's pointer tracking)
 
@@ -654,6 +704,35 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     return { yaw: -0.32 * left + 0.32 * right, pitch: -0.03 * left + 0.06 * right }
   }
 
+  /**
+   * The pointer as neck angles (body frame, into `ray`): unprojected through this frame's projection (before
+   * the docked crop) to a ray, met with a plane between the head and the camera.
+   */
+  const ray = { yaw: 0, pitch: 0 }
+  function pointerRay(x: number, y: number) {
+    const nx = (x / VW) * 2 - 1
+    const ny = 1 - (y / VH) * 2
+    near.set(nx, ny, -1).applyMatrix4(projInv).applyMatrix4(camera.matrixWorld)
+    far.set(nx, ny, 1).applyMatrix4(projInv).applyMatrix4(camera.matrixWorld)
+    dir.subVectors(far, near).normalize()
+    headWorld.copy(headLocal)
+    body.localToWorld(headWorld)
+    normal.subVectors(camera.position, headWorld)
+    const plane = normal.length() * 0.5
+    normal.normalize()
+    const denom = dir.dot(normal)
+    if (Math.abs(denom) > 1e-4) {
+      const tt = (plane - offset.subVectors(near, headWorld).dot(normal)) / denom
+      point.copy(dir).multiplyScalar(tt).add(near)
+    } else {
+      point.copy(camera.position)
+    }
+    body.worldToLocal(point).sub(headLocal)
+    const flat = Math.hypot(point.x, point.z)
+    ray.yaw = Math.atan2(point.x, Math.max(1e-3, point.z))
+    ray.pitch = -Math.atan2(point.y, Math.max(1e-3, flat))
+  }
+
   /** Neck angles (body frame) toward a world point. */
   const aim = new Vector3()
   function anglesTo(world: Vector3) {
@@ -667,6 +746,8 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
 
   let progress = 0
   let revealed = false
+  /** The first revealed frame has been drawn (onReady called). */
+  let ready = false
   let revealedAt = Infinity
   let lost = false
   const proj = new Matrix4()
@@ -700,6 +781,11 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
   let shadowReady = false
   /** Frames drawn (the floor reflection is redrawn every other frame). */
   let frameNo = 0
+  /** The typing was in a burst last frame (its start is published as stageCues.burstAt). */
+  let wasBursting = false
+  /** The backdrop's last written fade and leave (style writes only when they change). */
+  let shownBg = ''
+  let shownLeave = ''
 
   // The hero transition parts (turns transparent onto About) at a fixed progress:
   // the backdrop may only fade from there, or the fixed stage behind would show unrendered.
@@ -724,11 +810,38 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     return (lit ? 0.85 : 0.12) * (0.4 + 0.6 * (t / 0.5))
   }
 
+  /** Docked: time carried over skipped frames (30 a second while nothing moves), and whether anything moves. */
+  let dockCarry = 0
+  let dockBusy = true
+  /** performance.now() when the head last came off the neck (its eyes go wide, then ^ ^). */
+  let detachAt = -Infinity
+  let detached = false
+  /** performance.now() of the docked head's last new expression (at most one per 1.5 s). */
+  let moodAt = -Infinity
+  /** The camera's aim: the head's seat on the neck (so the lift off it shows), easing onto the lifted head. */
+  const camHead = new Vector3()
+  /** Development: the docked frame's CPU time (ms), summed. */
+  const dockCost = { sum: 0, n: 0, draw: 0 }
+  /** The scene's world matrices: docked, only the head moves (its parents hold still), so only its subtree. */
+  const syncWorld = () => (docked ? headPivot.updateMatrixWorld(true) : robot.root.updateMatrixWorld(true))
   const tableInv = new Matrix4()
   const pulseU = robot.pulse.material.uniforms
-  function frame(time: number, dt: number) {
-    if (lost || document.hidden || opts.isPaused?.()) return
-    const now = performance.now()
+  /** The rings' resting heights (the typing tremor moves them about these). */
+  const backRingY = robot.rings[0].points.position.y
+  const lowRingY = robot.rings[1].points.position.y
+  function frame(time: number, dt0: number) {
+    if (lost || !compiled || document.hidden || opts.isPaused?.()) return
+    // 30 frames a second when docked and idle, and always in LOW (the skipped frames' time is carried, so
+    // nothing slows).
+    let dt = dt0
+    if (docked || lowPower) {
+      dockCarry += dt0
+      if ((lowPower || !dockBusy) && dockCarry < 1 / 31) return
+      dt = Math.min(dockCarry, 1 / 15)
+      dockCarry = 0
+    }
+    const t0 = performance.now()
+    const now = t0
     const p = progress
     const still = reduced.matches
 
@@ -754,33 +867,45 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     if (still && beat.running) beat.stop()
     beat.sample(now, beatNow)
 
-    // ---- the performance: full in the hero, gone by the close-up (the body turns to face us)
-    const weight = (1 - smoothstep(0, 0.6, a)) * (docked ? 0 : 1)
+    // ---- the performance: full in the hero, stopped by 0.3 (the hands lift off the keys; the body turns to face us)
+    const weight = (1 - smoothstep(POWER_OFF[0], POWER_OFF[1], p)) * (docked ? 0 : 1)
     robot.root.rotation.y = lerp(YAW0, 0, a)
-    perform.update(dt, beatNow, { amp: lowPower ? 0.7 : 1, weight, still, turn: smoothstep(0, 0.7, a), faceYaw: 0 })
+    // Docked, the body is hidden and still: no performance, laptop or stage to update (the head alone is drawn).
+    if (!docked) perform.update(dt, beatNow, { amp: lowPower ? 0.7 : 1, weight, still, turn: smoothstep(0, 0.7, a), faceYaw: 0 })
     const pf = perform.out
-    // Lite (and the governor's step 4): no glow cards (the scene's stand-in for bloom).
+    // LOW (and the governor's step 4): no glow cards (the scene's stand-in for bloom).
     const glows = !lowPower && degrade < 4
     if (!glows) rig.coreGlow.opacity = 0
     placeHead(pf.dip)
-    robot.root.updateMatrixWorld(true)
+    // The head lifts off the neck as its flight begins; the camera keeps to its seat at first, so the lift shows.
+    const lifted = smoothstep(DETACH[0], DETACH[1], p)
+    if (lifted > 0) {
+      camHead.copy(headLocal)
+      placeHead(pf.dip + DETACH_LIFT * lifted)
+      camHead.lerp(headLocal, smoothstep(DETACH[1], 0.75, p))
+    } else camHead.copy(headLocal)
+    const isOff = p >= DETACH[0] && !docked
+    if (isOff && !detached && !still) detachAt = now
+    detached = p >= DETACH[0]
+    syncWorld()
 
     // The body comes apart from the ground up as the camera closes on the head (the furniture with it);
-    // the headphones lift away after it; the laptop powers down first.
+    // the laptop powers down first. The head and its headphones stay whole.
     const d = smoothstep(DISSOLVE[0], DISSOLVE[1], p)
-    cut.value = d <= 0 ? CUT_FROM - 1 : lerp(CUT_FROM, neck.y + CUT_OVER, d)
-    const ph = smoothstep(PHONES_OFF[0], PHONES_OFF[1], p)
-    phonesCut.value = ph <= 0 ? -100 : lerp(neck.y + 0.25, headLocal.y + 0.55, ph)
+    // (It rises with the head's lift, so the neck stays behind and is gone: nothing hangs under the head.)
+    cut.value = d <= 0 ? CUT_FROM - 1 : lerp(CUT_FROM, neck.y + CUT_OVER, d) + DETACH_LIFT * lifted
+    // (The headphones stay with the head: phonesCut never rises.)
     const props = (1 - smoothstep(POWER_OFF[0], POWER_OFF[1], p)) * power
     const stageFade = (1 - smoothstep(0, 0.22, d)) * introDais
     robot.setStage(stageFade)
+    if (docked) robot.stage.visible = false
     robot.shadowFloor.opacity *= introFurniture
     const furnitureFade = introFurniture * (1 - smoothstep(0, 0.3, d))
     robot.desk.underglow.opacity = 0.08 * furnitureFade
     for (const m of robot.furnitureFades) m.uniforms.uFade.value = furnitureFade
 
     // Camera: from the opening framing to the close-up on the head.
-    target1.copy(headLocal)
+    target1.copy(camHead)
     body.localToWorld(target1)
     camTarget.lerpVectors(L.target0, target1, a)
     placeCamera(camTarget, lerpLog(DIST0, L.dist1, a), lerp(ELEV0, ELEV1, a))
@@ -801,9 +926,10 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
       tx = lerp(0, L.dx, easeInOutCubic(Math.min(1, bLin * 1.08)))
       ty = lerp(HEAD_Y1, L.dy, b) + 0.12 * Math.sin(Math.PI * b) * (1 - b)
     }
-    // Docked: a slow float (the launcher's), eased in after landing.
+    // Docked: a slow float (3 px over 4 s), eased in after landing; still below 500 px of height.
     head.dock = docked ? Math.min(1, head.dock + dt / 0.8) : 0
-    if (docked && robotLink.live) ty += head.dock * ((1.8 / VH) * 2) * (0.5 - 0.5 * Math.cos(time * ((2 * Math.PI) / 3.6)))
+    const floating = docked && robotLink.live && !staticDock()
+    if (floating) ty += head.dock * ((DOCKED.bob / VH) * 2) * (0.5 - 0.5 * Math.cos(time * ((2 * Math.PI) / DOCKED.period)))
     screen.set(s, 0, 0, tx, 0, s, 0, ty, 0, 0, 1, 0, 0, 0, 0, 1)
     camera.updateProjectionMatrix()
     proj.multiplyMatrices(screen, camera.projectionMatrix)
@@ -818,81 +944,109 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     }
     camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert()
 
-    // The space backdrop gives way to About's world once the stage behind is live.
-    host.style.setProperty('--robot-bg', String(1 - smoothstep(parting, parting + 0.08, p)))
+    // The space backdrop gives way to About's world once the stage behind is live. Before that, as the hero
+    // starts to leave, it dims and drifts up (hero.css, --hero-leave: a transform, nothing re-rendered).
+    const bg = (1 - smoothstep(parting, parting + 0.08, p)).toFixed(4)
+    const leave = smoothstep(0, 0.75, p).toFixed(4)
+    if (bg !== shownBg) host.style.setProperty('--robot-bg', (shownBg = bg))
+    if (leave !== shownLeave) host.style.setProperty('--hero-leave', (shownLeave = leave))
 
     // ---- the laptop: the display (the code scrolls a line every 0.8 s, at half speed while nobody types),
     // the build (the terminal prints, then the sweep, the check mark, the nod), its light and its keys
-    screenT += still ? 0 : dt * pf.scroll
-    const sm = lap.screen.uniforms
-    sm.uRows.value = Math.floor(screenT / 0.4)
-    sm.uTyped.value = (screenT % 0.8) / 0.8
-    sm.uCursor.value = ((still ? 0 : time) % 1.06) / 1.06 < 0.55 ? 1 : 0
-    sm.uProgress.value = still ? 0.6 : (screenT / 40) % 1
-    if (pf.buildT >= 0 && pf.buildT < dt + 1e-4) buildSeed++
-    if (pf.success) {
-      sinceSuccess = 0
-      if (!lowPower && !still) stageCues.commitAt = now
-    } else sinceSuccess += dt
-    // Read only, for the backdrop's descent (terrain.ts): when the next build is due, and when this one began.
-    if (!lowPower && !still && weight > 0.02) {
-      stageCues.buildDue = now + pf.compileIn * 1000
-      if (pf.buildT >= 0) stageCues.buildAt = now - pf.buildT * 1000
-    } else stageCues.buildDue = Infinity
-    sm.uTermSeed.value = buildSeed
-    sm.uTerm.value = pf.buildT >= 0 ? Math.min(4, (pf.buildT / 1.1) * 4) : 4
-    // The check mark: hidden while the build prints; on success a single pulse, then it stays, dim.
-    sm.uCheck.value = pf.buildT >= 0 && sinceSuccess > pf.buildT ? 0 : sinceSuccess < 0.6 ? 0.35 + 0.65 * Math.sin(Math.PI * (sinceSuccess / 0.6)) : 0.35
-    sm.uSweep.value = sinceSuccess < 0.7 ? sinceSuccess / 0.7 : -1
-    // The screen as a light: +-6% with the scroll, a brief +15% when the build passes.
-    const scrollPulse = still ? 0 : Math.sin((screenT / 0.8) * Math.PI * 2)
-    const boost = sinceSuccess < 0.8 ? 0.15 * Math.sin(Math.PI * (sinceSuccess / 0.8)) : 0
-    const glow = 1 + 0.06 * scrollPulse * 0.5 + boost
-    sm.uGlow.value = 0.94 + 0.06 * (0.5 + 0.5 * scrollPulse) + boost
-    sm.uPower.value = power
-    sm.uFade.value = props / Math.max(power, 1e-3)
-    // The cast light; in lite a static emissive (the display and its glow on the table only).
-    lap.screenLight.intensity = lowPower ? 0 : SCREEN_LIGHT * props * glow
-    lap.keyLight.intensity = lowPower ? 0 : KEY_LIGHT * props
-    lap.screenGlow.uniforms.uA.value = glows ? 0.07 * props * glow : 0
-    lap.tableGlow.uniforms.uA.value = (lowPower ? 0.07 : 0.11 * glow) * props
-    lap.lidEdge.opacity = 0.3 * (0.6 + 0.4 * props) * furnitureFade
-    lap.keyboard.update(dt, props)
+    let boost = 0
+    if (!docked) {
+      screenT += still ? 0 : dt * pf.scroll
+      const sm = lap.screen.uniforms
+      sm.uRows.value = Math.floor(screenT / 0.4)
+      sm.uTyped.value = (screenT % 0.8) / 0.8
+      sm.uCursor.value = ((still ? 0 : time) % 1.06) / 1.06 < 0.55 ? 1 : 0
+      sm.uProgress.value = still ? 0.6 : (screenT / 40) % 1
+      if (pf.buildT >= 0 && pf.buildT < dt + 1e-4) buildSeed++
+      if (pf.success) {
+        sinceSuccess = 0
+        if (!lowPower && !still) stageCues.commitAt = now
+      } else sinceSuccess += dt
+      // Read only, for the backdrop's descent (terrain.ts): when the next build is due, and when this one began.
+      if (!lowPower && !still && weight > 0.02) {
+        stageCues.buildDue = now + pf.compileIn * 1000
+        if (pf.buildT >= 0) stageCues.buildAt = now - pf.buildT * 1000
+      } else stageCues.buildDue = Infinity
+      // A typing burst starting (read only, from the performance): the floor's tremor (terrain.ts) and the rings'.
+      const bursting = pf.action === 'type' && pf.scroll >= 1 && weight > 0.5 && !still
+      if (bursting && !wasBursting) stageCues.burstAt = now
+      wasBursting = bursting
+      sm.uTermSeed.value = buildSeed
+      sm.uTerm.value = pf.buildT >= 0 ? Math.min(4, (pf.buildT / 1.1) * 4) : 4
+      // The check mark: hidden while the build prints; on success a single pulse, then it stays, dim.
+      sm.uCheck.value = pf.buildT >= 0 && sinceSuccess > pf.buildT ? 0 : sinceSuccess < 0.6 ? 0.35 + 0.65 * Math.sin(Math.PI * (sinceSuccess / 0.6)) : 0.35
+      sm.uSweep.value = sinceSuccess < 0.7 ? sinceSuccess / 0.7 : -1
+      // The screen as a light: +-6% with the scroll, a brief +15% when the build passes.
+      const scrollPulse = still ? 0 : Math.sin((screenT / 0.8) * Math.PI * 2)
+      boost = sinceSuccess < 0.8 ? 0.15 * Math.sin(Math.PI * (sinceSuccess / 0.8)) : 0
+      const glow = 1 + 0.06 * scrollPulse * 0.5 + boost
+      sm.uGlow.value = 0.94 + 0.06 * (0.5 + 0.5 * scrollPulse) + boost
+      sm.uPower.value = power
+      sm.uFade.value = props / Math.max(power, 1e-3)
+      // The cast light; in lite a static emissive (the display and its glow on the table only).
+      lap.screenLight.intensity = lowPower ? 0 : SCREEN_LIGHT * props * glow
+      lap.keyLight.intensity = lowPower ? 0 : KEY_LIGHT * props
+      lap.screenGlow.uniforms.uA.value = glows ? 0.07 * props * glow : 0
+      lap.tableGlow.uniforms.uA.value = (lowPower ? 0.07 : 0.11 * glow) * props
+      lap.lidEdge.opacity = 0.3 * (0.6 + 0.4 * props) * furnitureFade
+      lap.keyboard.update(dt, props)
 
-    // ---- the stage: the dais ripples every 2nd beat, the equaliser jumps, the rings turn, the commit pulse
-    // (On every 2nd beat, with the landscape's pulse waves, terrain.ts.)
-    robot.dais.uniforms.uPulse.value = lowPower || beatNow.index % 2 ? 0 : beatNow.pulse * 0.55 * weight
-    const eq = robot.eq.material.uniforms
-    eq.uBeat.value = beatNow.index
-    eq.uSince.value = beatNow.since
-    eq.uOn.value = beatNow.on && !lowPower ? 1 : 0
-    eq.uAmp.value = pf.eq
-    const [backRing, lowRing] = robot.rings
-    backRing.points.rotation.y = still ? 0.4 : time * ((2 * Math.PI) / 150)
-    lowRing.points.rotation.y = still ? 1.2 : -time * ((2 * Math.PI) / 120)
-    backRing.material.uniforms.uSat.value = still ? 2 : (-time * (2 * Math.PI)) / 70
-    lowRing.material.uniforms.uSat.value = still ? 0.6 : (time * (2 * Math.PI)) / 48
-    lowRing.points.visible = true
-    backRing.points.visible = !phone
-    // The commit pulse: across the table and the floor from the laptop, and a trail up into the beam.
-    const pulseT = (now - stageCues.commitAt) / 1000
-    pulseU.uT.value = pulseT >= 0 && pulseT < PULSE.life ? pulseT : -1
-    if (pulseU.uT.value >= 0) {
-      lap.group.getWorldPosition(pulseU.uTableC.value)
-      pulseU.uFloorC.value.copy(pulseU.uTableC.value).setY(0)
-      tableInv.copy(robot.desk.group.matrixWorld).invert()
-      pulseU.uTableInv.value.copy(tableInv)
-      pulseU.uTableHalf.value.set(robot.desk.half.x / robot.desk.group.scale.x, robot.desk.half.y / robot.desk.group.scale.z)
-      lap.display.localToWorld(pulseU.uTop.value.set(0, (SCREEN.h / 2) * 1.05, 0.004))
-      // Up and toward the beam over the stage's centre.
-      pulseU.uRise.value.set(-pulseU.uTop.value.x * 0.5, 1.25, -pulseU.uTop.value.z * 0.4)
+      // ---- the stage: the dais ripples every 2nd beat, the equaliser jumps, the rings turn, the commit pulse
+      // (On every 2nd beat, with the landscape's pulse waves, terrain.ts.)
+      robot.dais.uniforms.uPulse.value = lowPower || beatNow.index % 2 ? 0 : beatNow.pulse * 0.55 * weight
+      const eq = robot.eq.material.uniforms
+      eq.uBeat.value = beatNow.index
+      eq.uSince.value = beatNow.since
+      eq.uOn.value = beatNow.on && !lowPower ? 1 : 0
+      eq.uAmp.value = pf.eq
+      const [backRing, lowRing] = robot.rings
+      backRing.points.rotation.y = still ? 0.4 : time * ((2 * Math.PI) / 150)
+      lowRing.points.rotation.y = still ? 1.2 : -time * ((2 * Math.PI) / 120)
+      backRing.material.uniforms.uSat.value = still ? 2 : (-time * (2 * Math.PI)) / 70
+      lowRing.material.uniforms.uSat.value = still ? 0.6 : (time * (2 * Math.PI)) / 48
+      lowRing.points.visible = true
+      backRing.points.visible = !phone
+      // The typing tremor: a burst's first keys shiver the rings (0.4% of the figure's height, 240 ms, three
+      // damped swings; the landscape's first rows do the same, terrain.ts).
+      const tremorT = (now - stageCues.burstAt) / 240
+      const tremor = !lowPower && tremorT >= 0 && tremorT < 1 ? 0.004 * top * Math.sin(Math.PI * 2 * 3 * tremorT) * (1 - tremorT) : 0
+      backRing.points.position.y = backRingY + tremor
+      lowRing.points.position.y = lowRingY + tremor * 0.7
+      // The commit pulse: across the table and the floor from the laptop, and a trail up into the beam.
+      const pulseT = (now - stageCues.commitAt) / 1000
+      pulseU.uT.value = pulseT >= 0 && pulseT < PULSE.life ? pulseT : -1
+      if (pulseU.uT.value >= 0) {
+        lap.group.getWorldPosition(pulseU.uTableC.value)
+        pulseU.uFloorC.value.copy(pulseU.uTableC.value).setY(0)
+        tableInv.copy(robot.desk.group.matrixWorld).invert()
+        pulseU.uTableInv.value.copy(tableInv)
+        pulseU.uTableHalf.value.set(robot.desk.half.x / robot.desk.group.scale.x, robot.desk.half.y / robot.desk.group.scale.z)
+        lap.display.localToWorld(pulseU.uTop.value.set(0, (SCREEN.h / 2) * 1.05, 0.004))
+        // Up and toward the beam over the stage's centre.
+        pulseU.uRise.value.set(-pulseU.uTop.value.x * 0.5, 1.25, -pulseU.uTop.value.z * 0.4)
+      }
     }
     // Shadows come in with the furniture and go with the dissolve (the shadow pass does not dissolve).
-    key.shadow.intensity = lowPower ? 0 : introFurniture * (1 - smoothstep(0, 0.15, d))
+    key.shadow.intensity = shadows ? introFurniture * (1 - smoothstep(0, 0.15, d)) : 0
 
-    // ---- mood: the launcher's, once the head is home; in the hero, the performance's (^ ^ on a build).
-    const want: FaceMood = docked ? robotLink.mood : pf.joy ? 'joy' : 'neutral'
+    // ---- mood: the launcher's, once the head is home (^ ^ as a new section arrives); in the hero, the
+    // performance's (^ ^ on a build); coming off the neck, wide eyes then ^ ^ (no swap blink: at once).
+    const sinceOff = (now - detachAt) / 1000
+    const offMood: FaceMood | null = docked || still ? null : sinceOff < 0.18 ? 'surprised' : sinceOff < 0.58 ? 'joy' : null
+    const dockWant: FaceMood = now < helloUntil && robotLink.mood === 'neutral' ? 'joy' : robotLink.mood
+    let want: FaceMood = docked ? dockWant : (offMood ?? (pf.joy ? 'joy' : 'neutral'))
+    // Docked, a new expression at most every 1.5 s (going back to the resting face is always allowed).
+    if (docked && want !== shownMood && want !== 'neutral' && now - moodAt < DOCKED.gap) want = shownMood
+    if (offMood && shownMood !== offMood) {
+      shownMood = offMood
+      swapT = -1
+    }
     if (want !== shownMood && swapT < 0) {
+      if (docked && want !== 'neutral') moodAt = now
       // The hero's joy comes and goes without a swap blink.
       if (!docked && (want === 'joy' || shownMood === 'joy')) shownMood = want
       else {
@@ -920,7 +1074,7 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     }
 
     // ---- gaze
-    robot.root.updateMatrixWorld(true)
+    syncWorld()
     let yawT: number
     let pitchT: number
     let yawRaw: number
@@ -930,28 +1084,9 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     if (!docked) {
       // Pointer -> ray through this frame's projection -> plane before the face -> neck angles.
       const look = lookAt(now, time)
-      const nx = (look.x / VW) * 2 - 1
-      const ny = 1 - (look.y / VH) * 2
-      near.set(nx, ny, -1).applyMatrix4(projInv).applyMatrix4(camera.matrixWorld)
-      far.set(nx, ny, 1).applyMatrix4(projInv).applyMatrix4(camera.matrixWorld)
-      dir.subVectors(far, near).normalize()
-      headWorld.copy(headLocal)
-      body.localToWorld(headWorld)
-      normal.subVectors(camera.position, headWorld)
-      const plane = normal.length() * 0.5
-      normal.normalize()
-      const denom = dir.dot(normal)
-      if (Math.abs(denom) > 1e-4) {
-        // Plane: through headWorld + normal * plane, facing the camera.
-        const tt = (plane - offset.subVectors(near, headWorld).dot(normal)) / denom
-        point.copy(dir).multiplyScalar(tt).add(near)
-      } else {
-        point.copy(camera.position)
-      }
-      body.worldToLocal(point).sub(headLocal)
-      const flat = Math.hypot(point.x, point.z)
-      yawRaw = Math.atan2(point.x, Math.max(1e-3, point.z))
-      pitchRaw = -Math.atan2(point.y, Math.max(1e-3, flat))
+      pointerRay(look.x, look.y)
+      yawRaw = ray.yaw
+      pitchRaw = ray.pitch
       const glideYaw = clamp(yawRaw, -YAW_MAX, YAW_MAX)
       const glidePitch = clamp(pitchRaw, -PITCH_UP, PITCH_DOWN)
       const glideEyeX = clamp((yawRaw - head.yaw) * 0.085, -0.075, 0.075)
@@ -987,11 +1122,26 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
       eyeTX = lerp(glideEyeX, lerp(baseEyeX, pEyeX, head.pointer), hw)
       eyeTY = lerp(glideEyeY, lerp(baseEyeY, pEyeY, head.pointer), hw)
     } else {
-      // The launcher robot's own life: glances while neutral, a scan while thinking,
-      // a droop while asleep or crying, held still while the chat is open.
-      const g = robotLink.live && shownMood === 'neutral' ? glance(time) : { yaw: 0, pitch: 0 }
-      yawT = g.yaw
-      pitchT = g.pitch
+      // Docked: the eyes follow the pointer (fine pointers, within +-12 deg of the viewer, the eyes a cell or two
+      // further), else a glance now and then; a scan while thinking, a droop while asleep or crying, held still
+      // while the chat is open. On touch screens the eyes drift a cell with the scroll and come back.
+      const g = robotLink.live && shownMood === 'neutral' && !staticDock() ? glance(time) : { yaw: 0, pitch: 0 }
+      const follow = robotLink.live && finePointer.matches && !gaze.touch && gaze.inside && now - gaze.at < POINTER_IDLE
+      head.pointer = damp(head.pointer, follow ? 1 : 0, follow ? 4 : 1.6, dt)
+      let pYaw = 0
+      let pPitch = 0
+      let pEyeX = 0
+      let pEyeY = 0
+      if (head.pointer > 0.001) {
+        pointerRay(gaze.x, gaze.y)
+        const toViewer = anglesTo(camera.position)
+        pYaw = toViewer.yaw + clamp(ray.yaw - toViewer.yaw, -POINTER_LIMIT, POINTER_LIMIT)
+        pPitch = toViewer.pitch + clamp(ray.pitch - toViewer.pitch, -POINTER_LIMIT, POINTER_LIMIT)
+        pEyeX = clamp((ray.yaw - pYaw) * 0.09, -0.075, 0.075)
+        pEyeY = clamp(-(ray.pitch - pPitch) * 0.09, -0.055, 0.055)
+      }
+      yawT = lerp(g.yaw, pYaw, head.pointer)
+      pitchT = lerp(g.pitch, pPitch, head.pointer)
       if (shownMood === 'thinking') {
         yawT = -0.22 + 0.18 * Math.sin(time * ((2 * Math.PI) / 3.2))
         pitchT = -0.14
@@ -1004,8 +1154,10 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
       }
       yawRaw = yawT * 1.6
       pitchRaw = pitchT * 1.3
-      eyeTX = clamp((yawRaw - head.yaw) * 0.085, -0.075, 0.075)
-      eyeTY = clamp(-(pitchRaw - head.pitch) * 0.085, -0.055, 0.055)
+      eyeTX = lerp(clamp((yawRaw - head.yaw) * 0.085, -0.075, 0.075), pEyeX, head.pointer)
+      eyeTY = lerp(clamp(-(pitchRaw - head.pitch) * 0.085, -0.055, 0.055), pEyeY, head.pointer)
+      // Touch: a cell's drift in the scroll's direction (down the page, the eyes look down), easing back.
+      if (!finePointer.matches && !staticDock()) eyeTY -= clamp(signals.velocity * 0.03, -0.03, 0.03)
     }
 
     // Neck: a slightly underdamped spring (a soft settle, never a snap).
@@ -1032,9 +1184,12 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
       }
       if (k >= 1) reactT = -1
     }
-    if (shownMood === 'happy' && docked) roll += 0.06 * Math.sin(time * 6) * 0.5 + 0.06
+    // Docked it never hops or wiggles: reactions are a tilt only.
+    if (docked) hop = 0
+    if (shownMood === 'happy' && docked) roll += 0.06
     // The coding life rides on top of the aim: the bob and the build's nod, the tilt toward a raised hand.
-    headPivot.rotation.set(head.pitch + pf.nod, head.yaw, roll + pf.roll)
+    const floatPitch = floating ? head.dock * DOCKED.pitch * Math.sin(time * ((2 * Math.PI) / DOCKED.period)) : 0
+    headPivot.rotation.set(head.pitch + pf.nod + floatPitch, head.yaw, roll + pf.roll)
     headPivot.position.y += hop
 
     // Eyes lead the head and keep what the neck cannot reach.
@@ -1080,18 +1235,41 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     robot.bezel.emissiveIntensity = bezelGlow * (1 - 0.45 * head.sleep) * (docked ? 1 : 1 + boost * props)
 
     // Docked, the body, props and stage are gone: nothing of theirs is drawn or shadowed.
-    robot.root.updateMatrixWorld(true)
-    // The shadow map is drawn every frame in the hero (once in lite, where it is unused), never docked.
-    renderer.shadowMap.needsUpdate = !docked && (!lowPower || !shadowReady)
+    syncWorld()
+    // The shadow map is drawn every frame in the hero (once without shadows, where it is unused), never docked.
+    renderer.shadowMap.needsUpdate = !docked && (shadows || !shadowReady)
     if (!docked && !lowPower && a < 0.05 && t > INTRO.music + 1) governor(dt)
-    draw(docked || lowPower || degrade >= 4 || !shadowReady ? 0 : REFLECT.opacity * (1 - smoothstep(0, 0.12, a)) * introDais)
+    const tDraw = performance.now()
+    draw(docked || !shadows || degrade >= 4 || !shadowReady ? 0 : REFLECT.opacity * (1 - smoothstep(0, 0.12, a)) * introDais)
+    if (docked) dockCost.draw += performance.now() - tDraw
     shadowReady ||= renderer.shadowMap.needsUpdate === false
+    // Docked, anything moving (the eyes, the neck's spring, a blink or a change of face) earns full frame rate.
+    dockBusy =
+      !docked ||
+      blinkT >= 0 ||
+      swapT >= 0 ||
+      reactT >= 0 ||
+      head.pointer > 0.01 ||
+      Math.abs(head.vYaw) + Math.abs(head.vPitch) > 0.02 ||
+      Math.abs(head.eyeX - eyeTX) + Math.abs(head.eyeY - eyeTY) > 0.002
+    if (docked) {
+      dockCost.sum += performance.now() - t0
+      dockCost.n++
+    }
   }
 
   /** The frame, with the floor reflection under it while the figure sits in the hero. */
   function draw(reflect: number) {
     renderer.autoClear = false
     frameNo++
+    // The first frame with the scene revealed is on its way to the screen: the poster can go.
+    if (revealed && !ready) {
+      ready = true
+      requestAnimationFrame(() => {
+        if (opts.skipIntro) layer.el.classList.add('is-revealed')
+        opts.onReady?.()
+      })
+    }
     if (reflect > 0.001) {
       // The figure mirrored in the stage plane (y = 0), the stage itself left out, nothing cut. Redrawn
       // every other frame (a quarter-resolution blur: the lag does not show).
@@ -1143,6 +1321,14 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
   layout()
   sizeCanvas()
   setDock('away', true)
+  // The scene's shaders compile in the background (KHR_parallel_shader_compile where there is one) before
+  // the first frame: compiled on first use they would hold the main thread for seconds on a phone. The
+  // poster covers the hero until that first frame (Hero.tsx).
+  let compiled = false
+  renderer
+    .compileAsync(scene, camera)
+    .catch(() => {})
+    .finally(() => (compiled = true))
   const stopTick = onTick(frame, 10)
 
   let fallback: RobotHandle | null = null
@@ -1151,6 +1337,7 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     if (lost) return
     lost = true
     teardown()
+    opts.onLost?.()
     fallback = mountStill(host, opts)
     if (revealed) fallback.reveal()
     fallback.setProgress(progress)
@@ -1159,6 +1346,7 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
 
   function teardown() {
     stopTick()
+    offSection()
     observer.disconnect()
     beat.stop()
     canvas.removeEventListener('webglcontextlost', onLost)
@@ -1179,23 +1367,31 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     layer.dispose()
     setDock('none', false)
     host.style.removeProperty('--robot-bg')
+    host.style.removeProperty('--hero-leave')
     for (const prop of ['--robot-x', '--robot-y', '--robot-h', '--robot-foot', '--chest-y', '--dais-w', '--dais-h']) stageEl.style.removeProperty(prop)
     stageFrame.set(null)
     stageCues.commitAt = -Infinity
     stageCues.buildAt = -Infinity
     stageCues.buildDue = Infinity
     stageCues.degrade = 0
+    stageCues.burstAt = -Infinity
+    stageCues.governed = false
   }
 
   return {
     reveal() {
-      if (!revealed) revealedAt = performance.now()
+      // With a poster up, the scene is shown finished at once (the load sequence's clock starts long past).
+      if (!revealed) revealedAt = performance.now() - (opts.skipIntro ? 60_000 : 0)
       revealed = true
-      layer.el.classList.add('is-revealed')
+      // With a poster up, the canvas shows with the first frame (draw()), crossfading with the poster.
+      if (!opts.skipIntro) layer.el.classList.add('is-revealed')
       fallback?.reveal()
     },
-    setLowPower(v) {
-      lowPower = v
+    setTier(v) {
+      tier = v
+      lowPower = v === 'low'
+      shadows = v === 'high'
+      stageCues.governed = !lowPower && !lost
       applyLighting()
       if (!docked && !lost) sizeCanvas()
     },

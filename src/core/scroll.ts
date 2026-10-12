@@ -23,6 +23,8 @@ export function initScroll(smooth: boolean) {
       autoRaf: false,
     })
     lenis.on('scroll', ScrollTrigger.update)
+    // Development only: scripted scroll for checks (window.__lenis.scrollTo(y, { immediate: true })).
+    if (import.meta.env.DEV) Object.assign(window, { __lenis: lenis })
   }
 
   const stopTick = onTick((time, dt) => {

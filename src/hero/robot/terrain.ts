@@ -18,11 +18,27 @@
  *             toward #7C5CFF, the farthest quarter out of focus. Dot sizes come in three tiers by depth
  *             (large, medium, small), fixed per row. Round the robot (its silhouette plus 12%, feathered)
  *             everything is dimmed to 45%, a dark pocket that frames it.
- *   motion    on the hero's 96 BPM clock (beat.ts), precise rather than busy: the surface breathes (+-2.5%,
- *             a 5 s sine); every 2 beats (1.25 s) a low pulse wave runs out from the stage (1% of the relief
- *             high, 12% of the width long, 14% of the width a second, decaying with distance), the dots
- *             riding it 10% brighter on its crest; every 3.5 s a band of light (+12%) travels out along the
- *             contours. No per-dot jitter or twinkle.
+ *   motion    an energy system on the hero's one clock (src/hero/motion.ts: the 96 BPM beat, and ENERGY, a
+ *             0..1 scalar that interaction raises and that eases back to 0.35 over 1.2 s), richer but never
+ *             noisier: every motion is a smooth swell, Gaussian or sine, never per-dot jitter or twinkle.
+ *               breath    the surface breathes (+-2.5%, a 5 s sine)
+ *               waves     every 2 beats a low pulse wave runs out from the stage (1% of the relief high, 12% of
+ *                         the width long, 14% of the width a second, fading with distance), its crest 10%
+ *                         brighter; every 4 beats a longer, slower one (0.7%, 21%, 8%) from either flank in
+ *                         turn. The two families cross in a ripple-tank interference; all displacement is
+ *                         clamped to 2% of the relief
+ *               wake      desktop: the pointer presses a soft Gaussian (9% of the width, 1.2% of the relief)
+ *                         into the surface, a short wake fading over 900 ms; touch: a tap sends one ring out
+ *                         from where it landed (25% of the width, 1.2 s)
+ *               tremor    each typing burst on the laptop shivers the first rows round the plateau (0.4%, 240 ms)
+ *               sweep     every 10 beats (6.25 s) a band of light (+12%, 14% of the width) crosses the crests
+ *                         and the rim from left to right, eased in and out at the edges
+ *               comets    every 14 beats (8.75 s) one faint comet (#C4B5FD, a 14-dot trail, at most 35%) arcs
+ *                         over the far ridges on one side or the other, in 2.2 s
+ *               ENERGY    up to +25% on the waves' speed and +8% on the dots' brightness
+ *             At most 9 background systems move at once (these 7 with the agent, the beam and the
+ *             horizon's breath, stage.ts), only the landing flash passes +15% (0.4 s, every 7 s), and the
+ *             dots never pass ~70%: the robot's visor and the laptop's screen stay the brightest things.
  *   agent     a bright point doing momentum gradient descent (0.9) on the same f, planned here on the
  *             CPU with finite differences: from a high rim at the far left or right (alternating), down
  *             through one secondary well (it slows, circles, escapes), to the plateau's front edge, on a
@@ -34,16 +50,18 @@
  *             landing back on).
  *
  * Everything is emissive and additive on its own canvas under the robot's layer: it lights, shadows and
- * covers nothing of the robot. Lite (automatic, src/core/autoLite.ts): 55% of the grid, no waves,
- * shimmer, depth of field, glow, morph or parallax, a 24-dot trail, a 60-dot ring. Reduced motion: one
- * still frame, the agent resting at the plateau's edge with its trail. Paused while the hero is off
- * screen, the tab hidden or the backdrop faded. When the frame rate drops (the engine's governor,
- * stageCues.degrade, on desktops; this layer's own watchdog on phones and tablets) it gives up, in order:
- * the pulse waves, the contour shimmer, grid density, trail length, the glow, depth of field and ring
- * dots, then its pixel ratio.
+ * covers nothing of the robot. By tier (src/hero/tier.ts): MEDIUM a 100 x 60 grid on phones, no depth of
+ * field, waves at 70%, the wake only as tap ripples; LOW (also automatic lite) an 80 x 48 grid at a pixel
+ * ratio of 1, no waves, sweep, comets, depth of field, glow, morph or parallax, a 24-dot trail, a 60-dot
+ * ring, 30 frames a second. Reduced motion: one still frame, the agent resting at the plateau's edge with
+ * its trail. Paused while the hero is off screen, the tab hidden or the backdrop faded. When frames run
+ * over 24 ms for 3 s (the engine's governor, stageCues.degrade; this layer's own watchdog where that does
+ * not run) it gives up, one step at a time: the interference waves, the comets, grid density, trail length
+ * with the glow, depth of field and ring dots, its pixel ratio, then its frame rate.
  */
 import { stageCues, type StageFrame } from './dom'
-import { beat, emptySample } from './beat'
+import { easeInOut, easeOut, energy, heroScroll, masterBeats } from '../motion'
+import { SLOW_FRAME, TIERS, type HeroTier } from '../tier'
 
 const VIOLET = [124 / 255, 92 / 255, 255 / 255]
 const LILAC = [167 / 255, 139 / 255, 250 / 255]
@@ -73,13 +91,37 @@ const PHONE = { side: 0.18, far: 0.05, lip: 0.05, width: 1.35 }
 /** Seconds per beat on the hero's clock (beat.ts: 96 BPM). */
 const BEAT_S = 60 / 96
 /**
- * The pulse waves: one every 2 beats, a single raised-sine swell `amp` of the relief high and `length` of
- * the width long, travelling `speed` of the width a second, fading over `reach` of the width; its crest
- * `crest` brighter. Phones at 70%.
+ * The stage's pulse waves: one every `every` beats, a single raised-sine swell `amp` of the relief high and
+ * `length` of the width long, travelling `speed` of the width a second, fading over `reach` of the width
+ * (and gone by `life`); its crest `crest` brighter. All the surface's displacement together is clamped to
+ * `clamp` of the relief.
  */
-const WAVE = { every: 2 * BEAT_S, amp: 0.01, length: 0.12, speed: 0.14, reach: 0.55, crest: 0.1, phone: 0.7 }
-/** The contour shimmer: a band of light (+12%) running out along the contours every 3.5 s. */
-const SHIMMER = { every: 3.5, gain: 0.12, width: 0.05, reach: 0.75 }
+const WAVE = { every: 2, amp: 0.01, length: 0.12, speed: 0.14, reach: 0.55, life: 1.0, crest: 0.1, clamp: 0.02 }
+/**
+ * The flank waves (the interference family): one every `every` beats, longer and slower, from either flank
+ * in turn (`source`: x as a share of the bowl's half-width, z of its depth).
+ */
+const FLANK = { every: 4, amp: 0.007, length: 0.21, speed: 0.08, life: 0.9, crest: 0.07, source: [0.46, -0.3] }
+/**
+ * The pointer's wake (desktop): a sample every `every` s while it moves, each a Gaussian `radius` of the width
+ * across (two sigmas), `amp` of the relief deep (`share` of it per sample, so a slow pass does not stack
+ * up), fading over `life` s; `lit` brighter at its centre.
+ */
+const WAKE = { radius: 0.09, amp: 0.012, share: 0.4, life: 0.9, every: 0.09, lit: 0.06 }
+/** A tap (touch): one ring out from where it landed to `radius` of the width in `life` s, `length` wide. */
+const TAP = { radius: 0.25, life: 1.2, length: 0.05, amp: 0.012, lit: 0.12 }
+/** The typing tremor round the plateau: `amp` of the relief, `cycles` damped swings over `life` s. */
+const TREMOR = { amp: 0.004, life: 0.24, cycles: 3 }
+/** The light sweep: every `every` beats a band (`width` of the screen, `gain` brighter) crosses in `travel` beats. */
+const SWEEP = { every: 10, travel: 6, gain: 0.12, width: 0.14 }
+/** The comets: every `every` beats one, `life` s long, a `head` px head and `trail` dots, at most `alpha`. */
+const COMET = { every: 14, life: 2.2, head: 2.6, trail: 14, alpha: 0.35 }
+/** ENERGY's reach: the waves' speed and the dots' brightness at full energy. */
+const LIFT = { speed: 0.25, bright: 0.08 }
+/** Uniform slots: the stage's waves in flight, the flank waves, the wake's samples. */
+const FRONTS_A = 6
+const FRONTS_B = 5
+const WAKES = 6
 /** The surface's breath: +-2.5% over a 5 s sine. The horizon's glow: +-8% over 4 s. */
 const BREATH = { amp: 0.025, period: 5 }
 const HAZE = { amp: 0.08, period: 4 }
@@ -196,8 +238,13 @@ uniform vec4 uSize;            // size at the stage's depth (px); the small, med
 uniform float uRowK;           // the depth ratio between rows (log)
 uniform float uReveal;         // the reveal front's radius (world)
 uniform vec2 uFx;              // depth of field, contours+glow (0/1)
-uniform vec4 uWave;            // the pulse waves: newest front's distance, spacing, length, height (world; 0 off)
-uniform vec4 uShimmer;         // the contour band: its distance, width (world), strength (0 off), the waves' fade distance
+uniform vec4 uFrontA[${FRONTS_A}];  // the stage's waves: front distance from the plateau's rim, height (world), crest gain
+uniform vec4 uFrontB[${FRONTS_B}];  // the flank waves: source (x, z), front radius, height (world; 0 off)
+uniform vec4 uWaveK;           // the two families' wavelengths, the fade distance, the clamp on all displacement (world)
+uniform vec4 uWake[${WAKES}];       // the pointer's wake: centre (x, z), height (world; negative, pressed in), brightness gain
+uniform vec4 uTap;             // a tap's ring: centre (x, z), radius, height (world; 0 off)
+uniform vec4 uMove;            // the wake's sigma, the tap ring's wavelength (world), its brightness gain, the tremor's height (world)
+uniform vec4 uSweep;           // the light sweep: centre x (px), half-width (px), gain (0 off); ENERGY's brightness gain
 uniform vec4 uLand;            // the landing point (x, z), the flash (0..1), the bottom fade's start (px)
 uniform vec3 uRing;            // the ring's radius and width (in plateau radii, from the plateau's centre), strength
 varying vec4 vCol;
@@ -212,16 +259,43 @@ float hillPeak(vec2 p) {
   }
   return k;
 }
+// One raised-sine swell, len long, d behind its front (0 outside it).
+float hump(float d, float len) {
+  return d > 0.0 && d < len ? 0.5 - 0.5 * cos(6.2832 * d / len) : 0.0;
+}
 void main() {
   float f = field(aPos);
   float rP = plateau(aPos);
-  // The pulse waves: concentric swells out from the stage, each one raised-sine hump (pure, eased), fading
-  // with distance. The plateau under the dais stays still.
+  // The surface's motion, all smooth swells and Gaussians: the stage's waves, the flank waves crossing them
+  // (the interference), the pointer's wake and a tap's ring, summed and clamped; the plateau under the dais
+  // stays still. The typing tremor shivers only the first rows round it.
   float away = max(rP - 1.0, 0.0) * uPlat.x;
-  float sw = mod(uWave.x - away, uWave.y);
-  float hump = uWave.w > 0.0 && sw < uWave.z ? 0.5 - 0.5 * cos(6.2832 * sw / uWave.z) : 0.0;
-  hump *= smoothstep(1.02, 1.3, rP) * exp(-away / uShimmer.w);
-  f += uWave.w * hump;
+  float fadeA = exp(-away / uWaveK.z);
+  float disp = 0.0;
+  float lit = 0.0;
+  for (int i = 0; i < ${FRONTS_A}; i++) {
+    float h = hump(uFrontA[i].x - away, uWaveK.x) * fadeA;
+    disp += uFrontA[i].y * h;
+    lit += uFrontA[i].z * h;
+  }
+  for (int i = 0; i < ${FRONTS_B}; i++) {
+    float r = length(aPos - uFrontB[i].xy);
+    float h = hump(uFrontB[i].z - r, uWaveK.y) * exp(-r / uWaveK.z);
+    disp += uFrontB[i].w * h;
+    lit += ${FLANK.crest.toFixed(2)} * h * step(1e-6, uFrontB[i].w);
+  }
+  for (int i = 0; i < ${WAKES}; i++) {
+    vec2 q = aPos - uWake[i].xy;
+    float g = exp(-dot(q, q) / (2.0 * uMove.x * uMove.x));
+    disp += uWake[i].z * g;
+    lit += uWake[i].w * g;
+  }
+  float tap = hump(uTap.z - length(aPos - uTap.xy), uMove.y);
+  disp += uTap.w * tap;
+  lit += uMove.z * tap;
+  disp *= smoothstep(1.02, 1.3, rP);
+  disp += uMove.w * smoothstep(0.99, 1.02, rP) * (1.0 - smoothstep(1.1, 1.16, rP));
+  f += clamp(disp, -uWaveK.w, uWaveK.w);
   vec3 s = project(vec3(aPos.x, f, aPos.y));
   float hn = clamp(f / uBowl.z, 0.0, 1.0);
   float far = clamp((s.z - uDepth.x) / (uDepth.y - uDepth.x), 0.0, 1.0);
@@ -246,11 +320,13 @@ void main() {
   a = mix(a, mix(0.55, 0.7, smoothstep(0.75, 1.0, hn)), crest);
   col = mix(col, ${vec3(GLOW)}, crest);
   float halo = crest * uFx.y;
-  // Contours: every 7% of height a row 35% brighter; a band of light (+12%) travelling out along them.
+  // Contours: every 7% of height a row 35% brighter.
   float c = fract(hn / 0.07);
   float line = (1.0 - smoothstep(0.0, 0.3, min(c, 1.0 - c))) * smoothstep(1.1, 1.3, rP) * step(0.03, hn);
-  float bd = (away - uShimmer.x) / uShimmer.y;
-  a *= 1.0 + line * uFx.y * (0.35 + ${SHIMMER.gain.toFixed(2)} * uShimmer.z * exp(-bd * bd));
+  a *= 1.0 + line * uFx.y * 0.35;
+  // The light sweep crossing the crests and the rim (+12% at its centre); ENERGY's lift (up to +8%).
+  float sw = (s.x - uSweep.x) / uSweep.y;
+  a *= 1.0 + uSweep.z * crest * exp(-sw * sw) + uSweep.w;
   // Distance: hazier, toward #7C5CFF; the farthest quarter out of focus (softer, not larger).
   a *= mix(1.0, 0.7, smoothstep(0.3, 1.0, far));
   col = mix(col, ${vec3(VIOLET)}, 0.6 * smoothstep(0.4, 1.0, far) * (1.0 - 0.5 * crest));
@@ -273,8 +349,8 @@ void main() {
   size *= 1.0 + 0.25 * front;
   a = (a + 0.3 * front) * (1.0 - 0.5 * wake);
   col = mix(col, ${vec3(GLOW)}, front);
-  // The dots riding a wave's crest, 10% brighter.
-  a *= 1.0 + ${WAVE.crest.toFixed(2)} * hump;
+  // The dots riding a wave's crest (10%, the flank waves' 7%), the wake and a tap's ring: never past +15%.
+  a *= 1.0 + min(lit, 0.15);
   // The robot's dark pocket; the plateau's flash (to 85%) shows round it.
   float flash = uLand.z * (1.0 - smoothstep(1.0, 1.35, rP));
   a = mix(a * clearing(s.xy), 0.85, flash);
@@ -315,10 +391,12 @@ varying vec4 vCol;
 varying vec4 vShape;
 ${FIELD}
 void main() {
-  vec3 s = project(vec3(aPos.x, field(aPos) + aK.x, aPos.y));
-  float a = aK.z * clearing(s.xy);
+  // Screen-space points (the comets) carry aSoft + 2 and their position in px.
+  bool scr = aSoft >= 1.5;
+  vec3 s = scr ? vec3(aPos, 1.0) : project(vec3(aPos.x, field(aPos) + aK.x, aPos.y));
+  float a = aK.z * (scr ? 1.0 : clearing(s.xy));
   vCol = vec4(mix(${vec3(LILAC)}, ${vec3(GLOW)}, aK.w), a);
-  vShape = vec4(1.0, 0.25, 0.0, aSoft);
+  vShape = vec4(1.0, 0.25, 0.0, scr ? aSoft - 2.0 : aSoft);
   gl_PointSize = aK.y * uDpr;
   gl_Position = a < 0.003 ? vec4(2.0, 2.0, 2.0, 1.0) : toClip(s.xy);
 }
@@ -326,7 +404,7 @@ void main() {
 
 /** Floats per FX point: aPos (2), aK (4), aSoft (1). */
 const FX_STRIDE = 7
-const FX_MAX = 2 + TRAIL.dots + RING.dots + 24 + 4
+const FX_MAX = 2 + TRAIL.dots + RING.dots + 24 + 1 + COMET.trail + 4
 
 type Bump = [x: number, z: number, sigma: number, amp: number]
 interface Arrangement {
@@ -381,10 +459,13 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)')
   /** Lite: automatic lite (src/core/autoLite.ts) or a software renderer (Hero.tsx); phones are not lite, they have their own profile. */
   const lite = () => !!host.closest('[data-lite-landscape]')
+  /** The hero's tier (src/hero/tier.ts, on #hero as data-tier); lite is always LOW. */
+  const heroEl = host.closest<HTMLElement>('#hero')
+  const tierNow = (): HeroTier => (lite() ? 'low' : ((heroEl?.dataset.tier as HeroTier | undefined) ?? 'high'))
   /**
-   * How far this layer has stepped down (0..6): the engine's governor on desktops, its own watchdog on phones
-   * and tablets. 1 the pulse waves, 2 the contour shimmer, 3 grid density, 4 trail length, 5 the glow, depth
-   * of field and ring dots, 6 the pixel ratio.
+   * How far this layer has stepped down (0..8): the engine's governor where it runs (HIGH, MEDIUM), else its
+   * own watchdog. 1 the interference waves, 2 the comets, 3 grid density, 4 trail length, the glow, depth of
+   * field and ring dots, 7 the pixel ratio, 8 the frame rate (5 and 6 are the engine's own).
    */
   const degradeStep = () => Math.max(stageCues.degrade, watchdog.level)
   const backdrop = () => {
@@ -480,9 +561,10 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
     G.dF = C.D + B.bz * COS
     const spec = GRID[size]
     const ultra = size === 'desktop' ? Math.min(1.25, Math.max(1, W / 1920)) : 1
-    // Density: the size's (15% under the spacing, 25% on phones), lite 55%, step 3 80%; and never more points
-    // than the size's budget.
-    const k0 = Math.sqrt((tune.grid ?? 1) * DENSITY[size] * (lite() ? 0.55 : 1) * (degradeStep() >= 3 ? 0.8 : 1))
+    // Density: the size's (15% under the spacing, 25% on phones), the tier's share (its grid is given at phone
+    // size: MEDIUM 100 x 60, LOW 80 x 48), step 3 80%; and never more points than the size's budget.
+    const tierK = Math.min(1, TIERS[tierNow()].budget / GRID.phone.budget)
+    const k0 = Math.sqrt((tune.grid ?? 1) * DENSITY[size] * tierK * (degradeStep() >= 3 ? 0.8 : 1))
     const budget = spec.budget * k0 * k0
     let k = k0
     let sx = 0
@@ -522,8 +604,8 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
       gridCount = n / 2
     }
 
-    // Up to 1.25x (the dots are soft; on 3x phones this is a ninth of the native fill), less once degraded.
-    dpr = (tune.dpr ?? Math.min(window.devicePixelRatio || 1, 1.25)) * (degradeStep() >= 6 ? 0.75 : 1)
+    // Up to 1.25x (the dots are soft; on 3x phones this is a ninth of the native fill), 1x in LOW, less once degraded.
+    dpr = (tune.dpr ?? Math.min(window.devicePixelRatio || 1, TIERS[tierNow()].terrainDpr)) * (degradeStep() >= 7 ? 0.75 : 1)
     canvas.width = Math.round(W * dpr)
     canvas.height = Math.round(H * dpr)
     layoutVersion++
@@ -991,6 +1073,7 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
       } else trailN = Math.max(0, trailN - 2)
     }
     agentA = phase === 'spawn' ? smoothstep(0, CYCLE.spawn, clock - phaseAt) : live ? 1 : phase === 'land' ? 1 - smoothstep(0.2, 0.8, clock - landAt) : 0
+    stepMotion(dt)
   }
 
   const trailMax = () => (lite() ? TRAIL.lite : degradeStep() >= 4 ? TRAIL.degraded : TRAIL.dots)
@@ -1001,6 +1084,209 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
     const j = Math.min(nPath - 1, i + 1)
     const t = step - i
     return [path[i * 2] + (path[j * 2] - path[i * 2]) * t, path[i * 2 + 1] + (path[j * 2 + 1] - path[i * 2 + 1]) * t]
+  }
+
+  // ---- the energy system's moving parts (src/hero/motion.ts): wave fronts, the wake, a tap, the comets
+
+  /** Uniform data, rewritten each frame (allocated once). */
+  const frontA = new Float32Array(FRONTS_A * 4)
+  const frontB = new Float32Array(FRONTS_B * 4)
+  const wakeU = new Float32Array(WAKES * 4)
+  /** The stage's waves in flight: the distance each has travelled (world; -1 a free slot). */
+  const waveA = new Float32Array(FRONTS_A).fill(-1)
+  /** The flank waves: source x, z, radius (world; radius -1 a free slot). */
+  const waveB = new Float32Array(FRONTS_B * 3).fill(-1)
+  let slotA = 0
+  let slotB = 0
+  let emittedA = NaN
+  let emittedB = NaN
+  let flankSide = 1
+  /** The wake's samples: x, z (world), born (clock, s). */
+  const wakeS = new Float32Array(WAKES * 3)
+  for (let i = 0; i < WAKES; i++) wakeS[i * 3 + 2] = -1e9
+  let wakeNext = 0
+  let wakeAt = -1e9
+  const tapS = { x: 0, z: 0, at: -1e9 }
+  /** The latest pointer and touch input (viewport px): recorded by the listeners, consumed by the frame loop. */
+  const input = { x: 0, y: 0, moved: false, tapX: 0, tapY: 0, tapped: false }
+  /** ENERGY's excess over its baseline this frame (0..1), and the master clock (beats). */
+  let lift = 0
+  let beats = 0
+  let beatsOn = false
+  const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)')
+  /** The hero is in view and has not started to leave: input there disturbs the surface. */
+  const inHero = () => visible && heroScroll.p < 0.3 && !document.hidden
+
+  const onPointer = (ev: PointerEvent) => {
+    if (ev.pointerType !== 'mouse') return
+    input.x = ev.clientX
+    input.y = ev.clientY
+    input.moved = true
+    if (inHero()) energy.poke('pointer')
+  }
+  const onTouch = (ev: TouchEvent) => {
+    const t = ev.touches[0]
+    if (!t) return
+    input.tapX = t.clientX
+    input.tapY = t.clientY
+    input.tapped = true
+    if (inHero()) energy.poke('tap')
+  }
+  window.addEventListener('pointermove', onPointer, { passive: true })
+  window.addEventListener('touchstart', onTouch, { passive: true })
+
+  /** Where a screen point (px) meets the surface (world x, z, into `ground`); false above the horizon. */
+  const ground = { x: 0, z: 0 }
+  function groundAt(sx: number, sy: number) {
+    let h = 0
+    for (let i = 0; i < 3; i++) {
+      // Screen y to depth on the plane at height h (the inverse of toScreen), then the surface's height there.
+      const a = (C.oy - sy) / C.f
+      const den = SIN - a * COS
+      if (den <= 1e-4) return false
+      const z = (h * COS - a * (C.D - h * SIN)) / den
+      const depth = C.D - h * SIN - z * COS
+      if (depth <= 0.05 || z < -B.bz) return false
+      ground.x = ((sx - C.ox) * depth) / C.f
+      ground.z = z
+      h = field(cur, ground.x, ground.z)
+    }
+    return true
+  }
+
+  /** Advances the fronts and samples the input; the uniforms are written by draw(). */
+  function stepMotion(dt: number) {
+    const now = performance.now()
+    const T = TIERS[tierNow()]
+    const clk = masterBeats(now)
+    beats = clk.beats
+    beatsOn = clk.on
+    lift = energy.excess(now)
+    const wpx = (W * C.D) / C.f
+    const speed = 1 + LIFT.speed * lift
+    const wavesOn = !lite() && T.waves > 0
+    // The stage's waves: one every 2 beats (on the wall clock until the music starts).
+    const nA = Math.floor(beats / WAVE.every)
+    if (nA !== emittedA) {
+      if (!Number.isNaN(emittedA) && wavesOn) waveA[(slotA = (slotA + 1) % FRONTS_A)] = 0
+      emittedA = nA
+    }
+    // The flank waves: one every 4 beats once the music plays, from either side in turn.
+    const nB = Math.floor(beats / FLANK.every)
+    if (nB !== emittedB) {
+      if (!Number.isNaN(emittedB) && wavesOn && beatsOn && T.flank && degradeStep() < 1) {
+        slotB = (slotB + 1) % FRONTS_B
+        flankSide = -flankSide
+        waveB[slotB * 3] = flankSide * FLANK.source[0] * B.bx
+        waveB[slotB * 3 + 1] = FLANK.source[1] * B.bz
+        waveB[slotB * 3 + 2] = 0
+      }
+      emittedB = nB
+    }
+    for (let i = 0; i < FRONTS_A; i++) {
+      if (waveA[i] < 0) continue
+      waveA[i] += WAVE.speed * wpx * speed * dt
+      if (waveA[i] > WAVE.life * wpx) waveA[i] = -1
+    }
+    for (let i = 0; i < FRONTS_B; i++) {
+      const o = i * 3 + 2
+      if (waveB[o] < 0) continue
+      waveB[o] += FLANK.speed * wpx * speed * dt
+      if (waveB[o] > FLANK.life * wpx) waveB[o] = -1
+    }
+    // The pointer's wake (desktop, HIGH): a sample at most every 90 ms while it moves over the landscape.
+    if (input.moved && clock - wakeAt >= WAKE.every) {
+      input.moved = false
+      if (!lite() && T.wake === 'pointer' && finePointer.matches && inHero() && groundAt(input.x, input.y)) {
+        wakeAt = clock
+        const o = (wakeNext++ % WAKES) * 3
+        wakeS[o] = ground.x
+        wakeS[o + 1] = ground.z
+        wakeS[o + 2] = clock
+      }
+    }
+    // A tap (touch, MEDIUM and up): one ring from where it landed.
+    if (input.tapped) {
+      input.tapped = false
+      if (!lite() && T.wake !== 'none' && inHero() && groundAt(input.tapX, input.tapY)) {
+        tapS.x = ground.x
+        tapS.z = ground.z
+        tapS.at = clock
+      }
+    }
+  }
+
+  /** The motion's uniforms for this frame (the waves at `waves` of their height: 0 off, 0.7 MEDIUM). */
+  function motionUniforms(u: Program['u'], waves: number, still: boolean) {
+    const g = gl!
+    const wpx = (W * C.D) / C.f
+    const ampA = still ? 0 : WAVE.amp * B.relief * waves
+    for (let i = 0; i < FRONTS_A; i++) {
+      const d = waveA[i]
+      const k = d < 0 ? 0 : 1 - smoothstep(0.75 * WAVE.life * wpx, WAVE.life * wpx, d)
+      frontA[i * 4] = d < 0 ? -1e3 : d
+      frontA[i * 4 + 1] = ampA * k
+      frontA[i * 4 + 2] = ampA > 0 ? WAVE.crest * k : 0
+      frontA[i * 4 + 3] = 0
+    }
+    const ampB = still ? 0 : FLANK.amp * B.relief * waves
+    for (let i = 0; i < FRONTS_B; i++) {
+      const r = waveB[i * 3 + 2]
+      const k = r < 0 ? 0 : 1 - smoothstep(0.7 * FLANK.life * wpx, FLANK.life * wpx, r)
+      frontB[i * 4] = waveB[i * 3]
+      frontB[i * 4 + 1] = waveB[i * 3 + 1]
+      frontB[i * 4 + 2] = r < 0 ? -1e3 : r
+      frontB[i * 4 + 3] = ampB * k
+    }
+    for (let i = 0; i < WAKES; i++) {
+      const age = (clock - wakeS[i * 3 + 2]) / WAKE.life
+      const k = !still && age >= 0 && age < 1 ? (1 - age) * (1 - age) : 0
+      wakeU[i * 4] = wakeS[i * 3]
+      wakeU[i * 4 + 1] = wakeS[i * 3 + 1]
+      wakeU[i * 4 + 2] = -WAKE.amp * WAKE.share * B.relief * k
+      wakeU[i * 4 + 3] = WAKE.lit * WAKE.share * k
+    }
+    g.uniform4fv(u.uFrontA, frontA)
+    g.uniform4fv(u.uFrontB, frontB)
+    g.uniform4fv(u.uWake, wakeU)
+    g.uniform4f(u.uWaveK, WAVE.length * wpx, FLANK.length * wpx, WAVE.reach * wpx, WAVE.clamp * B.relief)
+    // A tap's ring: out to a quarter of the width (eased out), fading as it goes.
+    const tt = (clock - tapS.at) / TAP.life
+    const tapOn = !still && tt >= 0 && tt < 1
+    g.uniform4f(u.uTap, tapS.x, tapS.z, TAP.radius * wpx * easeOut(Math.max(0, tt)), tapOn ? TAP.amp * B.relief * (1 - tt) ** 1.5 : 0)
+    // The typing tremor: three damped swings over 240 ms from a burst's first keys.
+    const tr = (performance.now() - stageCues.burstAt) / 1000 / TREMOR.life
+    const tremor = !still && !lite() && tr >= 0 && tr < 1 ? TREMOR.amp * B.relief * Math.sin(Math.PI * 2 * TREMOR.cycles * tr) * (1 - tr) : 0
+    g.uniform4f(u.uMove, (WAKE.radius * wpx) / 2, TAP.length * wpx, tapOn ? TAP.lit * (1 - tt) : 0, tremor)
+    // The light sweep: every 10 beats, across in 6, eased at both ends (and in and out in strength).
+    const sw = (beats % SWEEP.every) / SWEEP.travel
+    const sweepOn = !still && !lite() && beatsOn && sw < 1
+    g.uniform4f(u.uSweep, W * (-0.1 + 1.2 * easeInOut(Math.min(1, sw))), (SWEEP.width * W) / 2, sweepOn ? SWEEP.gain * Math.sin(Math.PI * sw) : 0, still ? 0 : LIFT.bright * lift)
+  }
+
+  /** The comet, if one is crossing (screen space, over the far ridges on one side, never behind the robot). */
+  function pushComet() {
+    const n = Math.floor(beats / COMET.every)
+    const tc = (beats - n * COMET.every) * BEAT_S
+    if (tc >= COMET.life) return
+    const side = n % 2 ? 1 : -1
+    const hz = B.horizon
+    // A gentle arc: from high over the outer ridges, curving down toward the middle.
+    const x0 = W * (0.5 + side * 0.45)
+    const x2 = W * (0.5 + side * 0.15)
+    const y0 = Math.max(96, hz - 0.17 * H)
+    const y2 = Math.max(116, hz - 0.06 * H)
+    const x1 = x0 + (x2 - x0) * 0.55
+    const y1 = Math.min(y0, y2) - 0.03 * H
+    const a = COMET.alpha * smoothstep(0, 0.25, tc) * (1 - smoothstep(COMET.life - 0.6, COMET.life, tc))
+    const uh = easeOut(tc / COMET.life)
+    for (let i = 0; i <= COMET.trail; i++) {
+      const u = uh - i * 0.018
+      if (u < 0) break
+      const k = i / COMET.trail
+      const v = 1 - u
+      pushFx(v * v * x0 + 2 * v * u * x1 + u * u * x2, v * v * y0 + 2 * v * u * y1 + u * u * y2, 0, COMET.head * (1 - 0.6 * k), a * (1 - k) ** 1.5, 1, 2.3)
+    }
   }
 
   // ---- drawing
@@ -1035,13 +1321,14 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
       pushFx(at[0], at[1], 0, phone ? 46 : 60, 0.3 * a, 1, 1)
       pushFx(at[0], at[1], 0, phone ? 8 : 9.5, 0.6 * a, 1, 0.2)
     }
+    if (!still && !lite() && beatsOn && TIERS[tierNow()].comets && degradeStep() < 2) pushComet()
     if (phase !== 'land' || still) return
     const t = clock - landAt
     // The ring: out from the plateau's rim across the landscape and up its slopes, to 60% of the width (80% on
     // phones) in 1.1 s (CYCLE.land). It spreads from the global minimum itself, so it runs out both sides of the robot.
     const ring = ringAt(t)
     if (ring.a > 0.003) {
-      const count = lite() ? RING.lite : degradeStep() >= 5 ? RING.degraded : RING.dots
+      const count = lite() ? RING.lite : degradeStep() >= 4 ? RING.degraded : RING.dots
       for (let i = 0; i < count; i++) {
         const th = (i / count) * Math.PI * 2
         const x = ring.r * B.rx * Math.cos(th)
@@ -1071,9 +1358,9 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
   }
 
   let lastDegrade = 0
-  const beatNow = emptySample()
   const shown = { hazeV: -1, ridges: -1 }
   let wasLite = lite()
+  let lastTier = tierNow()
   const at = { x: 0, y: 0 }
 
   /**
@@ -1108,10 +1395,11 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
   let arrVersion = 0
 
   function draw(time: number, still: boolean) {
-    if (degradeStep() !== lastDegrade || lite() !== wasLite) {
+    if (degradeStep() !== lastDegrade || lite() !== wasLite || tierNow() !== lastTier) {
       const liteChanged = lite() !== wasLite
       lastDegrade = degradeStep()
       wasLite = lite()
+      lastTier = tierNow()
       layout()
       if (liteChanged) {
         setArrangement(lite() ? fixedArrangement() : arrangement(side))
@@ -1129,7 +1417,6 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
     const details = still ? 1 : smoothstep(LOAD.details[0], LOAD.details[1], since)
     // The horizon's glow breathes, +-8% over 4 s (a sine). Style writes only when the value has moved (an
     // opacity change is composited, no layout or paint).
-    beat.sample(performance.now(), beatNow)
     const hazeBreath = still || lite() ? 0 : HAZE.amp * Math.sin((time * Math.PI * 2) / HAZE.period)
     const hazeV = Math.min(1, details * (0.9 + hazeBreath))
     if (Math.abs(hazeV - shown.hazeV) >= 0.006 || (hazeV >= 1) !== (shown.hazeV >= 1)) {
@@ -1160,23 +1447,11 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
     // The reveal front: out from the stage to past the farthest corner.
     const reach = Math.hypot(B.bx * 2.6, B.bz) + 0.8
     g.uniform1f(tu.uReveal, grow * reach + (grow >= 1 ? 99 : 0))
-    const glow = !lite() && degradeStep() < 5 ? 1 : 0
-    g.uniform2f(tu.uFx, glow && !phone ? 1 : 0, glow)
-    // The pulse waves and the contour band, in world units at the stage's depth (from shares of the width).
-    // The waves run on the beat clock (one every 2 beats, from an even beat), on their own before it starts.
-    const wpx = (W * C.D) / C.f
-    const waveT = beatNow.on ? beatNow.t * BEAT_S : time
-    const waveOn = !still && !lite() && degradeStep() < 1
-    g.uniform4f(
-      tu.uWave,
-      WAVE.speed * wpx * (waveT % WAVE.every),
-      WAVE.speed * wpx * WAVE.every,
-      WAVE.length * wpx,
-      waveOn ? WAVE.amp * B.relief * (phone ? WAVE.phone : 1) * details : 0,
-    )
-    const band = (time % SHIMMER.every) / SHIMMER.every
-    const shimmerOn = !still && !lite() && degradeStep() < 2
-    g.uniform4f(tu.uShimmer, band * SHIMMER.reach * wpx, SHIMMER.width * wpx, shimmerOn ? Math.sin(Math.PI * band) : 0, WAVE.reach * wpx)
+    const T = TIERS[tierNow()]
+    const glow = !lite() && degradeStep() < 4 ? 1 : 0
+    g.uniform2f(tu.uFx, glow && T.dof && !phone ? 1 : 0, glow)
+    // The energy system's uniforms (waves, wake, tap, tremor, sweep), in world units at the stage's depth.
+    motionUniforms(tu, lite() ? 0 : T.waves * details, still)
     const flash = tLand >= 0 ? Math.sin(Math.PI * Math.min(1, tLand / FLASH)) : 0
     g.uniform4f(tu.uLand, L.x, L.z, flash, H * 0.9)
     const ring = ringAt(tLand)
@@ -1277,23 +1552,22 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
   }
   let resizeRaf = 0
   /**
-   * Its own frame-rate watchdog: the engine's governor (stageCues.degrade) does not run in low power, which is
-   * every phone, so on phones and tablets this layer watches the page's frame rate itself (2 s windows, once
-   * the intro is over) and, only ever downward, gives up in the governor's order (degradeStep): 1 the pulse
-   * waves, 2 the contour shimmer, 3 grid density, 4 trail length, 5 the glow and ring dots, 6 resolution,
-   * and draws at 20 frames a second.
+   * Its own frame-rate watchdog, where the engine's governor (stageCues.degrade) does not run (LOW, or no
+   * engine): frames averaging over 24 ms for 3 s (once the intro is over) take it one step down its own
+   * rungs of the governor's ladder (degradeStep), only ever downward: the interference waves, the comets,
+   * grid density, trail length with the glow and ring dots, resolution, then the frame rate.
    */
-  const watchdog = { sum: 0, n: 0, level: 0 }
+  const RUNGS = [1, 2, 3, 4, 7, 8]
+  const watchdog = { sum: 0, n: 0, level: 0, rung: 0 }
   function watch(ms: number) {
-    // Desktops have the engine's governor (stageCues.degrade); this is for phones and tablets.
-    if (size === 'desktop' || watchdog.level >= 6 || (performance.now() - onAt) / 1000 < 6 || ms > 400) return
+    if (stageCues.governed || watchdog.rung >= RUNGS.length || (performance.now() - onAt) / 1000 < 6 || ms > 400) return
     watchdog.sum += ms
     watchdog.n++
-    if (watchdog.sum < 2000) return
-    const fps = (1000 * watchdog.n) / watchdog.sum
+    if (watchdog.sum < SLOW_FRAME.span) return
+    const avg = watchdog.sum / watchdog.n
     watchdog.sum = watchdog.n = 0
-    if (fps >= 26) return
-    watchdog.level++
+    if (avg <= SLOW_FRAME.ms) return
+    watchdog.level = RUNGS[watchdog.rung++]
     layout()
   }
   /** Development only: skip the layer entirely (A/B frame-time checks). */
@@ -1309,8 +1583,11 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
     if (last) watch(now - last)
     last = now
     carry += dt
-    // Phones: ~30 frames a second is plenty for motion this slow (20 once the watchdog has stepped down).
-    if ((size !== 'phone' && watchdog.level < 6) || carry >= (watchdog.level >= 6 ? 1 / 21 : 1 / 32)) {
+    // Phones and LOW: ~30 frames a second is plenty for motion this slow; the ladder's last step halves the
+    // rest to 30 (and those already at 30 to 20).
+    let fps = size === 'phone' || TIERS[tierNow()].fps <= 30 ? 30 : 60
+    if (degradeStep() >= 8) fps = fps > 30 ? 30 : 20
+    if (fps >= 60 || carry >= 1 / (fps + 2)) {
       const t0 = performance.now()
       gpuBegin()
       update(carry)
@@ -1383,6 +1660,20 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
           }
         },
         snap: () => new Promise<string>((r) => (snapWaiter = r)),
+        motion: () => ({
+          tier: tierNow(),
+          degrade: degradeStep(),
+          energy: lift,
+          beats,
+          beatsOn,
+          waveA: Array.from(waveA),
+          waveB: Array.from({ length: FRONTS_B }, (_, i) => waveB[i * 3 + 2]),
+          wakes: Array.from({ length: WAKES }, (_, i) => clock - wakeS[i * 3 + 2]).filter((a) => a < WAKE.life).length,
+          tapAge: clock - tapS.at,
+          sweep: (beats % SWEEP.every) / SWEEP.travel,
+          comet: ((beats % COMET.every) * BEAT_S).toFixed(2),
+          wpx: (W * C.D) / C.f,
+        }),
         state: () => ({ nFx, ring: ringAt(clock - landAt), phase, clock, step, nStage, nArrive, nPath, rate, timerMode, landAt, gridCount, C, B, G, L, W, H, detours: planner.detours, at: agentPos(), agentScreen: (() => { const [x, z] = agentPos(); return onScreen(cur, x, z) })() }),
       },
     })
@@ -1408,6 +1699,8 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
       mo.disconnect()
       document.removeEventListener('visibilitychange', wake)
       reduced.removeEventListener('change', wake)
+      window.removeEventListener('pointermove', onPointer)
+      window.removeEventListener('touchstart', onTouch)
       canvas.removeEventListener('webglcontextlost', onLost)
       gl.deleteBuffer(terrainBuf)
       gl.deleteBuffer(fxBuf)
@@ -1431,6 +1724,9 @@ interface Program {
   layout: number
   arr: number
 }
+
+/** Uniform arrays (their location is their first element's). */
+const ARRAYS = new Set(['uWell', 'uHill', 'uFrontA', 'uFrontB', 'uWake'])
 
 function build(gl: WebGLRenderingContext) {
   const compile = (type: number, src: string) => {
@@ -1458,13 +1754,13 @@ function build(gl: WebGLRenderingContext) {
       return null
     }
     const u: Program['u'] = {}
-    for (const n of uniforms) u[n] = gl.getUniformLocation(p, n === 'uWell' || n === 'uHill' ? `${n}[0]` : n)
+    for (const n of uniforms) u[n] = gl.getUniformLocation(p, ARRAYS.has(n) ? `${n}[0]` : n)
     const a: Program['a'] = {}
     for (const n of attrs) a[n] = gl.getAttribLocation(p, n)
     return { p, u, a, layout: -1, arr: -1 }
   }
   const shared = ['uWell', 'uHill', 'uBowl', 'uBowl2', 'uPlat', 'uCam', 'uScr', 'uShift', 'uHead', 'uBody', 'uClear', 'uDpr']
-  const terrain = link(TERRAIN_VS, DOT_FS, ['aPos'], [...shared, 'uDepth', 'uSize', 'uRowK', 'uReveal', 'uFx', 'uWave', 'uShimmer', 'uLand', 'uRing'])
+  const terrain = link(TERRAIN_VS, DOT_FS, ['aPos'], [...shared, 'uDepth', 'uSize', 'uRowK', 'uReveal', 'uFx', 'uFrontA', 'uFrontB', 'uWaveK', 'uWake', 'uTap', 'uMove', 'uSweep', 'uLand', 'uRing'])
   const fx = link(FX_VS, DOT_FS, ['aPos', 'aK', 'aSoft'], shared)
   return terrain && fx ? { terrain, fx } : null
 }
