@@ -2,7 +2,10 @@ import { defineConfig, loadEnv, type HtmlTagDescriptor, type Plugin, type ViteDe
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import glsl from 'vite-plugin-glsl'
+import { minifySync } from 'rolldown/utils'
 import { site } from './src/content'
+import { introHtml } from './src/hero/introCopy'
+import { playIntro } from './src/hero/introFx'
 
 /** The parts of Node's IncomingMessage the middleware uses (the project has no @types/node). */
 interface NodeRequest {
@@ -99,6 +102,16 @@ function siteMeta(): Plugin {
 }
 
 /**
+ * The copy's entrance (src/hero/introFx.ts) as a classic inline script, run straight after the copy is
+ * parsed: it starts with the first paint, not after the app's bundle (a second or more on a mid-range phone).
+ */
+function introScript(): string {
+  // (The function's own source, compiled with this config: it is self-contained, src/hero/introFx.ts.)
+  const code = `(${playIntro.toString()})(document.querySelector('#hero-copy .hero-intro'))`
+  return minifySync('intro.js', code).code.replace(/<\/script/gi, '<\\/script')
+}
+
+/**
  * The hero's first paint, before any script runs: its copy (from src/content.ts, so it never drifts) over
  * the poster index.html already has, laid out by the same CSS as the app's (hero.css .hero-intro, a fixed
  * box), and preloads for the two web fonts it is set in (built only: their names are hashed). The copy sits
@@ -110,7 +123,6 @@ function siteMeta(): Plugin {
  * this pre-rendered hero, is painted until it ends. It is still fetched at once (its modulepreload).
  */
 function heroBoot(): Plugin {
-  const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   const FONTS = [/instrument-serif-latin-400-italic-[\w-]+\.woff2$/, /space-grotesk-latin-wght-normal-[\w-]+\.woff2$/]
   return {
     name: 'hero-boot',
@@ -119,10 +131,8 @@ function heroBoot(): Plugin {
       handler(html, ctx) {
         const copy =
           `<div class="hero-copy-layer" id="hero-copy"><div class="hero-intro hero-intro--both" data-on data-hero-intro>` +
-          `<h1 class="hero-intro__name">Vinayak<span class="sr-only"> K V</span></h1>` +
-          `<span class="hero-intro__rule" aria-hidden="true"></span>` +
-          `<p class="hero-intro__tagline">${esc(site.tagline)}</p>` +
-          `<p class="hero-intro__role">${esc(site.role)}</p></div></div>`
+          `${introHtml(site)}</div></div>` +
+          `<script>${introScript()}</script>`
         const tags: HtmlTagDescriptor[] = []
         for (const file of Object.keys(ctx.bundle ?? {})) {
           if (FONTS.some((re) => re.test(file))) {

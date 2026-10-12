@@ -12,11 +12,6 @@ export interface RobotOptions {
   isPaused?: () => boolean
   /** The hero's quality tier (src/hero/tier.ts). */
   tier?: HeroTier
-  /**
-   * A poster of the finished scene is already on screen (Hero.tsx): skip the build-up (the dais, the dot-scan,
-   * the power-on), so the first live frame matches it and can crossfade over it.
-   */
-  skipIntro?: boolean
   /** Called once, after the first frame has been drawn (the live scene can take over from the poster). */
   onReady?: () => void
   /** The WebGL context was lost (the poster comes back). */
@@ -27,13 +22,11 @@ export interface RobotOptions {
 
 /** Same surface as the photo engine's handle, so src/hero/transition.ts drives either. */
 export interface RobotHandle {
-  /** Fade in (call when the loader has gone). */
+  /** Start drawing: the canvas crossfades over the hero's poster with its first frame. */
   reveal(): void
   setTier(t: HeroTier): void
   /** Hero scroll progress 0..1: the push in, the body dissolving, then the head's flight to the launcher. */
   setProgress(p: number): void
-  /** The hero stage's own loop hint; the robot outlives the stage (it docks), so it may ignore this. */
-  setRendering(on: boolean): void
   dispose(): void
 }
 
@@ -75,18 +68,23 @@ export const stageFrame = {
   },
 }
 
-/** Shared between the engine and the stage's dot canvas (stage.ts). */
+/** Shared between the engine and the landscape (terrain.ts): one event, one timestamp, read by both. */
 export const stageCues = {
   /** performance.now() of the last successful build (ms), or -Infinity: the commit pulse. */
   commitAt: -Infinity,
-  /** performance.now() when the current (or last) build started printing (ms); it passes 1.2 s later. */
-  buildAt: -Infinity,
-  /** performance.now() when the next build is due (ms; it starts at the next pause in the typing), or Infinity. */
-  buildDue: Infinity,
   /** performance.now() when the latest typing burst on the laptop began (ms), or -Infinity: the floor's tremor. */
   burstAt: -Infinity,
+  /** performance.now() when the latest descent agent spawned (ms), or -Infinity: the robot's eyes find it. */
+  agentAt: -Infinity,
+  /** The agent's position on the hero's screen (px), kept current while it is live. */
+  agent: { x: 0, y: 0 },
+  /** The inflow vortex's rim arc on the dais (terrain.ts writes it; engine.ts draws it): its angle in the
+   * landscape's plateau frame (rad, +z toward the camera) and its gain (0 off). */
+  swallow: { angle: 0, gain: 0 },
+  /** The vortex's step on the frame-rate ladder (0 whole, 1 half its dots, 2 off): the first thing given up. */
+  vortex: 0,
   /**
-   * The frame-rate governor's step (engine.ts), only ever rising. The landscape (terrain.ts) gives up, in
+   * The frame-rate governor's step (engine.ts, after the vortex's two: stageCues.vortex), only ever rising. The landscape (terrain.ts) gives up, in
    * order: 1 its interference waves, 2 the comets, 3 grid density, 4 trail length, the glow, depth of field
    * and ring dots, 7 its pixel ratio, 8 its frame rate; the engine its own at 4-6 (glows and the floor
    * reflection, the shadow map, the equaliser).

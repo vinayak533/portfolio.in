@@ -25,7 +25,6 @@ interface State {
   hoveredWork: number | null
   focusedWork: number
   openWork: number | null
-  duotone: boolean
   /** Bumped when fonts land or the viewport width changes: text is re-split. */
   layoutKey: number
   set: (p: Partial<State>) => void
@@ -47,7 +46,6 @@ export const useStore = create<State>((set) => ({
   hoveredWork: null,
   focusedWork: 0,
   openWork: null,
-  duotone: false,
   layoutKey: 0,
   set: (p) => set(p),
 }))
@@ -80,4 +78,9 @@ export const signals = {
   pointer: { x: 0, y: 0, nx: 0, ny: 0, vx: 0, vy: 0, lastMove: 0, active: false },
   /** Phones: the box the About copy leaves for the portrait, as fractions of the stage (centre x/y, width, height). */
   aboutSlot: null as { x: number; y: number; w: number; h: number } | null,
+  /**
+   * The About portrait on screen (viewport px), written by the 3D portrait each frame it draws: its photo plane's
+   * box, whether every crystal is locked and still, and when this was written (performance.now()).
+   */
+  aboutPhoto: { x: 0, y: 0, w: 0, h: 0, settled: false, frame: 0 },
 }

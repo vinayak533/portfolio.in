@@ -15,7 +15,6 @@ export function mountRobot(_host: HTMLElement, _opts: RobotOptions = {}): RobotH
     setProgress(p) {
       setDock(p >= 0.5 ? 'docked' : 'away', false)
     },
-    setRendering() {},
     dispose() {
       setDock('none', false)
     },

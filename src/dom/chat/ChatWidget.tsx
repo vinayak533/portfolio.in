@@ -352,7 +352,6 @@ export function ChatWidget() {
             <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" stroke="currentColor" strokeWidth="2" strokeLinecap="round" fill="none" />
           </svg>
           {loading && <span className="chat-launcher-spinner" aria-hidden="true" />}
-          <span className="chat-launcher-status" aria-hidden="true" />
         </button>
         <span className="chat-tooltip" aria-hidden="true">
           {loadFailed ? 'Couldn’t load the chat. Click to retry.' : assistant.launcherLabel}

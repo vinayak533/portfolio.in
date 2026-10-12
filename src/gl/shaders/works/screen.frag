@@ -300,10 +300,11 @@ void main() {
   float grid = (line(gp.x, 0.02) + line(gp.y, 0.02)) * 0.025;
   col += uAccent * grid * (1.0 - 0.7 * m);
   float scan = sin(vUv.y * 900.0);
-  col *= mix(0.88 + 0.12 * scan, 0.97 + 0.03 * scan, m);
+  // Over media: no scanlines and only a faint vignette (the reel's text stays crisp and even).
+  col *= mix(0.88 + 0.12 * scan, 1.0, m);
   vec2 vv = vUv - 0.5;
   float vr = length(vv * vec2(1.0, 1.3));
-  col *= mix(smoothstep(0.85, 0.25, vr), smoothstep(1.05, 0.45, vr), m);
+  col *= mix(smoothstep(0.85, 0.25, vr), mix(1.0, smoothstep(1.3, 0.5, vr), 0.35), m);
   col += uAccent * 0.025 * (1.0 - m);
   col *= mix(0.35, 1.0, uFocus) * (1.0 + uHover * 0.25);
 

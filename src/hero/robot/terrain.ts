@@ -44,10 +44,22 @@
  *             through one secondary well (it slows, circles, escapes), to the plateau's front edge, on a
  *             7 s cycle: spawn 0.4 s, descent 5.2 s, the landing (the plateau flashes for 0.4 s, a ring of
  *             dots runs out over the surface for 1.1 s, a faint column rises), the wells and hills easing
- *             into a new arrangement over 1.6 s as the next agent comes from the other side. The laptop's
- *             builds (stageCues.buildDue / buildAt / commitAt, read only) come every 10-13 s, too slow for
- *             this tempo, so the cycle runs on its own timer (SYNC_BUILDS turns the old build-paced
- *             landing back on).
+ *             into a new arrangement over 1.6 s as the next agent comes from the other side. Each spawn is
+ *             published (stageCues.agentAt, and the agent's screen position while it is live): the robot's
+ *             eyes find it (engine.ts).
+ *
+ *   vortex    the inflow: dots drawn into the stage like a gravity well. Each starts on the visible bowl's outer
+ *             ring (85-100% of it), rides the same surface (0.6% of the relief above it) inward along a
+ *             logarithmic spiral on one of three arms (+-6 deg), clockwise from the camera, its radial speed
+ *             growing as 1/r^0.6 and its turn with it; it lives 6-9 s (5-7 s on phones), seeded and staggered.
+ *             Far 1.5 px at 6%, mid ~2.75 px at 18-24%, near 2 px at up to 38%, #A78BFA to #C4B5FD; in the
+ *             last 10% before the stage's rim it shrinks, fades and dips 3% below the surface. Half as bright
+ *             within the robot's silhouette (+10%). +6% on the beat; ENERGY up to +15% speed, a landing +25%
+ *             for 0.6 s (one flow clock, integrated here, so speed changes never jump). The arms turn once per
+ *             24 s; a faint arc on the dais's outer ring turns with them (engine.ts, dots.ts). All analytic in
+ *             one vertex shader, one draw. HIGH 700, MEDIUM 350, LOW 140 dots (no arc); the first thing the
+ *             ladder sheds (half, then off). Fades out over hero progress 0 .. 0.6 and stops there. Reduced
+ *             motion: a still 40% of it at 70%, no arc.
  *
  * Everything is emissive and additive on its own canvas under the robot's layer: it lights, shadows and
  * covers nothing of the robot. By tier (src/hero/tier.ts): MEDIUM a 100 x 60 grid on phones, no depth of
@@ -62,6 +74,7 @@
 import { stageCues, type StageFrame } from './dom'
 import { easeInOut, easeOut, energy, heroScroll, masterBeats } from '../motion'
 import { SLOW_FRAME, TIERS, type HeroTier } from '../tier'
+import { FROZEN, randomSource } from '../freeze'
 
 const VIOLET = [124 / 255, 92 / 255, 255 / 255]
 const LILAC = [167 / 255, 139 / 255, 250 / 255]
@@ -138,26 +151,66 @@ const GRID = {
 /** The grid's density against the spacing above: 15% fewer dots, 25% on phones. */
 const DENSITY = { desktop: 0.85, tablet: 0.85, phone: 0.75 } as const
 /** Dot size tiers (px): small (far), medium, large (near). */
-const DOT = { wide: [3, 4, 5], phone: [2.4, 3.2, 4] } as const
+const DOT = { wide: [3, 4.5, 6], phone: [2.6, 3.4, 4.4] } as const
+/**
+ * The lattice drain (see the header): every dot of the landscape flows into the stage. Its rim-to-stage time
+ * (s; phones), the radial profile (rho^K falls linearly in time: speed ~ 1/rho^(K-1), slow far out, fast near the
+ * stage), the spiral's twist (rad per e-fold of radius, clockwise from the camera), the fall into the rim (its
+ * share of the path, at most `rim` plateau radii wide; the dip as a share of the relief), the fade-in at the outer ring (share of the path), how the
+ * dots are shared between directions (weight (rho0^K - 1)^share: the far side, longer and foreshortened, gets more
+ * of them), and the margin round the screen the outer ring reaches (share of the width).
+ */
+const DRAIN = { life: 6, phoneLife: 5.5, K: 1.6, twist: 0.7, fall: 0.1, rim: 0.3, drop: 0.03, born: 0.04, share: 0.72, margin: 0.06 }
+/** Floats per landscape dot: aFlow (4): a flowing dot's birth direction, phase, outer ring and seed, or (x, z, 0, seed) for a still one. */
+const DRAIN_STRIDE = 4
+/** Directions in the outer ring's table, and in its coarse copy the streamers read (a uniform array). */
+const RING_STEPS = 360
+const RING_U = 36
 /** Gradient descent: momentum, step, the arrival radius (world), the most steps. */
 const GD = { beta: 0.9, lr: 0.0016, arrive: 0.05, max: 2600 }
 /**
- * Cycle timing (s), 7 s in all: the agent's fade-in, the descent, the final approach (build-paced mode: as
- * long as the build prints, perform.ts DUR.build), the landing's ring, the reshape and when it starts, the
- * wait from the landing to the next spawn, and the longest hold for a build that does not come.
+ * Cycle timing (s), 7 s in all: the agent's fade-in, the descent, the landing's ring, the reshape and when it
+ * starts, and the wait from the landing to the next spawn.
  */
-const CYCLE = { spawn: 0.4, descent: 5.2, phoneDescent: 5.2, final: 1.2, land: 1.1, morphAt: 0.1, morph: 1.6, rest: 1.4, hold: 6 }
+const CYCLE = { spawn: 0.4, descent: 5.2, land: 1.1, morphAt: 0.1, morph: 1.6, rest: 1.4 }
 /** The landing's flash on the plateau (s): at most 0.4 s, to 85%. */
 const FLASH = 0.4
-/**
- * Pace the descent to the laptop's builds (the old behaviour: the descent runs until the next build is due,
- * which comes every 10-13 s) instead of the 7 s timer. Off: the builds are too far apart for this tempo.
- */
-const SYNC_BUILDS = false
-/** The load sequence (s after the reveal): the landscape's dot-wave, then the horizon, then the agent at power-on. */
-const LOAD = { terrain: [0.4, 1.8], details: [1.8, 2.3], agent: 2.5 }
 /** The landing ring: dots, peak opacity, reach (share of the width; phones). */
 const RING = { dots: 140, lite: 60, degraded: 70, alpha: 0.75, reach: 0.6, phoneReach: 0.8 }
+/**
+ * The inflow vortex (see the header): dots per tier, arms and their jitter, the outer ring (share of the visible
+ * bowl), lifetimes (s), the spiral's twist (rad per e-fold of radius), the arms' revolution (s), the hover and
+ * the final dip (shares of the relief) and the fall's share of the path, the reactions (beat, ENERGY, landing
+ * over landS s), the robot's clearance (floor, margin and feather as shares of its height), reduced motion's
+ * share and opacity, the scroll fade (hero progress), and the rim's arc (gain, width).
+ */
+const VORTEX = {
+  count: { high: 600, medium: 300, low: 120 } as Record<HeroTier, number>,
+  arms: 3,
+  jitter: (6 * Math.PI) / 180,
+  start: [0.85, 1] as [number, number],
+  life: [5, 7] as [number, number],
+  phoneLife: [5, 6.5] as [number, number],
+  /** The trail: dots behind each streamer (against its travel), and their spacing on its clock (s). */
+  trail: 4,
+  trailGap: 0.07,
+  twist: 3.2,
+  turn: 24,
+  hover: 0.006,
+  drop: 0.03,
+  fall: 0.1,
+  beat: 0.06,
+  energy: 0.15,
+  land: 0.25,
+  landS: 0.6,
+  clear: { floor: 0.5, margin: 0.1, feather: 0.06 },
+  still: 0.4,
+  stillAlpha: 0.7,
+  fade: [0, 0.6] as [number, number],
+  arc: { gain: 0.1, width: (70 * Math.PI) / 180 },
+}
+/** Floats per vortex point: aSeed (4), aArm (1), aTrail (1: 0 the head, then its trail). */
+const VORTEX_STRIDE = 6
 /** The trail: dots (over ~2 s), lite, degraded. */
 const TRAIL = { dots: 70, lite: 24, degraded: 40, span: 2 }
 
@@ -165,7 +218,9 @@ const smoothstep = (a: number, b: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)))
   return t * t * (3 - 2 * t)
 }
-const rand = (a: number, b: number) => a + Math.random() * (b - a)
+/** The landscape's random source (seeded under ?freeze, src/hero/freeze.ts). */
+let random = Math.random
+const rand = (a: number, b: number) => a + random() * (b - a)
 
 /* ---- The height field and the projection, shared by every program (and twinned on the CPU below). */
 
@@ -231,12 +286,12 @@ float clearing(vec2 s) {
 
 const TERRAIN_VS = /* glsl */ `
 precision highp float;
-attribute vec2 aPos;           // world x, z
+attribute vec4 aFlow;          // flowing: birth direction (rad), phase (0..1), outer ring (plateau radii), seed; still: x, z (world), 0, seed
 uniform float uDpr;
+uniform vec2 uFlowT;           // the flow clock (s: ENERGY and a landing speed it up), the rim-to-stage time (s)
 uniform vec2 uDepth;           // the grid's nearest and farthest depth
 uniform vec4 uSize;            // size at the stage's depth (px); the small, medium and large tiers (px)
 uniform float uRowK;           // the depth ratio between rows (log)
-uniform float uReveal;         // the reveal front's radius (world)
 uniform vec2 uFx;              // depth of field, contours+glow (0/1)
 uniform vec4 uFrontA[${FRONTS_A}];  // the stage's waves: front distance from the plateau's rim, height (world), crest gain
 uniform vec4 uFrontB[${FRONTS_B}];  // the flank waves: source (x, z), front radius, height (world; 0 off)
@@ -264,7 +319,23 @@ float hump(float d, float len) {
   return d > 0.0 && d < len ? 0.5 - 0.5 * cos(6.2832 * d / len) : 0.0;
 }
 void main() {
-  float f = field(aPos);
+  // The drain: a flowing dot slides in from its outer ring along a gentle spiral (turning clockwise from the
+  // camera, faster as it nears the stage), falls into the stage's rim over the last ${(DRAIN.fall * 100).toFixed(0)}% of its path and
+  // is reborn on the outer ring. The dots are spread evenly over (direction, phase), so the field it makes is
+  // the same at every moment: a continuous drain, no seam, no waves of rebirth.
+  vec2 aPos = aFlow.xy;
+  float fall = 0.0;
+  float born = 1.0;
+  if (aFlow.z > 0.5) {
+    float u = fract(aFlow.y + uFlowT.x / uFlowT.y);
+    float r0k = pow(aFlow.z, ${DRAIN.K.toFixed(2)});
+    float rho = pow(r0k - u * (r0k - 1.0), ${(1 / DRAIN.K).toFixed(4)});
+    float th = aFlow.x + ${DRAIN.twist.toFixed(2)} * log(aFlow.z / rho);
+    aPos = vec2(cos(th), sin(th)) * rho * uPlat;
+    fall = 1.0 - smoothstep(1.0, 1.0 + min(${DRAIN.fall.toFixed(2)} * (aFlow.z - 1.0), ${DRAIN.rim.toFixed(2)}), rho);
+    born = smoothstep(0.0, ${DRAIN.born.toFixed(2)}, u);
+  }
+  float f = field(aPos) - uBowl.z * ${DRAIN.drop.toFixed(3)} * fall;
   float rP = plateau(aPos);
   // The surface's motion, all smooth swells and Gaussians: the stage's waves, the flank waves crossing them
   // (the interference), the pointer's wake and a tap's ring, summed and clamped; the plateau under the dais
@@ -300,13 +371,13 @@ void main() {
   float hn = clamp(f / uBowl.z, 0.0, 1.0);
   float far = clamp((s.z - uDepth.x) / (uDepth.y - uDepth.x), 0.0, 1.0);
 
-  // Slopes: #A78BFA at 30-50%.
+  // Slopes: #A78BFA at 28-45%.
   vec3 col = ${vec3(LILAC)};
-  float a = mix(0.30, 0.50, smoothstep(0.06, 0.5, hn));
-  // Size: three tiers by the row's depth on flat ground (fixed per row, so nothing pops as the surface
-  // moves): the perspective size rounded to small, medium or large.
-  float row = uSize.x * uCam.x / (uCam.x - aPos.y * uCam.w);
-  float size = row < 0.5 * (uSize.y + uSize.z) ? uSize.y : row < 0.5 * (uSize.z + uSize.w) ? uSize.z : uSize.w;
+  float a = mix(0.28, 0.45, smoothstep(0.06, 0.5, hn));
+  // Size: the perspective size (continuous, so a dot never pops as it flows nearer) within the small and large
+  // tiers, and each dot one of three tiers of it (its seed).
+  float tierK = aFlow.w < 0.34 ? 0.82 : aFlow.w < 0.67 ? 1.0 : 1.18;
+  float size = clamp(uSize.x * uCam.x / s.z, uSize.y, uSize.w) * tierK;
   // The basin round the plateau: #C4B5FD, brightest at its rim (75%), fading outward.
   float basin = smoothstep(0.98, 1.06, rP) * (1.0 - smoothstep(1.2, 1.9, rP));
   a = mix(a, mix(0.75, 0.6, smoothstep(1.1, 1.6, rP)), basin);
@@ -336,11 +407,12 @@ void main() {
   vec2 nb = vec2(aPos.x, aPos.y - s.z * uRowK / uCam.w);
   float gap = abs(project(vec3(nb.x, field(nb), nb.y)).y - s.y);
   a *= clamp(gap / (uSize.x * 1.4), 0.45, 1.0);
+  // Falling into the rim it shrinks and fades; reborn on the outer ring it fades in.
+  a *= (1.0 - fall) * born;
+  size *= 1.0 - 0.7 * fall;
   // The last rows thin into the horizon; the bottom fades into the vignette.
   a *= 1.0 - smoothstep(0.97, 1.0, far);
   a *= 1.0 - smoothstep(uLand.w, uScr.w, s.y);
-  // The reveal: a dot-wave outward from the stage.
-  a *= 1.0 - smoothstep(uReveal - 0.6, uReveal, length(aPos));
   // The landing ring passing: dots swell 25% and brighten, then relax; just behind it a darker wake, so the
   // front stands out even crossing the bright basin.
   float rr = (rP - uRing.x) / uRing.y;
@@ -357,11 +429,11 @@ void main() {
   // Never brighter than ~70%: the robot's visor and the laptop's screen stay the brightest things in frame.
   a = min(a, max(0.7, 0.85 * flash));
   // The halo grows the sprite, not the dot; whole device pixels, so sizes never shimmer.
-  float sprite = max(1.0, floor(size * (1.0 + 2.2 * halo) * uDpr + 0.5));
+  float sprite = max(1.0, ceil(size * (1.0 + 2.2 * halo) * uDpr));
   vCol = vec4(col, a);
   vShape = vec4(min(1.0, size * uDpr / sprite), blur, halo * 0.32, 0.0);
   gl_PointSize = sprite;
-  gl_Position = a < 0.004 || s.z < 0.1 ? vec4(2.0, 2.0, 2.0, 1.0) : toClip(s.xy);
+  gl_Position = a < 0.004 || size < 0.3 || s.z < 0.1 ? vec4(2.0, 2.0, 2.0, 1.0) : toClip(s.xy);
 }
 `
 
@@ -402,6 +474,76 @@ void main() {
 }
 `
 
+/**
+ * The inflow vortex: every dot's place is a function of the flow clock and its seeds alone (no per-dot CPU
+ * work). Plateau radii (rho, 1 = the stage's rim), turned clockwise from the camera as they shrink.
+ */
+const VORTEX_VS = /* glsl */ `
+precision highp float;
+attribute vec4 aSeed;  // the arm's jitter, the start radius, the lifetime, the phase (0..1)
+attribute float aArm;  // the arm (0, 1, 2) + a keep seed (0..1) for reduced motion's share
+attribute float aTrail; // 0 the streamer itself, 1.. its trail, each a step behind it on its own path
+uniform float uDpr;
+uniform float uFlow;   // the flow clock (s): ENERGY and a landing speed it up
+uniform float uRing[${RING_U}]; // the outer ring: the visible bowl's reach (plateau radii) every ${360 / 36} deg (+z, toward the camera, is 90)
+uniform vec2 uVLife;   // the lifetime's range (s)
+uniform vec4 uVLook;   // opacity (the scroll's fade, reduced motion), the beat's gain, reduced motion's share, its flag
+uniform vec3 uVClear;  // the robot's clearance: margin, feather (px), floor
+varying vec4 vCol;
+varying vec4 vShape;
+${FIELD}
+const float TAU = 6.2831853;
+const float K = 1.6;   // radial speed ~ 1 / rho^0.6: rho^1.6 falls linearly in time
+void main() {
+  float arm = floor(aArm);
+  float keep = fract(aArm);
+  float life = mix(uVLife.x, uVLife.y, aSeed.z);
+  float cyc = (uFlow - aTrail * ${VORTEX.trailGap.toFixed(3)}) / life + aSeed.w;
+  float u = fract(cyc);
+  // The arms: rigid log spirals turning once per ${VORTEX.turn} s; each dot slides in along its own (+-6 deg),
+  // so its turn is the arm's plus the spiral's, quickening as it nears the stage. Its start ring is taken where
+  // its arm met the rim when this pass began.
+  float born = (floor(cyc) - aSeed.w) * life;
+  float off = arm * TAU / ${VORTEX.arms.toFixed(1)} + (aSeed.x * 2.0 - 1.0) * ${VORTEX.jitter.toFixed(4)};
+  float th0 = off + born * TAU / ${VORTEX.turn.toFixed(1)};
+  // The outer ring: the visible bowl in this direction (the lattice's own, drainSeeds()).
+  float rf = fract(th0 / TAU) * ${RING_U}.0;
+  int i0 = int(floor(rf));
+  int i1 = i0 + 1 >= ${RING_U} ? 0 : i0 + 1;
+  float edge = mix(uRing[i0], uRing[i1], fract(rf));
+  float rho0 = max(1.6, mix(${VORTEX.start[0].toFixed(2)}, ${VORTEX.start[1].toFixed(2)}, aSeed.y) * edge);
+  float r0k = pow(rho0, K);
+  float rho = pow(r0k - u * (r0k - 1.0), 1.0 / K);
+  float th = off + uFlow * TAU / ${VORTEX.turn.toFixed(1)} + ${VORTEX.twist.toFixed(2)} * log(rho0 / rho);
+  vec2 p = vec2(cos(th), sin(th)) * rho * uPlat;
+  // Along the path (0 the ring .. 1 the rim), and the fall over its last ${(VORTEX.fall * 100).toFixed(0)}%.
+  float v = (rho0 - rho) / (rho0 - 1.0);
+  float fall = 1.0 - smoothstep(1.0, 1.0 + ${VORTEX.fall.toFixed(2)} * (rho0 - 1.0), rho);
+  float h = field(p) + uBowl.z * (${VORTEX.hover.toFixed(3)} - ${VORTEX.drop.toFixed(3)} * fall);
+  vec3 s = project(vec3(p.x, h, p.y));
+  // 45% far out to 75% near the stage; 3-4.4 px; the trail fainter and finer behind it.
+  float a = mix(0.45, 0.75, smoothstep(0.05, 0.85, v)) * mix(0.92, 1.0, keep);
+  float size = mix(3.0, 4.4, smoothstep(0.0, 0.7, v)) * (1.0 - 0.75 * fall);
+  float tk = aTrail / ${(VORTEX.trail + 1).toFixed(1)};
+  a *= pow(1.0 - tk, 1.6) * smoothstep(0.0, 0.06, u) * (1.0 - fall);
+  size *= 1.0 - 0.45 * tk;
+  // Half as bright over the robot (its silhouette and the margin, feathered).
+  float dh = length(s.xy - uHead.xy) - uHead.z;
+  vec2 bc = (uBody.xy + uBody.zw) * 0.5;
+  vec2 bd = abs(s.xy - bc) - (uBody.zw - uBody.xy) * 0.5;
+  float db = length(max(bd, 0.0)) + min(max(bd.x, bd.y), 0.0);
+  a *= mix(uVClear.z, 1.0, smoothstep(uVClear.x, uVClear.x + uVClear.y, min(dh, db)));
+  a = min(0.75, a * (1.0 + uVLook.y)) * uVLook.x;
+  a *= 1.0 - smoothstep(uScr.w * 0.9, uScr.w, s.y);
+  if (uVLook.w > 0.5 && (keep > uVLook.z || aTrail > 0.5)) a = 0.0;
+  float sprite = max(1.0, ceil(size * uDpr));
+  vCol = vec4(mix(${vec3(LILAC)}, ${vec3(GLOW)}, smoothstep(0.3, 0.9, v)), a);
+  vShape = vec4(min(1.0, size * uDpr / sprite), 0.0, 0.0, 0.0);
+  gl_PointSize = sprite;
+  gl_Position = a < 0.003 || size < 0.05 || s.z < 0.1 ? vec4(2.0, 2.0, 2.0, 1.0) : toClip(s.xy);
+}
+`
+
 /** Floats per FX point: aPos (2), aK (4), aSoft (1). */
 const FX_STRIDE = 7
 const FX_MAX = 2 + TRAIL.dots + RING.dots + 24 + 1 + COMET.trail + 4
@@ -419,6 +561,7 @@ export interface TerrainHandle {
 }
 
 export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () => StageFrame): TerrainHandle {
+  random = randomSource(0x51ed27)
   // Back to front: the horizon's glow, the far ridges, the landscape's canvas (under the beam).
   const haze = document.createElement('div')
   haze.className = 'hero-haze'
@@ -447,16 +590,33 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
       },
     }
   }
-  const { terrain, fx } = programs
-  const terrainBuf = gl.createBuffer()!
-  const fxBuf = gl.createBuffer()!
+  let { terrain, fx, vortex } = programs
+  let terrainBuf = gl.createBuffer()!
+  let fxBuf = gl.createBuffer()!
+  // The vortex's seeds: one static buffer, written once (a tier's count is a prefix of it).
+  // (Its own random source: the landscape's arrangements draw the same numbers with or without it.)
+  const vrand = randomSource(0x7a11ce)
+  // Each streamer is its head and its trail, consecutive points (a tier's count of streamers is a prefix).
+  const VPTS = VORTEX.trail + 1
+  const vortexData = new Float32Array(VORTEX.count.high * VPTS * VORTEX_STRIDE)
+  for (let i = 0; i < VORTEX.count.high; i++) {
+    const seed = [vrand(), vrand(), vrand(), vrand(), (i % VORTEX.arms) + vrand() * 0.999]
+    for (let j = 0; j < VPTS; j++) vortexData.set([...seed, j], (i * VPTS + j) * VORTEX_STRIDE)
+  }
+  let vortexBuf = gl.createBuffer()!
+  gl.bindBuffer(gl.ARRAY_BUFFER, vortexBuf)
+  gl.bufferData(gl.ARRAY_BUFFER, vortexData, gl.STATIC_DRAW)
   const fxData = new Float32Array(FX_MAX * FX_STRIDE)
   // Allocated once; each frame only its used part is rewritten (bufferSubData).
   gl.bindBuffer(gl.ARRAY_BUFFER, fxBuf)
   gl.bufferData(gl.ARRAY_BUFFER, fxData.byteLength, gl.DYNAMIC_DRAW)
   let gridCount = 0
+  /** The context is lost (nothing is drawn until it is restored and rebuilt). */
+  let lost = false
 
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)')
+  /** Reduced motion, or the frozen baseline frame (src/hero/freeze.ts): one still frame. */
+  const still = () => reduced.matches || FROZEN
   /** Lite: automatic lite (src/core/autoLite.ts) or a software renderer (Hero.tsx); phones are not lite, they have their own profile. */
   const lite = () => !!host.closest('[data-lite-landscape]')
   /** The hero's tier (src/hero/tier.ts, on #hero as data-tier); lite is always LOW. */
@@ -493,7 +653,7 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
   const clear = { margin: 0, feather: 1, floor: 0.45 }
   let gridKey = ''
   /** Development only: overrides for profiling (window.__heroTerrain.tune). */
-  const tune: { dpr?: number; grid?: number; noDraw?: boolean } = {}
+  const tune: { dpr?: number; grid?: number; noDraw?: boolean; vortexGain?: number; vortexCount?: number } = {}
 
   /** World point to screen (px) and depth: the CPU twin of project(). */
   function toScreen(x: number, h: number, z: number) {
@@ -584,24 +744,24 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
     G.rowK = rowK
     G.sizeK = phone ? 3.7 : 4.2
     const key = `${W}x${H}:${sx.toFixed(3)}:${rowK.toFixed(5)}:${C.D.toFixed(4)}:${B.bz.toFixed(4)}`
+    outerRing()
     if (key !== gridKey) {
       gridKey = key
+      // The plateau under the dais keeps the grid's own still dots (as faint as the dais's: they meet without a
+      // seam); everywhere else the same number of dots flows (drainSeeds).
       const dx = (sx * C.D) / C.f
-      const pts = new Float32Array(count * 2 + 8)
-      let n = 0
+      const plat: number[] = []
       const rows = Math.ceil(Math.log(G.dF / G.dN) / rowK)
       for (let j = 0; j <= rows; j++) {
         const depth = G.dN * Math.exp(j * rowK)
         const z = (C.D - depth) / COS
         const m = Math.floor(half(depth) / dx)
-        for (let i = -m; i <= m && n < pts.length - 1; i++) {
-          pts[n++] = i * dx
-          pts[n++] = z
-        }
+        for (let i = -m; i <= m; i++) if (Math.hypot((i * dx) / B.rx, z / B.rz) < 1.06) plat.push(i * dx, z)
       }
+      const pts = drainSeeds(Math.max(0, count - plat.length / 2), plat)
       gl!.bindBuffer(gl!.ARRAY_BUFFER, terrainBuf)
-      gl!.bufferData(gl!.ARRAY_BUFFER, pts.subarray(0, n), gl!.STATIC_DRAW)
-      gridCount = n / 2
+      gl!.bufferData(gl!.ARRAY_BUFFER, pts, gl!.STATIC_DRAW)
+      gridCount = pts.length / DRAIN_STRIDE
     }
 
     // Up to 1.25x (the dots are soft; on 3x phones this is a ninth of the native fill), 1x in LOW, less once degraded.
@@ -617,6 +777,67 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
     placedKey = worldKey
   }
   let placedKey = ''
+
+  /**
+   * The outer ring: in each direction from the stage, how far (plateau radii) the bowl is on screen, plus a
+   * margin (the parallax, and the spiral carrying dots sideways). The lattice and the streamers are born on it.
+   */
+  function outerRing() {
+    const flat: Arrangement = { wells: [], hills: [] }
+    const margin = DRAIN.margin * W
+    const ring = drainRing
+    for (let k = 0; k < RING_STEPS; k++) {
+      const th = (k / RING_STEPS) * Math.PI * 2
+      const c = Math.cos(th)
+      const sn = Math.sin(th)
+      let rho = 1.05
+      for (; rho < 80; rho *= 1.02) {
+        const x = c * rho * B.rx
+        const z = sn * rho * B.rz
+        if (z < -B.bz) break
+        const sc = toScreen(x, field(flat, x, z), z)
+        if (sc.depth < 0.1 || sc.x < -margin || sc.x > W + margin || sc.y > H + 24 || sc.y < -margin) break
+      }
+      ring[k] = Math.max(1.6, rho)
+    }
+    for (let k = 0; k < RING_U; k++) {
+      let sum = 0
+      const per = RING_STEPS / RING_U
+      for (let j = 0; j < per; j++) sum += ring[(k * per + j - per / 2 + RING_STEPS) % RING_STEPS]
+      V.ring[k] = sum / per
+    }
+  }
+
+  /**
+   * The drain's dots: `n` flowing ones, then the plateau's still ones. Each flowing dot is born on the outer
+   * ring (the bowl as far as the screen shows it, plus a margin, in its direction), and the dots are spread
+   * over (direction, phase) as a jittered Fibonacci lattice: an even field whose every shift along the phase
+   * looks the same, so the flow never shows a seam or a wave of rebirth. Directions are shared by weight
+   * (DRAIN.share): the far side, whose paths are longer and foreshortened, gets more dots.
+   */
+  function drainSeeds(n: number, plat: number[]) {
+    const ring = drainRing
+    const cdf = new Float32Array(RING_STEPS + 1)
+    for (let k = 0; k < RING_STEPS; k++) cdf[k + 1] = cdf[k] + (ring[k] ** DRAIN.K - 1) ** DRAIN.share
+    const out = new Float32Array((n + plat.length / 2) * DRAIN_STRIDE)
+    const rnd = randomSource(0xd2a1e)
+    const jitter = 0.6 / Math.sqrt(Math.max(1, n))
+    const PHI = 0.6180339887
+    let k = 0
+    for (let i = 0; i < n; i++) {
+      const q = ((((i * PHI + (rnd() - 0.5) * jitter) % 1) + 1) % 1) * cdf[RING_STEPS]
+      while (k > 0 && cdf[k] > q) k--
+      while (k < RING_STEPS - 1 && cdf[k + 1] < q) k++
+      const f = (q - cdf[k]) / Math.max(1e-6, cdf[k + 1] - cdf[k])
+      const th = ((k + f) / RING_STEPS) * Math.PI * 2
+      const r0 = ring[k] + (ring[(k + 1) % RING_STEPS] - ring[k]) * f
+      const phase = ((((i + 0.5) / n + (rnd() - 0.5) * jitter) % 1) + 1) % 1
+      out.set([th, phase, r0, rnd()], i * DRAIN_STRIDE)
+    }
+    for (let i = 0; i < plat.length / 2; i++) out.set([plat[i * 2], plat[i * 2 + 1], 0, rnd()], (n + i) * DRAIN_STRIDE)
+    return out
+  }
+  const drainRing = new Float32Array(RING_STEPS)
 
   /** The landing point: on the plateau's edge, front-left or front-right (the side the agent comes from). */
   function placeLanding(sd = landSide) {
@@ -635,7 +856,8 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
     ]
     const k = Math.min(1, H / 900)
     const base = B.horizon.toFixed(1)
-    let svg = ''
+    // Their feet melt into the horizon's glow (the last 36 px, scaled), so its band never meets a hard edge.
+    let svg = `<defs><linearGradient id="hero-ridge-fade" gradientUnits="userSpaceOnUse" x1="0" y1="${(B.horizon - 36 * k).toFixed(1)}" x2="0" y2="${base}"><stop offset="0" stop-color="#040309"/><stop offset="1" stop-color="#040309" stop-opacity="0"/></linearGradient></defs>`
     for (const l of layers) {
       let d = ''
       for (let x = -12; x <= W + 12; x += 6) {
@@ -644,7 +866,7 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
         d += `${d ? 'L' : 'M'}${x} ${(B.horizon - k * (l.lift + l.amp * peaks)).toFixed(1)}`
       }
       // The silhouette (down to the horizon), then its crest as round dots (zero-length dashes, round caps).
-      svg += `<path d="${d}L${W + 12} ${base}L-12 ${base}Z" fill="#040309" fill-opacity="${l.fill}"/>`
+      svg += `<path d="${d}L${W + 12} ${base}L-12 ${base}Z" fill="url(#hero-ridge-fade)" fill-opacity="${l.fill}"/>`
       svg += `<path d="${d}" fill="none" stroke="#7C5CFF" stroke-opacity="${l.dot}" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="0 12"/>`
     }
     ridgeSvg.setAttribute('viewBox', `0 0 ${W} ${H}`)
@@ -777,7 +999,7 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
   // ---- the descent (CPU): momentum gradient descent with finite differences, planned ahead a slice per
   // frame while the agent is away (against the arrangement the terrain is easing into)
 
-  let side = Math.random() < 0.5 ? -1 : 1
+  let side = random() < 0.5 ? -1 : 1
   let path = new Float32Array(GD.max * 2)
   let scratch = new Float32Array(GD.max * 2)
   let nArrive = 0
@@ -811,7 +1033,7 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
     if (!cands.length) return [sd * B.bx * 0.7, -0.4 * B.bz]
     cands.sort((a, b) => b[2] - a[2])
     const top = cands.slice(0, Math.max(1, Math.ceil(cands.length * 0.3)))
-    const [x, z] = top[Math.floor(Math.random() * top.length)]
+    const [x, z] = top[Math.floor(random() * top.length)]
     return [x, z]
   }
 
@@ -920,26 +1142,14 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
 
   // ---- the cycle
 
-  type Phase = 'wait' | 'spawn' | 'descent' | 'hold' | 'final' | 'land' | 'rest'
+  type Phase = 'wait' | 'spawn' | 'descent' | 'land' | 'rest'
   let phase: Phase = 'wait'
   let phaseAt = 0
-  /** The cycle's clock (s), and the page's clock at its zero (ms), to read the engine's cues. */
+  /** The cycle's clock (s). */
   let clock = 0
-  let clockBase = performance.now()
-  const toClock = (ms: number) => (ms - clockBase) / 1000
   let step = 0
   let rate = 40
-  /** Where the descent hands over to the final approach; the final approach's start and end (clock). */
-  let nStage = 0
-  /** The planned descent's pace (steps/s); it adapts within limits to reach the final approach as the build is due. */
-  let rate0 = 40
-  /** A build (by its start) that came too early in a run to land on: the agent waits for the next. */
-  let skipped = -Infinity
-  const fin = { from: 0, at: 0, end: 0 }
   let landAt = -1
-  let runAt = 0
-  let timerMode = true
-  let seenCommit = stageCues.commitAt
   const trail = new Float32Array(TRAIL.dots * 2)
   let trailN = 0
   let trailAt = 0
@@ -950,9 +1160,6 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
     phaseAt = clock
   }
 
-  /** The builds can be followed (the engine publishes them: not in lite, reduced motion or the scroll). */
-  const syncable = () => SYNC_BUILDS && !lite() && Number.isFinite(stageCues.buildDue)
-
   function startRun() {
     while (!planner.ready && !planner.held) planTry(morphT < 1 ? next : cur, GD.max)
     side = planner.side
@@ -961,57 +1168,43 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
     placeLanding(side)
     step = 0
     trailN = 0
-    runAt = clock
-    const phone = size === 'phone'
-    timerMode = !syncable()
-    if (timerMode) {
-      nStage = nArrive
-      rate = nArrive / (phone ? CYCLE.phoneDescent : CYCLE.descent)
-    } else {
-      // Reach the final approach as the build is due (it starts at the next pause after), so the last
-      // stretch can run exactly as long as the build prints.
-      const due = toClock(stageCues.buildDue)
-      const T = Math.min(phone ? 8 : 10, Math.max(phone ? 4.5 : 5, due + 0.2 - (clock + CYCLE.spawn)))
-      nStage = Math.floor((nArrive * T) / (T + CYCLE.final))
-      rate = nStage / T
-    }
-    rate0 = rate
+    rate = nArrive / CYCLE.descent
     go('spawn')
-  }
-
-  function final(endAt: number) {
-    fin.from = step
-    fin.at = clock
-    fin.end = Math.max(clock + 0.25, endAt)
-    go('final')
+    // The robot's eyes find the new agent (engine.ts reads when it spawned, and where it is while it is live).
+    stageCues.agentAt = performance.now()
   }
 
   function land() {
     landAt = clock
     step = nArrive
     go('land')
+    V.boostAt = clock
   }
 
-  let onAt = host.hasAttribute('data-on') ? -1e9 : Infinity
+  /** The flow clocks (s: the streamers', the lattice's), the outer ring's coarse copy (plateau radii; outerRing()), the landing boost. */
+  const V = { flow: 0, drain: 0, ring: new Float32Array(RING_U), boostAt: -1e9 }
+  /** Its share of the hero still showing (it fades out over hero progress 0 .. 0.6 and stops there). */
+  const vortexFade = () => 1 - smoothstep(VORTEX.fade[0], VORTEX.fade[1], heroScroll.p)
+  /** Its dots now: the tier's count, halved then dropped by the ladder (stageCues.vortex, the watchdog). */
+  const vortexCount = () => {
+    const step = Math.max(stageCues.vortex, watchdog.vortex)
+    return step >= 2 ? 0 : Math.round(VORTEX.count[tierNow()] / (step >= 1 ? 2 : 1))
+  }
+  function stepVortex(dt: number) {
+    // A landing speeds it up 25% (in 90 ms, back over the rest of 0.6 s); ENERGY up to 15%. The lattice drains on
+    // the same clock for as long as the landscape is drawn; the streamers stop once they have faded out.
+    const t = (clock - V.boostAt) / VORTEX.landS
+    const boost = t < 0 || t > 1 ? 0 : t < 0.15 ? smoothstep(0, 0.15, t) : 1 - smoothstep(0.15, 1, t)
+    const step = dt * (1 + VORTEX.energy * lift + VORTEX.land * boost)
+    V.drain += step
+    if (vortexFade() > 0) V.flow += step
+  }
 
   /** Development only: hold the cycle at a moment (window.__heroTerrain.freeze). */
   let frozen = false
   function update(dt: number) {
     if (frozen) return
     clock += dt
-    // The page's clock drifts from ours only while the loop is paused (the tab hidden): keep them aligned.
-    clockBase = performance.now() - clock * 1000
-    const since = (performance.now() - onAt) / 1000
-    const commit = stageCues.commitAt !== seenCommit && Number.isFinite(stageCues.commitAt)
-    seenCommit = stageCues.commitAt
-    const buildStart = toClock(stageCues.buildAt)
-    let building = !timerMode && buildStart > runAt + CYCLE.spawn * 0.5 && Math.abs(buildStart - skipped) > 0.5
-    // Too early in the run (the agent still high on the rim): let this build pass and land on the next.
-    const early = step < nStage * 0.5 && (phase === 'spawn' || phase === 'descent')
-    if (building && early) {
-      skipped = buildStart
-      building = false
-    }
     stepMorph(dt)
 
     // Planning starts as soon as the next arrangement is known (the reshape has begun). Phones plan in smaller
@@ -1020,32 +1213,12 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
     // A run starts once it is planned (planning goes a slice per frame), with the best run so far a moment
     // later, or after 1.5 s more regardless.
     const planned = (late: number) => planner.ready || (late > 0.3 && planner.held) || late > 1.5
-    if (phase === 'wait' && since >= LOAD.agent && planned(since - LOAD.agent)) startRun()
+    if (phase === 'wait' && planned(clock)) startRun()
     else if (phase === 'spawn' && clock - phaseAt >= CYCLE.spawn) go('descent')
 
-    if (phase === 'spawn' || phase === 'descent' || phase === 'hold') {
-      // Following the builds: pace the descent to reach the final approach as the next one is due.
-      if (phase === 'descent' && !timerMode && Number.isFinite(stageCues.buildDue)) {
-        const left = toClock(stageCues.buildDue) + 0.2 - clock
-        rate = Math.min(rate0 * 2.5, Math.max(rate0 * 0.4, (nStage - step) / Math.max(0.3, left)))
-      }
-      if (phase === 'descent') step = Math.min(nStage, step + rate * dt)
-      if (phase === 'hold') step = Math.min(nArrive - (nArrive - nStage) * 0.6, step + rate * 0.12 * dt)
-      if (commit && !timerMode && !early) final(clock + 0.3)
-      else if (building) final(buildStart + CYCLE.final)
-      else if (phase === 'descent' && step >= nStage) {
-        if (timerMode) land()
-        else go('hold')
-      } else if (phase === 'hold' && clock - phaseAt > CYCLE.hold) {
-        // The build never came (the scroll, or a long read): land on the timer from now on.
-        timerMode = true
-        final(clock + 1)
-      }
-    } else if (phase === 'final') {
-      if (commit) fin.end = Math.min(fin.end, clock + 0.15)
-      const t = Math.min(1, (clock - fin.at) / Math.max(1e-3, fin.end - fin.at))
-      step = fin.from + (nArrive - fin.from) * (1 - (1 - t) ** 1.6)
-      if (t >= 1) land()
+    if (phase === 'descent') {
+      step = Math.min(nArrive, step + rate * dt)
+      if (step >= nArrive) land()
     } else if (phase === 'land') {
       const t = clock - landAt
       if (t >= CYCLE.morphAt && morphT >= 1 && !lite() && phaseAt === landAt) {
@@ -1054,14 +1227,13 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
       }
       if (t >= CYCLE.land) go('rest')
     } else if (phase === 'rest') {
-      // The timer: 7 s from spawn to spawn (the reshape finishes as the next agent fades in).
-      const wait = timerMode || lite() ? CYCLE.rest : CYCLE.morphAt + CYCLE.morph
-      if (clock - landAt >= wait && planned(clock - landAt - wait)) startRun()
+      // 7 s from spawn to spawn (the reshape finishes as the next agent fades in).
+      if (clock - landAt >= CYCLE.rest && planned(clock - landAt - CYCLE.rest)) startRun()
     }
 
     // The agent's position, and its trail (~70 positions over 2 s).
     const at = agentPos()
-    const live = phase === 'spawn' || phase === 'descent' || phase === 'hold' || phase === 'final'
+    const live = phase === 'spawn' || phase === 'descent'
     const every = TRAIL.span / TRAIL.dots
     if (clock - trailAt >= every) {
       trailAt = clock
@@ -1073,7 +1245,13 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
       } else trailN = Math.max(0, trailN - 2)
     }
     agentA = phase === 'spawn' ? smoothstep(0, CYCLE.spawn, clock - phaseAt) : live ? 1 : phase === 'land' ? 1 - smoothstep(0.2, 0.8, clock - landAt) : 0
+    if (live) {
+      const s = onScreen(cur, at[0], at[1])
+      stageCues.agent.x = s.x
+      stageCues.agent.y = s.y
+    }
     stepMotion(dt)
+    stepVortex(dt)
   }
 
   const trailMax = () => (lite() ? TRAIL.lite : degradeStep() >= 4 ? TRAIL.degraded : TRAIL.dots)
@@ -1358,7 +1536,7 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
   }
 
   let lastDegrade = 0
-  const shown = { hazeV: -1, ridges: -1 }
+  const shown = { hazeV: -1 }
   let wasLite = lite()
   let lastTier = tierNow()
   const at = { x: 0, y: 0 }
@@ -1395,6 +1573,7 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
   let arrVersion = 0
 
   function draw(time: number, still: boolean) {
+    if (lost) return
     if (degradeStep() !== lastDegrade || lite() !== wasLite || tierNow() !== lastTier) {
       const liteChanged = lite() !== wasLite
       lastDegrade = degradeStep()
@@ -1412,19 +1591,14 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
     g.clear(g.COLOR_BUFFER_BIT)
     g.enable(g.BLEND)
 
-    const since = (performance.now() - onAt) / 1000
-    const grow = still ? 1 : smoothstep(LOAD.terrain[0], LOAD.terrain[1], since)
-    const details = still ? 1 : smoothstep(LOAD.details[0], LOAD.details[1], since)
     // The horizon's glow breathes, +-8% over 4 s (a sine). Style writes only when the value has moved (an
     // opacity change is composited, no layout or paint).
     const hazeBreath = still || lite() ? 0 : HAZE.amp * Math.sin((time * Math.PI * 2) / HAZE.period)
-    const hazeV = Math.min(1, details * (0.9 + hazeBreath))
+    const hazeV = Math.min(1, 0.9 + hazeBreath)
     if (Math.abs(hazeV - shown.hazeV) >= 0.006 || (hazeV >= 1) !== (shown.hazeV >= 1)) {
       shown.hazeV = hazeV
       haze.style.opacity = hazeV.toFixed(3)
     }
-    if (Math.abs(details - shown.ridges) >= 0.05 || (details >= 1 && shown.ridges < 1)) ridgeSvg.style.opacity = String((shown.ridges = details))
-    if (grow <= 0) return
 
     // Pointer parallax (desktop): 11 px opposite the pointer at the stage's depth, more for nearer dots.
     // stage.ts eases --hero-px / --hero-py.
@@ -1444,25 +1618,25 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
     const [small, medium, large] = phone ? DOT.phone : DOT.wide
     g.uniform4f(tu.uSize, G.sizeK, small, medium, large)
     g.uniform1f(tu.uRowK, G.rowK)
-    // The reveal front: out from the stage to past the farthest corner.
-    const reach = Math.hypot(B.bx * 2.6, B.bz) + 0.8
-    g.uniform1f(tu.uReveal, grow * reach + (grow >= 1 ? 99 : 0))
     const T = TIERS[tierNow()]
     const glow = !lite() && degradeStep() < 4 ? 1 : 0
     g.uniform2f(tu.uFx, glow && T.dof && !phone ? 1 : 0, glow)
     // The energy system's uniforms (waves, wake, tap, tremor, sweep), in world units at the stage's depth.
-    motionUniforms(tu, lite() ? 0 : T.waves * details, still)
+    motionUniforms(tu, lite() ? 0 : T.waves, still)
     const flash = tLand >= 0 ? Math.sin(Math.PI * Math.min(1, tLand / FLASH)) : 0
     g.uniform4f(tu.uLand, L.x, L.z, flash, H * 0.9)
     const ring = ringAt(tLand)
     g.uniform3f(tu.uRing, ring.r, 0.14, ring.a > 0 ? Math.min(1, ring.a / RING.alpha + 0.25) : 0)
+    // The drain's clock: still (reduced motion, the frozen frame) where it stands.
+    g.uniform2f(tu.uFlowT, V.drain, phone ? DRAIN.phoneLife : DRAIN.life)
     g.bindBuffer(g.ARRAY_BUFFER, terrainBuf)
-    g.enableVertexAttribArray(terrain.a.aPos)
-    g.vertexAttribPointer(terrain.a.aPos, 2, g.FLOAT, false, 0, 0)
+    g.enableVertexAttribArray(terrain.a.aFlow)
+    g.vertexAttribPointer(terrain.a.aFlow, 4, g.FLOAT, false, 0, 0)
     if (!tune.noDraw) g.drawArrays(g.POINTS, 0, gridCount)
-    g.disableVertexAttribArray(terrain.a.aPos)
+    g.disableVertexAttribArray(terrain.a.aFlow)
 
-    if (grow < 1 && !still) return
+    drawVortex(px, py, breath, still)
+
     buildFx(still)
     if (nFx) {
       setShared(fx, px, py, breath)
@@ -1486,6 +1660,47 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
       snapWaiter = null
     }
   }
+  /** The inflow vortex: one draw of its seeded points; the rim's arc is published for the dais (engine.ts). */
+  function drawVortex(px: number, py: number, breath: number, still: boolean) {
+    const fade = vortexFade()
+    const n = tune.vortexCount ?? vortexCount()
+    const arc = stageCues.swallow
+    arc.gain = 0
+    if (fade <= 0 || !n) return
+    const g = gl!
+    const phone = size === 'phone'
+    const life = phone ? VORTEX.phoneLife : VORTEX.life
+    // The beat: +6% on it, an eased swell (a raised cosine peaking on the beat).
+    const beat = still || !beatsOn ? 0 : VORTEX.beat * (0.5 + 0.5 * Math.cos((beats % 1) * Math.PI * 2))
+    // Reduced motion: a still moment of the flow, 40% of it at 70%.
+    const flow = still ? 4.5 : V.flow
+    setShared(vortex, px, py, breath)
+    const u = vortex.u
+    g.uniform1f(u.uFlow, flow)
+    g.uniform1fv(u.uRing, V.ring)
+    g.uniform2f(u.uVLife, life[0], life[1])
+    g.uniform4f(u.uVLook, fade * (still ? VORTEX.stillAlpha : 1) * (tune.vortexGain ?? 1), beat, VORTEX.still, still ? 1 : 0)
+    g.uniform3f(u.uVClear, VORTEX.clear.margin * F.robotH, VORTEX.clear.feather * F.robotH, VORTEX.clear.floor)
+    g.bindBuffer(g.ARRAY_BUFFER, vortexBuf)
+    const S = VORTEX_STRIDE * 4
+    g.enableVertexAttribArray(vortex.a.aSeed)
+    g.enableVertexAttribArray(vortex.a.aArm)
+    g.enableVertexAttribArray(vortex.a.aTrail)
+    g.vertexAttribPointer(vortex.a.aSeed, 4, g.FLOAT, false, S, 0)
+    g.vertexAttribPointer(vortex.a.aArm, 1, g.FLOAT, false, S, 16)
+    g.vertexAttribPointer(vortex.a.aTrail, 1, g.FLOAT, false, S, 20)
+    g.drawArrays(g.POINTS, 0, n * VPTS)
+    g.disableVertexAttribArray(vortex.a.aSeed)
+    g.disableVertexAttribArray(vortex.a.aArm)
+    g.disableVertexAttribArray(vortex.a.aTrail)
+    // The arc follows the first arm to where its dots arrive (its mean lifetime and start ring); not in LOW
+    // or reduced motion.
+    if (still || tierNow() === 'low') return
+    const rho0 = Math.max(1.6, ((VORTEX.start[0] + VORTEX.start[1]) / 2) * V.ring.reduce((a, b) => a + b, 0) / RING_U)
+    arc.angle = (V.flow * Math.PI * 2) / VORTEX.turn + VORTEX.twist * Math.log(rho0)
+    arc.gain = VORTEX.arc.gain * fade
+  }
+
   /** Development only: the next drawn frame of this canvas, as a data URL (window.__heroTerrain.snap). */
   let snapWaiter: ((url: string) => void) | null = null
 
@@ -1518,10 +1733,12 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
 
   let visible = true
   let disposed = false
+  /** The watchdog waits out the first seconds (shader warm-up, the first plans). */
+  const bornAt = performance.now()
   let raf = 0
   let last = 0
   let carry = 0
-  const moving = () => !reduced.matches && visible && !document.hidden && backdrop() > 0.01
+  const moving = () => !lost && !still() && visible && !document.hidden && backdrop() > 0.01
   /** CPU time per drawn frame (ms), for the performance check (the console, in development). */
   const cost = { sum: 0, n: 0, plan: 0 }
 
@@ -1558,15 +1775,20 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
    * grid density, trail length with the glow and ring dots, resolution, then the frame rate.
    */
   const RUNGS = [1, 2, 3, 4, 7, 8]
-  const watchdog = { sum: 0, n: 0, level: 0, rung: 0 }
+  /** (The vortex goes first: half its dots, then all of them, before the first rung.) */
+  const watchdog = { sum: 0, n: 0, level: 0, rung: 0, vortex: 0 }
   function watch(ms: number) {
-    if (stageCues.governed || watchdog.rung >= RUNGS.length || (performance.now() - onAt) / 1000 < 6 || ms > 400) return
+    if (stageCues.governed || watchdog.rung >= RUNGS.length || (performance.now() - bornAt) / 1000 < 6 || ms > 400) return
     watchdog.sum += ms
     watchdog.n++
     if (watchdog.sum < SLOW_FRAME.span) return
     const avg = watchdog.sum / watchdog.n
     watchdog.sum = watchdog.n = 0
     if (avg <= SLOW_FRAME.ms) return
+    if (watchdog.vortex < 2 && VORTEX.count[tierNow()] > 0) {
+      watchdog.vortex++
+      return
+    }
     watchdog.level = RUNGS[watchdog.rung++]
     layout()
   }
@@ -1601,7 +1823,7 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
   }
 
   function idle() {
-    if (reduced.matches) {
+    if (still()) {
       if (visible) stillFrame()
       return
     }
@@ -1623,15 +1845,34 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
     wake()
   })
   io.observe(host)
-  const mo = new MutationObserver(() => {
-    if (host.hasAttribute('data-on') && onAt === Infinity) onAt = performance.now()
-    wake()
-  })
-  mo.observe(host, { attributes: true, attributeFilter: ['data-on'] })
   document.addEventListener('visibilitychange', wake)
   reduced.addEventListener('change', wake)
-  const onLost = (e: Event) => e.preventDefault()
+  // A lost context is asked back (preventDefault) and rebuilt when it returns: the programs, the buffers, the grid.
+  const onLost = (e: Event) => {
+    e.preventDefault()
+    lost = true
+    cancelAnimationFrame(raf)
+    raf = 0
+  }
+  const onRestored = () => {
+    const rebuilt = build(gl)
+    if (!rebuilt) return
+    ;({ terrain, fx, vortex } = rebuilt)
+    terrainBuf = gl.createBuffer()!
+    fxBuf = gl.createBuffer()!
+    vortexBuf = gl.createBuffer()!
+    gl.bindBuffer(gl.ARRAY_BUFFER, vortexBuf)
+    gl.bufferData(gl.ARRAY_BUFFER, vortexData, gl.STATIC_DRAW)
+    gl.bindBuffer(gl.ARRAY_BUFFER, fxBuf)
+    gl.bufferData(gl.ARRAY_BUFFER, fxData.byteLength, gl.DYNAMIC_DRAW)
+    lost = false
+    gridKey = ''
+    layout()
+    if (still()) stillFrame()
+    wake()
+  }
   canvas.addEventListener('webglcontextlost', onLost)
+  canvas.addEventListener('webglcontextrestored', onRestored)
 
   layout()
   setArrangement(lite() ? fixedArrangement() : arrangement(side))
@@ -1674,7 +1915,7 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
           comet: ((beats % COMET.every) * BEAT_S).toFixed(2),
           wpx: (W * C.D) / C.f,
         }),
-        state: () => ({ nFx, ring: ringAt(clock - landAt), phase, clock, step, nStage, nArrive, nPath, rate, timerMode, landAt, gridCount, C, B, G, L, W, H, detours: planner.detours, at: agentPos(), agentScreen: (() => { const [x, z] = agentPos(); return onScreen(cur, x, z) })() }),
+        state: () => ({ V, vortexCount: vortexCount(), vortexFade: vortexFade(), swallow: { ...stageCues.swallow }, ladder: { vortex: Math.max(stageCues.vortex, watchdog.vortex), degrade: degradeStep() }, nFx, ring: ringAt(clock - landAt), phase, clock, step, nArrive, nPath, rate, landAt, gridCount, C, B, G, L, W, H, detours: planner.detours, at: agentPos(), agentScreen: (() => { const [x, z] = agentPos(); return onScreen(cur, x, z) })() }),
       },
     })
   wake()
@@ -1688,7 +1929,7 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
         if (disposed) return
         layout()
         if (!raf) wake()
-        if (reduced.matches) stillFrame()
+        if (still()) stillFrame()
       })
     },
     dispose() {
@@ -1696,16 +1937,19 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
       cancelAnimationFrame(raf)
       cancelAnimationFrame(resizeRaf)
       io.disconnect()
-      mo.disconnect()
       document.removeEventListener('visibilitychange', wake)
       reduced.removeEventListener('change', wake)
       window.removeEventListener('pointermove', onPointer)
       window.removeEventListener('touchstart', onTouch)
       canvas.removeEventListener('webglcontextlost', onLost)
+      canvas.removeEventListener('webglcontextrestored', onRestored)
       gl.deleteBuffer(terrainBuf)
       gl.deleteBuffer(fxBuf)
+      gl.deleteBuffer(vortexBuf)
       gl.deleteProgram(terrain.p)
       gl.deleteProgram(fx.p)
+      gl.deleteProgram(vortex.p)
+      stageCues.swallow.gain = 0
       gl.getExtension('WEBGL_lose_context')?.loseContext()
       canvas.remove()
       haze.remove()
@@ -1726,7 +1970,7 @@ interface Program {
 }
 
 /** Uniform arrays (their location is their first element's). */
-const ARRAYS = new Set(['uWell', 'uHill', 'uFrontA', 'uFrontB', 'uWake'])
+const ARRAYS = new Set(['uWell', 'uHill', 'uFrontA', 'uFrontB', 'uWake', 'uRing'])
 
 function build(gl: WebGLRenderingContext) {
   const compile = (type: number, src: string) => {
@@ -1760,7 +2004,8 @@ function build(gl: WebGLRenderingContext) {
     return { p, u, a, layout: -1, arr: -1 }
   }
   const shared = ['uWell', 'uHill', 'uBowl', 'uBowl2', 'uPlat', 'uCam', 'uScr', 'uShift', 'uHead', 'uBody', 'uClear', 'uDpr']
-  const terrain = link(TERRAIN_VS, DOT_FS, ['aPos'], [...shared, 'uDepth', 'uSize', 'uRowK', 'uReveal', 'uFx', 'uFrontA', 'uFrontB', 'uWaveK', 'uWake', 'uTap', 'uMove', 'uSweep', 'uLand', 'uRing'])
+  const terrain = link(TERRAIN_VS, DOT_FS, ['aFlow'], [...shared, 'uFlowT', 'uDepth', 'uSize', 'uRowK', 'uFx', 'uFrontA', 'uFrontB', 'uWaveK', 'uWake', 'uTap', 'uMove', 'uSweep', 'uLand', 'uRing'])
   const fx = link(FX_VS, DOT_FS, ['aPos', 'aK', 'aSoft'], shared)
-  return terrain && fx ? { terrain, fx } : null
+  const vortex = link(VORTEX_VS, DOT_FS, ['aSeed', 'aArm', 'aTrail'], [...shared, 'uFlow', 'uRing', 'uVLife', 'uVLook', 'uVClear'])
+  return terrain && fx && vortex ? { terrain, fx, vortex } : null
 }

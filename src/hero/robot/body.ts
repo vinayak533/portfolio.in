@@ -126,7 +126,7 @@ export interface BodyRig {
 }
 
 export const PALETTE = {
-  shell: '#e9e6f2',
+  shell: '#ece8ee',
   shade: '#bdb8d0',
   graphite: '#1a1726',
   accent: '#7c5cff',

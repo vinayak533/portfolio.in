@@ -6,7 +6,7 @@ export type { Mood }
 
 /**
  * The assistant's face: the hero robot's head (src/hero/robot), drawn flat. A
- * warm grey shell over a black knit cap, ear knobs, a rainbow bezel around a
+ * warm grey shell over a black knit cap, ear knobs, a violet bezel around a
  * black glass screen, and the robot's glowing eyes on it.
  *
  * `mood` picks the expression (shared with the 3D head, src/hero/robot/face.ts).
@@ -87,7 +87,7 @@ export function Robot({ mood = 'neutral', live = false, className }: { mood?: Mo
           <rect x="6.8" y="12.4" width="50.4" height="43.2" rx="8.2" fill={url('shell')} />
           <rect x="6.8" y="12.4" width="50.4" height="43.2" rx="8.2" fill="none" stroke="#000" strokeOpacity="0.14" strokeWidth="0.6" />
 
-          {/* Rainbow bezel: a colour wheel, softened, seen through the ring. */}
+          {/* The violet bezel, seen through the ring. */}
           <g className="robot-led" clipPath={url('bezel')}>
             <g filter={url('soft')}>
               {WEDGES.map(([d, fill]) => (
@@ -135,18 +135,13 @@ function roundedRect(cx: number, cy: number, w: number, h: number, r: number) {
 }
 const BEZEL = `${roundedRect(32, 34.5, 41.3, 34.6, 9.6)}${roundedRect(32, 34.5, 32.6, 26.4, 5.8)}`
 
-/** The 3D bezel's colour sweep (model.ts), as wedges around the screen's centre: 0 = right, clockwise. */
+/** The 3D bezel's colour (model.ts): #A78BFA at the top to #7C5CFF at the bottom, as wedges around the screen's centre: 0 = right, clockwise. */
 const STOPS: [number, string][] = [
-  [0, '#ff5a2c'],
-  [0.09, '#ff8a1e'],
-  [0.24, '#ffd422'],
-  [0.37, '#b9e83c'],
-  [0.5, '#35e39a'],
-  [0.6, '#27d6ff'],
-  [0.72, '#3d7bff'],
-  [0.84, '#7a4dff'],
-  [0.93, '#e8376f'],
-  [1, '#ff5a2c'],
+  [0, '#9274fd'],
+  [0.25, '#7c5cff'],
+  [0.5, '#9274fd'],
+  [0.75, '#a78bfa'],
+  [1, '#9274fd'],
 ]
 function sweep(t: number) {
   let k = 0

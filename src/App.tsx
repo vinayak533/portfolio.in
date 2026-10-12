@@ -4,7 +4,7 @@ import { initScroll } from './core/scroll'
 import { initPointer } from './core/pointer'
 import { ScrollTrigger } from './core/clock'
 import { timeout, track } from './core/loading'
-import { site } from './content'
+import { about } from './content'
 import { Loader } from './dom/Loader'
 import { Cursor } from './dom/Cursor'
 import { Hud } from './dom/Hud'
@@ -52,7 +52,7 @@ export function App() {
     if (mode === 'static') {
       dropBootCopy()
       const img = new Image()
-      img.src = site.portrait.still
+      img.src = `${about.photo.base}-${about.photo.widths[0]}.webp`
       track('still', Promise.race([img.decode().catch(() => {}), timeout(4000)]))
       document.body.classList.add('static-grain')
     }

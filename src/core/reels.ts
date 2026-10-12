@@ -13,6 +13,7 @@ import { signals, useStore } from '../store/useStore'
 import { clamp, gsap, onTick } from './clock'
 import { worksTrack } from './timeline'
 import { visibility } from '../theme'
+import { exhibitRects } from './registry'
 
 export interface Reel {
   video: HTMLVideoElement
@@ -29,6 +30,11 @@ let exhibits = false
 let ticking = false
 
 export const saveData = () => !!(navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData
+/** Data saver, or a 2G/3G-class connection: the 720p file only (never an upscaled lower one). */
+const slowNet = () => {
+  const c = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection
+  return !!c && (!!c.saveData || /2g|3g/.test(c.effectiveType ?? ''))
+}
 
 function makeVideo(src: string) {
   const v = document.createElement('video')
@@ -77,7 +83,11 @@ const noReels = import.meta.env.DEV && new URLSearchParams(location.search).has(
 function reelSrc(i: number) {
   const m = projects[i]?.media
   if (!m || !isVideo(m.src) || noReels) return null
-  return hiResExhibits() ? m.src : (m.preview ?? m.src)
+  if (hiResExhibits()) return m.src
+  // The focused reel is shown at the display's resolution (src/core/reelWindow.ts): 1080p wherever the
+  // screen's box has more device pixels across than the 720p file (1280), short of a slow connection.
+  const across = (exhibitRects[i]?.()?.width ?? window.innerWidth * 0.6) * (window.devicePixelRatio || 1)
+  return across > 1280 * 1.1 && !slowNet() ? m.src : (m.preview ?? m.src)
 }
 
 /** The shared reel for project i, created on first call. Null when it has no video. */
@@ -190,7 +200,7 @@ export function mountReel(i: number, host: HTMLElement) {
   // The details view is where the reel is watched: HD from any box the 720p
   // file would not already fill pixel for pixel, short of data saver.
   const wide = host.clientWidth * Math.min(window.devicePixelRatio || 1, 2) > 960
-  const hdSrc = wide && !saveData() ? m.src : (m.preview ?? m.src)
+  const hdSrc = wide && !slowNet() ? m.src : (m.preview ?? m.src)
 
   if (store.reducedMotion) {
     const v = makeVideo(hdSrc)

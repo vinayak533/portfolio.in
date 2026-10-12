@@ -1,9 +1,10 @@
 import { useStore } from '../store/useStore'
+import { FROZEN } from '../hero/freeze'
 
 /**
  * Lite rendering is never a choice the visitor has to make: it switches itself on. Full quality by
- * default; lite from the start for reduced motion or a low-end device (4 cores or fewer, or 4 GB of
- * memory or less, where the browser says), and later if the page cannot hold 40 frames a second for
+ * default; lite from the start for reduced motion or a low-end device (isLowEndDevice: 2 cores or 2 GB,
+ * or 4 cores with 4 GB, where the browser says), and later if the page cannot hold 40 frames a second for
  * 3 seconds running once the load sequence is over. Only ever on: it never flips back (no oscillation).
  * Everything that read the old switch reads the same `lite` flag in the store.
  */
@@ -18,9 +19,12 @@ const SETTLE = 5000
 
 export function isLowEndDevice(): boolean {
   const nav = navigator as Navigator & { deviceMemory?: number }
-  const cores = nav.hardwareConcurrency
-  const mem = nav.deviceMemory
-  return (typeof cores === 'number' && cores > 0 && cores <= 4) || (typeof mem === 'number' && mem > 0 && mem <= 4)
+  const cores = typeof nav.hardwareConcurrency === 'number' && nav.hardwareConcurrency > 0 ? nav.hardwareConcurrency : undefined
+  const mem = typeof nav.deviceMemory === 'number' && nav.deviceMemory > 0 ? nav.deviceMemory : undefined
+  // Either signal alone at its floor (2 cores, 2 GB), or both low together. Not 4 threads or 4 GB alone: a
+  // dual-core laptop with hyper-threading reports 4 threads, and Chrome rounds a 6 GB phone down to 4 GB (it
+  // caps the value at 8), so those alone are typical laptops and mid-range phones, not low-end ones.
+  return (cores !== undefined && cores <= 2) || (mem !== undefined && mem <= 2) || (cores !== undefined && mem !== undefined && cores <= 4 && mem <= 4)
 }
 
 /** The flag at start-up (main.tsx), before first paint. */
@@ -32,7 +36,7 @@ export function initialLite(reducedMotion: boolean): boolean {
     /* storage unavailable */
   }
   if (import.meta.env.DEV && new URLSearchParams(location.search).has('lite')) return true
-  return reducedMotion || isLowEndDevice()
+  return reducedMotion || (!FROZEN && isLowEndDevice())
 }
 
 /** Watches the frame rate once the page has loaded (WebGL only) and turns lite on if it stays low. */

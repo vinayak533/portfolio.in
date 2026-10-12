@@ -1,20 +1,20 @@
 /**
  * Hero -> About scroll transition controller.
  *
- * One scrubbed ScrollTrigger (one master timeline) owns the whole sequence,
- * shot as a single camera move (src/hero/shot.ts has the beats). The hero
- * track is a tall section with a sticky stage (the "pin"); About is laid out so
- * its top sits exactly where the pin releases, underneath the stage. Progress
- * 0..1 drives everything, so scrolling back replays it, and nothing moves once
- * the scroll (and its smoothing) comes to rest.
+ * One scrubbed ScrollTrigger (one master timeline) owns the whole sequence
+ * (src/hero/shot.ts has the beats). The hero track is a tall section with a
+ * sticky stage (the "pin"); About is laid out so its top sits exactly where the
+ * pin releases, underneath the stage. Progress 0..1 drives everything, so
+ * scrolling back replays it, and nothing moves once the scroll (and its
+ * smoothing) comes to rest.
  *
- * The visuals live in the engine; this file only does scroll, DOM and loop
- * control: the canvas turns transparent once the camera is inside the bank,
- * About's world (the fixed stage behind) finishes its handover there, and
- * About's page is held still in frame while the last cloud layers stream past,
- * so it is discovered in place, never scrolled in. Its first lines rise into
- * place with the camera's settle. Reduced motion / static mode gets a 400 ms
- * crossfade instead.
+ * The visuals live in the engine (the body dissolving, the head's flight to the
+ * dock); this file only does scroll and DOM: the stage stops taking clicks once
+ * the backdrop parts, About's world (the fixed stage behind) finishes its
+ * handover, and About's page is held still in frame as it arrives, so it is
+ * discovered in place, never scrolled in. Its first lines rise into place with
+ * the hand-off's settle. Reduced motion / static mode gets a 400 ms crossfade
+ * instead.
  */
 import { gsap, ScrollTrigger, easeInOutCubic, remap, smoothstep } from '../core/clock'
 import { getLenis } from '../core/scroll'
@@ -29,8 +29,6 @@ export interface TransitionOptions {
   section: HTMLElement
   /** The sticky, full-viewport stage inside it. */
   stage: HTMLElement
-  /** The canvas container (.hero-cinematic). */
-  host: HTMLElement
   /** Wrapper around About (App.tsx). Only its opacity is touched, never its layout. */
   about: () => HTMLElement | null
   engine: () => RobotHandle | null
@@ -45,27 +43,16 @@ export interface TransitionHandle {
   destroy(): void
 }
 
-/** Live handle for the debug panel. */
-export let activeTransition: TransitionHandle | null = null
-
 const INTERACTIVE = 'input, textarea, select, button, a[href], summary, [contenteditable=""], [contenteditable="true"], [role="button"]'
 
 export function createHeroTransition(o: TransitionOptions): TransitionHandle {
-  const handle = o.mode === 'webgl' ? webglTransition(o) : crossfade(o)
-  activeTransition = handle
-  return {
-    ...handle,
-    destroy() {
-      handle.destroy()
-      if (activeTransition === handle) activeTransition = null
-    },
-  }
+  return o.mode === 'webgl' ? webglTransition(o) : crossfade(o)
 }
 
 // ------------------------------------------------------------------ webgl
 
 function webglTransition(o: TransitionOptions): TransitionHandle {
-  const { section, stage, host } = o
+  const { section, stage } = o
   const proxy = { p: 0 }
   let raw = 0
   let p = 0
@@ -87,20 +74,15 @@ function webglTransition(o: TransitionOptions): TransitionHandle {
     const T = cfg.transition
     const shot = shotAt(pv)
 
-    // Engine: visuals are a pure function of p; the loop only runs while the hero can be seen.
-    const eng = o.engine()
-    eng?.setProgress(pv)
-    eng?.setRendering(pv < T.renderUntil)
+    // Engine: visuals are a pure function of p.
+    o.engine()?.setProgress(pv)
 
-    // About's world (the fixed stage behind) finishes its hero-to-About handover
-    // while the camera is inside the bank, so the clouds open onto its real first frame.
+    // About's world (the fixed stage behind) finishes its hero-to-About handover before the backdrop parts.
     signals.progress.hero = remap(pv, T.stageMap[0], T.stageMap[1])
 
-    // The canvas has transparent pixels from the moment the photo is gone.
+    // From the moment the backdrop parts, the stage takes no clicks.
     const parting = shot.sceneVis < 1
-    host.classList.toggle('is-parting', parting)
     stage.style.pointerEvents = parting ? 'none' : ''
-    stage.style.setProperty('--hero-cue', String(1 - smoothstep(0, 0.05, pv)))
     // The intro leaves with the first push; hidden once gone, so its links drop out of the tab order.
     const intro = 1 - smoothstep(0, 0.07, Math.max(pv, raw))
     stage.style.setProperty('--hero-intro', String(intro))
@@ -110,19 +92,18 @@ function webglTransition(o: TransitionOptions): TransitionHandle {
       introEl.style.visibility = intro <= 0.001 ? 'hidden' : ''
     }
 
-    // The clouds clear the canvas themselves; the stage only steps aside at the very
-    // end. Raw scroll wins so a fast fling never leaves a wisp behind.
+    // The stage only steps aside at the very end. Raw scroll wins so a fast fling never leaves it behind.
     const out = remap(Math.max(pv, raw), 0.97, 1)
     stage.style.opacity = out > 0 ? String(1 - out) : ''
     stage.style.visibility = out >= 1 ? 'hidden' : ''
     stage.style.willChange = out > 0 && out < 1 ? 'opacity' : ''
-    // Until the photo starts to part, nothing of the fixed stage behind can be seen.
+    // Until the backdrop starts to part, nothing of the fixed stage behind can be seen.
     signals.heroCovers = !parting && out === 0
 
     const about = o.about()
     if (!about) return
     const done = raw >= 1 && pv >= 0.999
-    // The page arrives through the last of the clouds...
+    // The page arrives...
     const a = done ? 1 : smoothstep(0, 0.45, Math.max(shot.arrive, shotAt(raw).arrive))
     about.style.opacity = a >= 1 ? '' : String(a)
     // ...held still in frame: while the pin runs, About's top is still below the
@@ -133,7 +114,7 @@ function webglTransition(o: TransitionOptions): TransitionHandle {
     if (!measuring) about.classList.toggle('hero-hold', a > 0 && raw < 1)
     about.style.willChange = a > 0 && a < 1 ? 'opacity' : ''
 
-    // Kicker, then heading: a short rise and a soft arrival, staggered, settling with the camera.
+    // Kicker, then heading: a short rise and a soft arrival, staggered, settling with the hand-off.
     heads().forEach((el, i) => {
       const t = done ? 1 : smoothstep(0.3 + i * 0.14, 0.86 + i * 0.12, shot.arrive)
       const k = 1 - (1 - t) * (1 - t)
@@ -247,8 +228,7 @@ function webglTransition(o: TransitionOptions): TransitionHandle {
       mq.removeEventListener('change', onBreakpoint)
       tl?.scrollTrigger?.kill()
       tl?.kill()
-      host.classList.remove('is-parting')
-      for (const prop of ['opacity', 'visibility', 'will-change', 'pointer-events', '--hero-cue', '--hero-intro']) stage.style.removeProperty(prop)
+      for (const prop of ['opacity', 'visibility', 'will-change', 'pointer-events', '--hero-intro']) stage.style.removeProperty(prop)
       for (const introEl of document.querySelectorAll<HTMLElement>('[data-hero-intro]')) {
         introEl.style.removeProperty('visibility')
         introEl.style.removeProperty('--hero-intro')
