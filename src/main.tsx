@@ -13,6 +13,7 @@ import { useStore } from './store/useStore'
 import { detectQuality, hasWebGL2, isTouchDevice, prefersReducedMotion } from './core/quality'
 import { initialLite, watchFrameRate } from './core/autoLite'
 import { expect } from './core/loading'
+import { initialHeroTier } from './hero/tier'
 
 // Decide the render mode once, before first paint.
 const reducedMotion = prefersReducedMotion()
@@ -27,6 +28,7 @@ useStore.getState().set({
   quality: detectQuality(),
   // Lite is automatic (src/core/autoLite.ts): reduced motion or a low-end device now, a low frame rate later.
   lite: initialLite(reducedMotion),
+  heroTier: initialHeroTier(reducedMotion),
 })
 if (mode === 'webgl') watchFrameRate()
 document.documentElement.dataset.mode = mode

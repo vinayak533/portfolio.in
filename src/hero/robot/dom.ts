@@ -5,12 +5,22 @@
  * the hero and while its head flies to the chat launcher. It never takes a
  * click; once landed, the head lives inside the launcher button (bridge.ts).
  */
+import type { HeroTier } from '../tier'
 
 export interface RobotOptions {
   /** True while something covers the page (e.g. a full-screen overlay): frames are skipped. */
   isPaused?: () => boolean
-  /** Lite / low tier: a lower pixel-ratio cap. */
-  lowPower?: boolean
+  /** The hero's quality tier (src/hero/tier.ts). */
+  tier?: HeroTier
+  /**
+   * A poster of the finished scene is already on screen (Hero.tsx): skip the build-up (the dais, the dot-scan,
+   * the power-on), so the first live frame matches it and can crossfade over it.
+   */
+  skipIntro?: boolean
+  /** Called once, after the first frame has been drawn (the live scene can take over from the poster). */
+  onReady?: () => void
+  /** The WebGL context was lost (the poster comes back). */
+  onLost?: () => void
   /** Integrated / mobile-class GPU (the site's mid tier). */
   integratedGpu?: boolean
 }
@@ -19,7 +29,7 @@ export interface RobotOptions {
 export interface RobotHandle {
   /** Fade in (call when the loader has gone). */
   reveal(): void
-  setLowPower(v: boolean): void
+  setTier(t: HeroTier): void
   /** Hero scroll progress 0..1: the push in, the body dissolving, then the head's flight to the launcher. */
   setProgress(p: number): void
   /** The hero stage's own loop hint; the robot outlives the stage (it docks), so it may ignore this. */
@@ -73,13 +83,17 @@ export const stageCues = {
   buildAt: -Infinity,
   /** performance.now() when the next build is due (ms; it starts at the next pause in the typing), or Infinity. */
   buildDue: Infinity,
+  /** performance.now() when the latest typing burst on the laptop began (ms), or -Infinity: the floor's tremor. */
+  burstAt: -Infinity,
   /**
    * The frame-rate governor's step (engine.ts), only ever rising. The landscape (terrain.ts) gives up, in
-   * order: 1 its pulse waves, 2 the contour shimmer, 3 grid density, 4 trail length, 5 the glow, depth of
-   * field and ring dots, 6 its pixel ratio; the engine its own from 4 (glows, shadows, equaliser, pixel
-   * ratio).
+   * order: 1 its interference waves, 2 the comets, 3 grid density, 4 trail length, the glow, depth of field
+   * and ring dots, 7 its pixel ratio, 8 its frame rate; the engine its own at 4-6 (glows and the floor
+   * reflection, the shadow map, the equaliser).
    */
   degrade: 0,
+  /** The engine's governor is watching the frame rate (HIGH / MEDIUM): the landscape's own watchdog stands down. */
+  governed: false,
 }
 
 export interface Layer {

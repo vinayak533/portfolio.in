@@ -8,7 +8,7 @@ import { site } from './content'
 import { Loader } from './dom/Loader'
 import { Cursor } from './dom/Cursor'
 import { Hud } from './dom/Hud'
-import { HeroCopyLayer } from './dom/HeroCopy'
+import { dropBootCopy, HeroCopyLayer } from './dom/HeroCopy'
 import { Hero } from './dom/sections/Hero'
 import { About } from './dom/sections/About'
 import { Works } from './dom/sections/Works'
@@ -45,12 +45,12 @@ export function App() {
       ScrollTrigger.refresh()
     })
 
-    // The hero robot's still (its fallback, and the first frame of the static layout).
-    const hero = new Image()
-    hero.src = '/hero/robot-still.webp'
-    track('hero', Promise.race([hero.decode().catch(() => {}), timeout(5000)]))
+    // The hero's poster (its first paint, and the whole hero without WebGL).
+    const poster = document.querySelector<HTMLImageElement>('.hero-poster img')
+    track('hero', Promise.race([poster?.decode().catch(() => {}) ?? Promise.resolve(), timeout(5000)]))
 
     if (mode === 'static') {
+      dropBootCopy()
       const img = new Image()
       img.src = site.portrait.still
       track('still', Promise.race([img.decode().catch(() => {}), timeout(4000)]))

@@ -18,14 +18,29 @@
     <!-- og:image, twitter:image, og:url and the canonical link are added by the site-meta plugin (vite.config.ts). -->
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <link rel="preload" href="/hero/robot-still.webp" as="image" type="image/webp" />
+    <!-- The hero's poster, the first paint (src/dom/sections/Hero.tsx): only the one this screen will show. -->
+    <link rel="preload" as="image" type="image/avif" href="/hero/poster-phone.avif" media="(max-width: 767px)" fetchpriority="high" />
+    <link rel="preload" as="image" type="image/avif" href="/hero/poster-tablet.avif" media="(min-width: 768px) and (orientation: portrait)" fetchpriority="high" />
+    <link rel="preload" as="image" type="image/avif" href="/hero/poster-desktop.avif" media="(min-width: 768px) and (orientation: landscape)" fetchpriority="high" />
     <style>
       /* First paint is already the right colour: no white flash before CSS loads. */
       html, body { background: #07070d; color: #eceaf2; margin: 0; }
     </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Painted before any script runs; the app replaces it with the same poster (Hero.tsx HeroPoster). -->
+      <picture aria-hidden="true" style="position: fixed; inset: 0; background: #040309">
+        <source type="image/avif" media="(max-width: 767px)" srcset="/hero/poster-phone.avif" />
+        <source type="image/webp" media="(max-width: 767px)" srcset="/hero/poster-phone.webp" />
+        <source type="image/avif" media="(orientation: portrait)" srcset="/hero/poster-tablet.avif" />
+        <source type="image/webp" media="(orientation: portrait)" srcset="/hero/poster-tablet.webp" />
+        <source type="image/avif" srcset="/hero/poster-desktop.avif" />
+        <img src="/hero/poster-desktop.webp" alt="" fetchpriority="high" style="display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 40%" />
+      </picture>
+    </div>
+    <!-- The hero's copy, painted before any script (vite.config.ts heroBoot); the app adopts it (HeroCopy.tsx). -->
+    <!-- hero-boot-copy -->
     <!-- Keep in step with `contact` in src/content.ts (npm run test:content checks it). -->
     <noscript>
       <main style="font-family: system-ui, sans-serif; padding: 12vh 6vw; max-width: 48rem; line-height: 1.5">

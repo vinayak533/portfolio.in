@@ -27,8 +27,8 @@ const PLAY_HOLD_MS = 1800
 const SLEEP_AFTER_MS = 45_000
 const ACTIVITY = ['pointermove', 'pointerdown', 'keydown', 'wheel', 'touchstart', 'scroll'] as const
 
-/** Page controls that sit in (or scroll to rest in) the launcher's corner. */
-const CORNER_CONTROLS = '.works-details, .ct-top'
+/** Page controls that sit in (or scroll to rest in) the launcher's corner (the contact form's Send among them). */
+const CORNER_CONTROLS = '.works-details, .ct-top, .ctf-submit'
 /** Of those, the ones the launcher steps beside rather than above (rising would cover Works' tagline). */
 const SIDE_CONTROLS = '.works-details'
 const CORNER_GAP = 12
@@ -132,7 +132,7 @@ function useFieldFocus(root: RefObject<HTMLElement | null>) {
  * once-per-visit hello, a playful face every so often, and asleep after a
  * quiet spell (it wakes up surprised). Reduced motion keeps it neutral.
  */
-function useLauncherMood(active: boolean, engaged: boolean, nudge: boolean, reduced: boolean): Mood {
+function useLauncherMood(active: boolean, engaged: boolean, nudge: boolean, reduced: boolean, playful: boolean): Mood {
   const [idle, setIdle] = useState<Mood>('neutral')
   const [asleep, setAsleep] = useState(false)
 
@@ -167,7 +167,7 @@ function useLauncherMood(active: boolean, engaged: boolean, nudge: boolean, redu
   }, [active, reduced])
 
   useEffect(() => {
-    if (!active || reduced || asleep) return
+    if (!active || reduced || asleep || !playful) return
     let i = 0
     let back = 0
     const play = window.setInterval(() => {
@@ -180,7 +180,7 @@ function useLauncherMood(active: boolean, engaged: boolean, nudge: boolean, redu
       window.clearInterval(play)
       window.clearTimeout(back)
     }
-  }, [active, reduced, asleep])
+  }, [active, reduced, asleep, playful])
 
   if (engaged) return 'happy'
   if (nudge) return 'wink'
@@ -258,9 +258,10 @@ export function ChatWidget() {
     return () => cancel(handle)
   }, [introDone])
 
-  // One gentle pulse, once per visit, a little after the robot lands. Never with reduced motion.
+  // One gentle pulse, once per visit, a little after the robot lands. Never with reduced motion, and never for
+  // the hero robot's own head (docked, it is kept quiet: src/hero/robot/engine.ts).
   useEffect(() => {
-    if (!introDone || reducedMotion || away) return
+    if (!introDone || reducedMotion || away || gl) return
     let seen = false
     try {
       seen = sessionStorage.getItem(NUDGE_KEY) === '1'
@@ -277,11 +278,12 @@ export function ChatWidget() {
       }
     }, 6000)
     return () => window.clearTimeout(t)
-  }, [introDone, reducedMotion, away])
+  }, [introDone, reducedMotion, away, gl])
 
   const { lift, shift } = useCornerLift(introDone && !caseStudyOpen, rest, launcherSize)
   const fieldFocused = useFieldFocus(root)
-  const mood = useLauncherMood(introDone && !open && !caseStudyOpen && !away, engaged, nudge, reducedMotion)
+  // The hero robot's docked head stays quiet (no playful faces in turn); the SVG launcher keeps its idle play.
+  const mood = useLauncherMood(introDone && !open && !caseStudyOpen && !away, engaged, nudge, reducedMotion, !gl)
 
   // Tell the 3D head where to land, where to live, and what to feel.
   useEffect(() => {
