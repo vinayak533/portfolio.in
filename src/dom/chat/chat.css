@@ -1,7 +1,7 @@
 /*
  * Portfolio assistant (ChatWidget / ChatPanel). The launcher is the robot
- * itself (Robot.tsx), floating and changing mood; open, it becomes a violet
- * orb with ×. Tooltips and suggestion chips are "speech tags": dark violet, a
+ * itself (the hero robot's 3D head, or Robot.tsx without WebGL), floating and
+ * changing mood; open, it becomes a violet orb with ×. Tooltips and suggestion chips are "speech tags": dark violet, a
  * thin glowing violet edge. The panel stays quiet: solid surfaces, one accent.
  *
  * Contrast on --chat-surface: --chat-ink 15:1, --chat-ink-2 9:1, --chat-ink-3 5:1.
@@ -138,8 +138,21 @@
 .chat-launcher-icon--robot {
   width: 112%;
   height: 112%;
-  filter: drop-shadow(0 6px 10px rgb(0 0 0 / 0.45)) drop-shadow(0 0 14px rgb(98 230 255 / 0.18));
+  filter: drop-shadow(0 6px 10px rgb(0 0 0 / 0.45)) drop-shadow(0 0 14px rgb(156 134 255 / 0.2));
 }
+/* The 3D head's home (src/hero/robot): its canvas, larger than the button, is centred in here. */
+.chat-launcher-head {
+  position: relative;
+  display: block;
+}
+
+/* The robot is still in the hero, or flying here: the launcher waits, empty and out of reach. */
+.chat-launcher-wrap[data-robot='away'] .chat-launcher { pointer-events: none; }
+.chat-launcher-wrap[data-robot='away'] .chat-launcher::after { animation: none; opacity: 0; }
+.chat-launcher-wrap[data-robot='away'] .chat-launcher-status,
+.chat-launcher-wrap[data-robot='away'] .chat-tooltip { opacity: 0; }
+/* The SVG head (no 3D robot) pops in as the 3D one would have landed. */
+.chat-launcher-wrap[data-robot='away']:not([data-gl]) .chat-launcher-icon--robot { opacity: 0; transform: translateY(8px) scale(0.6); }
 .chat-launcher:hover .chat-launcher-icon--robot { transform: translateY(-2px) scale(1.05); }
 .chat-launcher:active .chat-launcher-icon--robot { transform: scale(1.06, 0.9); transition-duration: 0.12s; }
 .chat-launcher-icon--close { opacity: 0; transform: rotate(-60deg) scale(0.6); }
@@ -434,7 +447,7 @@
   flex: none;
   width: 2.6rem;
   height: 2.6rem;
-  filter: drop-shadow(0 3px 6px rgb(0 0 0 / 0.45)) drop-shadow(0 0 10px rgb(98 230 255 / 0.12));
+  filter: drop-shadow(0 3px 6px rgb(0 0 0 / 0.45)) drop-shadow(0 0 10px rgb(156 134 255 / 0.14));
 }
 .chat-avatar--sm { width: 1.9rem; height: 1.9rem; margin-top: -0.15rem; }
 .chat-avatar--lg { width: 4.75rem; height: 4.75rem; }

@@ -55,19 +55,3 @@ export const tier = {
   mid: { particles: 30000, dust: 1600, maxDpr: 1, startDpr: 1, minDpr: 0.85, msaa: 0, ca: false, bloomLevels: 5 },
   low: { particles: 14000, dust: 900, maxDpr: 1, startDpr: 1, minDpr: 0.75, msaa: 0, ca: false, bloomLevels: 5 },
 } as const
-
-export function readLitePreference(): boolean {
-  try {
-    return localStorage.getItem('lattice:lite') === '1'
-  } catch {
-    return false
-  }
-}
-
-export function writeLitePreference(v: boolean) {
-  try {
-    localStorage.setItem('lattice:lite', v ? '1' : '0')
-  } catch {
-    /* storage unavailable */
-  }
-}

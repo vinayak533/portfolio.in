@@ -1,8 +1,11 @@
-/* Scoped to the cinematic hero only. */
+/* Scoped to the cinematic hero only. The backdrop is as tall as the largest viewport (the robot's
+   fixed layer is too, robot.css), so on phones it still reaches the bottom edge once the URL bar has
+   slid away: the two can never part with a band between them. */
 .hero-cinematic {
   position: relative;
   width: 100%;
-  height: 100svh;
+  height: 100vh;
+  height: 100lvh;
   overflow: hidden;
   background: #000;
 }
@@ -46,8 +49,15 @@
   top: 0;
   width: 100%;
   height: 100svh;
+  /* Clipped across, but the backdrop may run on below the small viewport (see .hero-cinematic). */
   overflow: hidden;
+  overflow: clip visible;
   pointer-events: auto;
+}
+.hero-track .hero-cinematic {
+  /* Decorative only (the gaze reads the window's pointer): the part below the small viewport must
+     never take a click meant for what lies under it. */
+  pointer-events: none;
 }
 
 .hero-static > .hero-stage {
@@ -70,112 +80,192 @@
   background: transparent;
 }
 
-/* ---- Intro: who, what and the ways in, set over the sky ------------------- */
+/* ---- Hero palette (the hero and its chrome only) ------------------------- */
 
-/* Arrives as the loader curtain parts; src/hero/transition.ts fades it out
-   (--hero-intro) as soon as the camera starts to move. */
-.hero-intro {
+#hero,
+.hud,
+.hero-copy-layer {
+  --h-base: #040309;
+  --h-surface: #0b0916;
+  --h-surface-2: #14102a;
+  --h-accent: #7c5cff;
+  --h-accent-soft: #a78bfa;
+  --h-glow: #c4b5fd;
+  --h-text: #f5f3ff;
+  --h-muted: #a09bb8;
+  --h-line: rgb(167 139 250 / 0.18);
+  --h-sans: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --h-display: 'Space Grotesk Variable', 'Space Grotesk', var(--h-sans);
+  --h-margin: clamp(24px, 4.4vw, 64px);
+}
+
+#hero .hero-cinematic {
+  background: var(--h-base);
+}
+
+#hero :focus-visible,
+.hud :focus-visible {
+  outline: 2px solid var(--h-accent-soft);
+  outline-offset: 3px;
+  box-shadow: none;
+}
+
+/* ---- The stage of light dots --------------------------------------------- */
+
+/* The engine (src/hero/robot/engine.ts) sets these on the stage, in px: --robot-x (the stage's
+   centre), --robot-h (the seated figure's height, headphones to floor), --robot-foot (the stage's
+   centre, on the floor), --robot-y, --chest-y, and the stage's on-screen size --dais-w / --dais-h. The
+   defaults approximate its layout (the stage's centre near 72% of the height, 66% on phones), for the
+   still fallback. The ground under it all, the loss landscape, is drawn by src/hero/robot/terrain.ts
+   (mounted by stage.ts). */
+.hero-stage {
+  --robot-x: 50%;
+  --robot-foot: 72svh;
+  --robot-h: 57svh;
+  --robot-y: calc(var(--robot-foot) - var(--robot-h) / 2);
+  --chest-y: calc(var(--robot-foot) - var(--robot-h) * 0.5);
+  --dais-w: calc(var(--robot-h) * 1.4);
+  --dais-h: calc(var(--robot-h) * 0.3);
+  /* Pointer parallax, -1..1 (stage.ts); still everywhere else. */
+  --hero-px: 0;
+  --hero-py: 0;
+}
+@media (max-width: 767px) {
+  .hero-stage {
+    --robot-foot: 66svh;
+    --robot-h: min(50svh, (100vw - 32px) * 1.1);
+  }
+}
+
+.hero-scene,
+.hero-scene__in,
+.hero-scene__in > *,
+.hero-grain {
   position: absolute;
-  left: var(--gutter, 1.5rem);
-  right: var(--gutter, 1.5rem);
-  top: calc(var(--gutter, 1.5rem) + 3.4rem + env(safe-area-inset-top, 0px));
-  max-width: 40rem;
+  pointer-events: none;
+}
+.hero-scene,
+.hero-scene__in {
+  inset: 0;
+}
+/* The whole stage gives way to About's world with the robot's backdrop (--robot-bg). */
+.hero-scene {
+  opacity: var(--robot-bg, 1);
+}
+
+/* The laptop's glow on the floor (stage.ts). */
+.hero-dots {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* The loss landscape (terrain.ts): the luminous band on its horizon (#7C5CFF at 40%, a 90px feather
+   each way; terrain.ts sets its top), behind its dot canvas (the far ridges stand dark against it). */
+.hero-terrain {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.hero-haze {
+  left: 0;
+  right: 0;
+  height: 180px;
+  translate: 0 -50%;
   opacity: 0;
-  transform: translate3d(0, 14px, 0);
-  transition:
-    opacity 1.2s var(--ease-out) 1.1s,
-    transform 1.4s var(--ease-out) 1.1s;
-  pointer-events: none;
+  background: linear-gradient(transparent, rgb(124 92 255 / 0.4), transparent);
+  -webkit-mask: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
+  mask: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
 }
-
-.hero-intro[data-on] {
-  opacity: 1;
-  transform: none;
+/* The far ridges (terrain.ts): dark silhouettes standing against the band, drawn once per layout. */
+.hero-ridges {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
 }
-
-.hero-intro__inner {
-  position: relative;
-  z-index: 0;
-  opacity: var(--hero-intro, 1);
-  pointer-events: auto;
-  /* Lifts small type off busy texture (grass, cloud edges). */
-  text-shadow: 0 0 2px rgb(7 7 13 / 0.85), 0 1px 14px rgb(7 7 13 / 0.9);
+/* The light beam, the only one: a soft cone from straight above the robot, #A78BFA at about 13% at
+   the top, thinning to nothing at the floor, its edges feathered by the angle. Its light swells +-8% on
+   every beat (stage.ts). */
+.hero-beam {
+  top: 0;
+  translate: -50% 0;
+  left: var(--robot-x);
+  /* Wide enough to take in the desk and the chair. */
+  width: calc(var(--robot-h) * 1.95);
+  height: var(--robot-foot);
+  -webkit-mask:
+    conic-gradient(from 155deg at 50% -30%, transparent 0deg, rgb(0 0 0 / 0.55) 11deg, #000 25deg, rgb(0 0 0 / 0.55) 39deg, transparent 50deg),
+    linear-gradient(#000, rgb(0 0 0 / 0.6) 45%, transparent);
+  -webkit-mask-composite: source-in;
+  mask:
+    conic-gradient(from 155deg at 50% -30%, transparent 0deg, rgb(0 0 0 / 0.55) 11deg, #000 25deg, rgb(0 0 0 / 0.55) 39deg, transparent 50deg),
+    linear-gradient(#000, rgb(0 0 0 / 0.6) 45%, transparent);
+  mask-composite: intersect;
 }
-
-/* A soft pool of night behind the copy, so it reads over cloud as well as sky. */
-.hero-intro__inner::before {
-  content: '';
+.hero-beam__light {
   position: absolute;
-  inset: -40% -30% -35% -25%;
-  z-index: -1;
-  background: radial-gradient(closest-side, rgb(7 7 13 / 0.66), rgb(7 7 13 / 0.34) 60%, transparent);
-  pointer-events: none;
+  inset: 0;
+  background: rgb(167 139 250 / 0.13);
 }
 
-.hero-intro__meta {
-  margin: 0 0 0.9rem;
-  color: rgb(236 234 242 / 0.82);
+/* The violet glow pool under the dais (the robot's floor reflection is drawn over it, engine.ts). */
+.hero-pool {
+  left: var(--robot-x);
+  top: var(--robot-foot);
+  width: calc(var(--dais-w) * 1.9);
+  height: calc(var(--dais-h) * 2.6 + 24px);
+  translate: -50% -50%;
+  background: radial-gradient(closest-side, rgb(124 92 255 / 0.28), rgb(124 92 255 / 0.11) 50%, transparent);
 }
 
-.hero-intro__name {
-  margin: 0;
-  font-size: clamp(2.7rem, 7.4vw, 6.4rem);
-  line-height: 0.92;
-  color: var(--ink);
+/* Film grain, at 3%. */
+.hero-grain {
+  inset: 0;
+  opacity: calc(var(--robot-bg, 1) * 0.03);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-.hero-intro__pitch {
-  margin: 1rem 0 0;
-  max-width: 31rem;
-  font-size: clamp(1rem, 1.3vw, 1.18rem);
-  line-height: 1.5;
-  letter-spacing: -0.008em;
-  color: rgb(236 234 242 / 0.88);
-  text-wrap: pretty;
+/* ---- Load: up from black (600ms); the landscape spreads out from the stage as a wave of dots (1400ms,
+   terrain.ts) with the dais (robot.css) and the beam; then the horizon's glow (500ms),
+   the furniture, the robot's dot-scan and its screen's flicker-on (engine.ts), and the first agent sets
+   off as the screen powers on; then the beat starts and the header fades in (Hud.tsx), and the copy last
+   (Hero.tsx). */
+.hero-scene__in,
+.hero-beam {
+  opacity: 0;
+}
+.hero-cinematic[data-on] .hero-scene__in {
+  opacity: 1;
+  transition: opacity 0.6s ease-out;
+}
+.hero-cinematic[data-on] .hero-beam {
+  opacity: 1;
+  transition: opacity 0.8s ease-out 1s;
 }
 
-.hero-intro__status {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  margin: 0.9rem 0 0;
-  color: rgb(236 234 242 / 0.82);
+/* ---- Stillness: off screen or in a hidden tab, nothing animates (stage.ts sets [data-idle]). */
+.hero-cinematic[data-idle] *,
+.hero-cinematic[data-idle] *::after {
+  animation-play-state: paused;
 }
 
-/* Buttons carry their own fills; no halo on their labels. */
-.hero-intro__actions a {
-  text-shadow: none;
+/* Lite (automatic, src/core/autoLite.ts): no grain, no parallax (stage.ts), a simpler landscape (terrain.ts). */
+#hero[data-lite] .hero-grain,
+.hero-static .hero-grain {
+  display: none;
 }
 
-.hero-intro__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.65rem;
-  margin-top: 1.4rem;
-}
-
-.hero-intro__actions a {
-  min-height: 44px;
-  font-size: 0.92rem;
-}
-
-/* Phones and portrait screens: the figure sits high in the frame, so the copy
-   takes the lower third, clear of the scroll cue. */
-@media (max-width: 767px), (orientation: portrait) {
-  .hero-intro {
-    top: auto;
-    bottom: calc(var(--gutter, 1.5rem) + 5.4rem + env(safe-area-inset-bottom, 0px));
-  }
-  .hero-intro__inner::before {
-    inset: -30% -20% -25% -20%;
-    background: radial-gradient(closest-side, rgb(7 7 13 / 0.78), rgb(7 7 13 / 0.45) 60%, transparent);
-  }
-}
-
+/* Reduced motion: the composition only. */
 @media (prefers-reduced-motion: reduce) {
-  .hero-intro {
-    transform: none;
-    transition-delay: 0s;
+  .hero-scene *,
+  .hero-scene *::after {
+    animation: none !important;
+  }
+  .hero-scene__in,
+  .hero-beam {
+    opacity: 1;
+    transition: none !important;
   }
 }
 
@@ -232,5 +322,168 @@
     animation: none;
     transform: none;
     opacity: 0.4;
+  }
+}
+
+/* ---- The copy: the name, a hairline, the tagline, the role (src/dom/HeroCopy.tsx) -------------------
+   Bottom-left on the page margin (a 1600px page on ultrawide screens); on wider screens its width stops
+   short of the dais's left edge (--robot-x, --dais-w come from the engine's layout). A soft scrim of the
+   base colour sits behind it only (no box, no blur), so the landscape's dots under the text fall to about
+   a third. It fades up after the load sequence ([data-on]) and leaves with the first scroll (--hero-intro,
+   transition.ts). With WebGL it comes in two parts with one layout: the scrim (--scrim) in the hero, under
+   the robot's fixed canvas, and the text (--text) in a fixed layer of the stage's size just above it. */
+.hero-copy-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 96;
+  width: 100%;
+  height: 100vh;
+  height: 100svh;
+  pointer-events: none;
+  /* The stage's defaults (.hero-stage) until the engine's layout is copied in (HeroCopy.tsx). */
+  --robot-x: 50%;
+  --dais-w: calc(57svh * 1.4);
+}
+.hero-intro--scrim > * {
+  visibility: hidden;
+}
+.hero-intro--text::before {
+  display: none;
+}
+/* Over the canvas the text can cross the stage's own dots (phones, tablets): a soft halo of the base colour
+   hugs each glyph, so it holds 4.5:1 over any dot. */
+.hero-intro--text,
+.hero-intro--both {
+  text-shadow: 0 0 2px rgb(4 3 9 / 0.85), 0 0 10px rgb(4 3 9 / 0.75);
+}
+.hero-intro {
+  --intro-left: max(var(--h-margin), calc((100% - 1600px) / 2 + var(--h-margin)));
+  position: absolute;
+  z-index: 2;
+  left: var(--intro-left);
+  bottom: 44px;
+  max-width: max(240px, min(440px, calc(var(--robot-x) - var(--dais-w) / 2 - var(--intro-left) - 32px)));
+  opacity: var(--hero-intro, 1);
+  pointer-events: none;
+  isolation: isolate;
+}
+.hero-intro::before {
+  content: '';
+  position: absolute;
+  inset: -140px;
+  z-index: -1;
+  background: rgb(4 3 9 / 0.72);
+  --scrim-fade: transparent, rgb(0 0 0 / 0.16) 35px, rgb(0 0 0 / 0.5) 70px, rgb(0 0 0 / 0.84) 105px, #000 140px,
+    #000 calc(100% - 140px), rgb(0 0 0 / 0.84) calc(100% - 105px), rgb(0 0 0 / 0.5) calc(100% - 70px),
+    rgb(0 0 0 / 0.16) calc(100% - 35px), transparent;
+  -webkit-mask: linear-gradient(90deg, var(--scrim-fade)), linear-gradient(var(--scrim-fade));
+  -webkit-mask-composite: source-in;
+  mask: linear-gradient(90deg, var(--scrim-fade)), linear-gradient(var(--scrim-fade));
+  mask-composite: intersect;
+  /* In with the name. */
+  opacity: 0;
+}
+.hero-intro[data-on]::before {
+  opacity: 1;
+  transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.hero-intro__name {
+  margin: 0;
+  font-family: var(--h-display);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--h-text);
+}
+.hero-intro__rule {
+  display: block;
+  width: 36px;
+  height: 1px;
+  margin: 14px 0;
+  background: rgb(124 92 255 / 0.7);
+  transform-origin: 0 50%;
+}
+.hero-intro__tagline {
+  margin: 0;
+  font-family: 'Instrument Serif', Georgia, serif;
+  font-style: italic;
+  font-weight: 400;
+  font-size: clamp(22px, 1.65vw, 26px);
+  line-height: 1.35;
+  color: rgb(245 243 255 / 0.9);
+  text-wrap: pretty;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+.hero-intro__role {
+  margin: 12px 0 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--h-muted);
+}
+
+/* Tablets. */
+@media (max-width: 1024px) {
+  .hero-intro__tagline { font-size: clamp(20px, 2.2vw, 22px); }
+}
+/* Phones: under the stage, on the page margin, above the safe area. */
+@media (max-width: 767px) {
+  .hero-intro {
+    bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+    max-width: calc(100% - 48px);
+  }
+  .hero-intro__name { font-size: 13px; }
+  .hero-intro__rule { margin: 10px 0; }
+  .hero-intro__tagline { font-size: clamp(16px, 4.3vw, 17px); }
+  .hero-intro__role { margin-top: 10px; }
+}
+/* Short screens: the name alone. */
+@media (max-width: 767px) and (max-height: 639px) {
+  .hero-intro__rule,
+  .hero-intro__tagline,
+  .hero-intro__role { display: none; }
+}
+
+/* In: the name fades up (700 ms), the hairline draws (500 ms), then the tagline and role 150 ms later. */
+.hero-intro__name,
+.hero-intro__tagline,
+.hero-intro__role {
+  opacity: 0;
+  transform: translateY(12px);
+}
+.hero-intro__rule { transform: scaleX(0); }
+.hero-intro[data-on] .hero-intro__name {
+  opacity: 1;
+  transform: none;
+  transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1), transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.hero-intro[data-on] .hero-intro__rule {
+  transform: none;
+  transition: transform 0.5s cubic-bezier(0.65, 0, 0.35, 1) 0.7s;
+}
+.hero-intro[data-on] .hero-intro__tagline,
+.hero-intro[data-on] .hero-intro__role {
+  opacity: 1;
+  transform: none;
+  transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1) 1.35s, transform 0.7s cubic-bezier(0.22, 1, 0.36, 1) 1.35s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-intro::before,
+  .hero-intro__name,
+  .hero-intro__rule,
+  .hero-intro__tagline,
+  .hero-intro__role {
+    opacity: 1;
+    transform: none;
+    transition: none !important;
   }
 }

@@ -8,6 +8,7 @@ import { site } from './content'
 import { Loader } from './dom/Loader'
 import { Cursor } from './dom/Cursor'
 import { Hud } from './dom/Hud'
+import { HeroCopyLayer } from './dom/HeroCopy'
 import { Hero } from './dom/sections/Hero'
 import { About } from './dom/sections/About'
 import { Works } from './dom/sections/Works'
@@ -44,8 +45,9 @@ export function App() {
       ScrollTrigger.refresh()
     })
 
+    // The hero robot's still (its fallback, and the first frame of the static layout).
     const hero = new Image()
-    hero.src = '/hero/night-1672.webp'
+    hero.src = '/hero/robot-still.webp'
     track('hero', Promise.race([hero.decode().catch(() => {}), timeout(5000)]))
 
     if (mode === 'static') {
@@ -86,6 +88,8 @@ export function App() {
         </Suspense>
       )}
       <Hud />
+      {/* The hero's copy, over the robot's fixed canvas (src/dom/HeroCopy.tsx). */}
+      {mode === 'webgl' && <HeroCopyLayer />}
       <main id="main" className="relative z-10">
         <Hero />
         {/* Portal target: the hero transition only fades this wrapper in as About arrives. */}

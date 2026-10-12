@@ -209,37 +209,59 @@ a { color: inherit; text-decoration: none; }
 }
 .btn-line:hover { border-color: var(--ink); }
 
+/* ---------------------------------------------------------------- header (Hud.tsx) */
+/* Palette tokens (--h-*) live in src/hero/hero.css, shared with the hero. The pill is centred on the
+   page (absolutely, so nothing beside it can shift it); below md the count and Menu sit on the right
+   page margin. The row keeps its 44 px height with nothing in flow (desktop). */
+.hud {
+  min-height: calc(44px + 2 * clamp(10px, 1.4vw, 20px));
+  padding: clamp(10px, 1.4vw, 20px) var(--h-margin, clamp(24px, 4.4vw, 64px));
+}
+.hud-count {
+  color: var(--h-muted);
+}
+
 /* ---------------------------------------------------------------- nav pill */
 .nav-pill {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 0.2rem;
+  gap: 0.15rem;
   padding: 0.3rem;
   border-radius: 999px;
-  background: rgb(14 14 24 / 0.55);
-  border: 1px solid rgb(236 234 242 / 0.08);
-  backdrop-filter: blur(14px) saturate(140%);
-  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  background: rgb(11 9 22 / 0.55);
+  border: 1px solid var(--h-line, rgb(167 139 250 / 0.18));
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 .nav-pill a {
   position: relative;
   z-index: 1;
-  padding: 0.5rem 1.15rem;
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 1.1rem;
   border-radius: 999px;
-  font-size: 0.82rem;
+  font-family: var(--h-sans);
+  font-size: 14px;
+  font-weight: 500;
   letter-spacing: -0.005em;
-  color: var(--ink-2);
-  transition: color 0.6s var(--ease-out);
+  color: var(--h-muted);
+  transition: color 0.4s var(--ease-out);
 }
-.nav-pill a:hover, .nav-pill a[aria-current='true'] { color: var(--ink); }
+.nav-pill a:hover, .nav-pill a[aria-current='true'] { color: var(--h-text); }
+/* Touch tablets see the pill too: full-size targets there. */
+@media (pointer: coarse) {
+  .nav-pill a { min-height: 44px; }
+}
+/* The active item: a filled #14102A pill with a 1px #7C5CFF border. */
 .nav-pill-indicator {
   position: absolute;
   top: 0.3rem;
   bottom: 0.3rem;
   border-radius: 999px;
-  background: rgb(236 234 242 / 0.08);
-  box-shadow: inset 0 0 0 1px rgb(124 92 255 / 0.35), 0 0 24px -6px rgb(124 92 255 / 0.6);
+  background: var(--h-surface-2, #14102a);
+  box-shadow: inset 0 0 0 1px var(--h-accent, #7c5cff);
   transition: left 0.9s var(--ease-out), width 0.9s var(--ease-out);
 }
 
@@ -248,19 +270,19 @@ a { color: inherit; text-decoration: none; }
 .hud-menu-btn {
   min-height: 44px;
   padding: 0 0.25rem;
-  color: var(--ink);
+  color: var(--h-text);
 }
 .hud-menu {
   position: absolute;
-  top: calc(100% - var(--gutter) + 0.4rem);
-  right: var(--gutter);
+  top: calc(100% - 0.4rem);
+  right: var(--h-margin);
   min-width: 12.5rem;
   padding: 0.4rem;
   border-radius: 14px;
-  background: rgb(14 14 24 / 0.88);
-  border: 1px solid rgb(236 234 242 / 0.1);
-  backdrop-filter: blur(14px) saturate(140%);
-  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  background: rgb(11 9 22 / 0.92);
+  border: 1px solid var(--h-line);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   box-shadow: 0 24px 60px -24px rgb(0 0 0 / 0.8);
 }
 .hud-menu ul { list-style: none; margin: 0; padding: 0; }
@@ -270,13 +292,15 @@ a { color: inherit; text-decoration: none; }
   min-height: 44px;
   padding: 0 0.9rem;
   border-radius: 10px;
+  font-family: var(--h-sans);
   font-size: 1rem;
-  color: var(--ink-2);
+  color: var(--h-muted);
 }
 .hud-menu a:hover,
 .hud-menu a[aria-current='true'] {
-  color: var(--ink);
-  background: rgb(236 234 242 / 0.06);
+  color: var(--h-text);
+  background: var(--h-surface-2);
+  box-shadow: inset 0 0 0 1px var(--h-accent);
 }
 
 /* Cursor "tag": a tiny label set beside the ring rather than inside it. */

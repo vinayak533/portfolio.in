@@ -76,12 +76,13 @@ export function Cursor() {
   const tagged = state === 'tag'
 
   useEffect(() => {
-    const size = big ? 88 : state === 'link' ? 54 : tagged ? 22 : 34
+    // A 28px ring, a little larger over links and buttons.
+    const size = big ? 88 : state === 'link' ? 38 : tagged ? 22 : 28
     gsap.to(ring.current, {
       width: size,
       height: size,
       backgroundColor: big ? 'rgba(124,92,255,0.92)' : 'rgba(124,92,255,0)',
-      borderColor: state === 'default' ? 'rgba(236,234,242,0.38)' : tagged ? 'rgba(154,130,255,0.75)' : 'rgba(124,92,255,0.9)',
+      borderColor: state === 'default' || state === 'link' ? '#a78bfa' : tagged ? 'rgba(167,139,250,0.75)' : 'rgba(124,92,255,0.9)',
       duration: 0.7,
       ease: 'expo.out',
     })
@@ -99,7 +100,7 @@ export function Cursor() {
       <div
         ref={ring}
         className="absolute left-0 top-0 flex items-center justify-center rounded-full border"
-        style={{ width: 34, height: 34, translate: '-50% -50%', borderColor: 'rgba(236,234,242,0.38)', boxShadow: big ? '0 0 40px rgba(124,92,255,.45)' : 'none' }}
+        style={{ width: 28, height: 28, translate: '-50% -50%', borderColor: '#a78bfa', boxShadow: big ? '0 0 40px rgba(124,92,255,.45)' : 'none' }}
       >
         <span ref={label} className="mono mono-sm text-[var(--ink)] opacity-0">
           {big ? text : ''}
@@ -110,8 +111,8 @@ export function Cursor() {
       </div>
       <div
         ref={dot}
-        className="absolute left-0 top-0 h-[6px] w-[6px] rounded-full bg-[var(--ink)]"
-        style={{ translate: '-50% -50%', boxShadow: '0 0 12px rgba(236,234,242,.6)' }}
+        className="absolute left-0 top-0 h-[6px] w-[6px] rounded-full bg-[#f5f3ff]"
+        style={{ translate: '-50% -50%', boxShadow: '0 0 10px rgba(196,181,253,.5)' }}
       />
     </div>
   )
