@@ -1,7 +1,6 @@
 #include "../common/utils.glsl"
 #include "../crystal/shade.glsl"
 
-uniform float uDuotone;
 uniform float uOpacity;
 uniform sampler2D uPhoto;
 
@@ -31,12 +30,8 @@ void main() {
   // Same oval vignette as the sampler, so the bust still fades out at the shoulders.
   float vig = (1.0 - smoothstep(0.72, 1.0, length(vec2((q.x - 0.46) / 0.56, (q.y - 0.4) / 0.66)))) * (1.0 - smoothstep(0.84, 1.0, q.y));
   float cover = mix(1.0, photo.a * vig, vLock);
-  float photoLum = pow(max(dot(photo.rgb, vec3(0.2126, 0.7152, 0.0722)), 0.0), 1.0 / 2.2);
 
-  // Spectral duotone: deep violet shadows to white highlights.
-  float l = pow(mix(vLum, photoLum, vLock), 0.9);
-  vec3 duo = mix(uAccent * 0.08, mix(uAccent * 0.9, uInk * 1.15, smoothstep(0.35, 0.95, l)), smoothstep(0.02, 0.6, l));
-  vec3 base = mix(mix(vColor, photo.rgb, vLock), duo, uDuotone) * cover;
+  vec3 base = mix(vColor, photo.rgb, vLock) * cover;
   // Particles still in flight read as raw energy rather than photo colour.
   base = mix(mix(uAccent, uInk, 0.4) * 0.6, base, vArrive * 0.85 + 0.15);
 
@@ -54,7 +49,7 @@ void main() {
   // photo reads clean. Beam, shimmer and cursor energy still light the crystals as before.
   float calm = 1.0 - vIdle * (1.0 - min(vEnergy, 1.0));
   vec3 col = base * mix(mix(0.5 + 0.62 * ndv, 0.98 + 0.14 * ndv, settle), 1.0, vLock);
-  col += refl * (0.1 + fres * 0.8) * (0.45 + uDuotone * 0.55) * (1.0 - settle * 0.8) * calm;
+  col += refl * (0.1 + fres * 0.8) * 0.45 * (1.0 - settle * 0.8) * calm;
   col += uAccent * fres * (0.1 * (1.0 - settle * 0.6) * calm + vEnergy * 1.1);
   col += mix(uAccent, uInk, 0.3) * edge * (0.08 * (1.0 - settle * 0.5) * calm + vEnergy * 1.2);
   col += uInk * vSparkle * 2.5 * calm;

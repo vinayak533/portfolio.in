@@ -174,7 +174,7 @@ export const SEAT: Seat = {
 }
 
 const PALETTE = {
-  shell: '#e9e6f2',
+  shell: '#ece8ee',
   graphite: '#1a1726',
   accent: '#7c5cff',
   soft: '#a78bfa',

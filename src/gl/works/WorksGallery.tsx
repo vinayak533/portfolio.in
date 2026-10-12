@@ -23,12 +23,13 @@ import { projects, type Project } from '../../content'
 import { layout, visibility, worksWide } from '../../theme'
 import { colors, world } from '../world'
 import { signals, useStore } from '../../store/useStore'
-import { damp } from '../../core/clock'
+import { clamp, damp } from '../../core/clock'
 import { worksTrack } from '../../core/timeline'
 import { useAct } from '../useAct'
 import { createScreenMaterial } from './screenMaterial'
 import { exhibitRects } from '../../core/registry'
 import { driveExhibits, hiResExhibits, peekReel } from '../../core/reels'
+import { hideReelWindow, placeReelWindow } from '../../core/reelWindow'
 import screenVert from '../shaders/works/screen.vert'
 import frameFrag from '../shaders/works/frame.frag'
 
@@ -51,6 +52,13 @@ const CHIP_H = 0.36
 const CHIP_MARGIN = 0.16
 /** A solid violet pill with bright type, so it reads over any frame of the reel. */
 const chipEdge = new Color(colors.accent).lerp(colors.ink, 0.55)
+/** The chip's box (with its edge) in the screen's fractions, left, top, right, bottom: the reel window's hole. */
+const CHIP_HOLE = [
+  (W - CHIP_MARGIN - CHIP_W - 0.01) / W,
+  (H - CHIP_MARGIN - CHIP_H - 0.01) / H,
+  (W - CHIP_MARGIN + 0.01) / W,
+  (H - CHIP_MARGIN + 0.01) / H,
+]
 
 /**
  * R3F raycasts every mesh with handlers, visible or not. The exhibits only take
@@ -98,6 +106,7 @@ const queueUpload = (fn: () => void) => uploads.push(fn)
 export function WorksGallery() {
   const { ref } = useAct(visibility.works)
   useEffect(driveExhibits, [])
+  useEffect(() => hideReelWindow, [])
   useFrame(() => uploads.shift()?.(), -50)
   return (
     <group ref={ref}>
@@ -153,6 +162,28 @@ function Exhibit({ project, index }: { project: Project; index: number }) {
     () => new Vector3(world.works.startX + index * world.works.spacing, (index % 2 === 0 ? 0.12 : -0.18), world.works.z - (index % 2) * 0.6),
     [index],
   )
+
+  // The reel window (src/core/reelWindow.ts): while this is the focused exhibit, its reel at the display's
+  // resolution over the screen, placed as the screen is drawn (the camera and this frame's float included).
+  const win = useMemo(() => ({ target: 0, dt: 0, focused: false, quad: [0, 0, 0, 0, 0, 0, 0, 0] }), [])
+  useEffect(() => {
+    const m = screen.current
+    if (!m) return
+    const v = new Vector3()
+    const corners = [[-W / 2, H / 2], [W / 2, H / 2], [W / 2, -H / 2], [-W / 2, -H / 2]]
+    m.onBeforeRender = (_r, _s, cam) => {
+      if (!win.focused || win.target <= 0) return
+      for (let c = 0; c < 4; c++) {
+        v.set(corners[c][0], corners[c][1], 0).applyMatrix4(m.matrixWorld).project(cam)
+        win.quad[c * 2] = (v.x * 0.5 + 0.5) * size.width
+        win.quad[c * 2 + 1] = (-v.y * 0.5 + 0.5) * size.height
+      }
+      placeReelWindow(peekReel(index), win.quad, win.target, win.dt, showDetails ? CHIP_HOLE : null)
+    }
+    return () => {
+      m.onBeforeRender = () => {}
+    }
+  }, [win, index, size, showDetails])
 
   // Register a screen-rect getter for the shared-element overlay transition.
   useEffect(() => {
@@ -241,6 +272,17 @@ function Exhibit({ project, index }: { project: Project; index: number }) {
     frameMat.uniforms.uFocus.value = st.focus
     frameMat.uniforms.uTime.value = time
     if (chip.current) chip.current.visible = !isOpen
+
+    // Full over the centred exhibit, gone before it is halfway to the next; only once its reel is on screen.
+    win.focused = index === Math.round(clamp(k, 0, projects.length - 1))
+    if (win.focused) {
+      const off = Math.abs(k - index)
+      const on = !isOpen && !!media.video && media.mix > 0.998 && !!screen.current && interactive(screen.current)
+      win.target = on ? clamp((0.45 - off) / 0.15, 0, 1) : 0
+      win.dt = dt
+      // (Drawn, the screen places it; otherwise it fades here.)
+      if (win.target <= 0) placeReelWindow(peekReel(index), null, 0, dt, null)
+    }
   })
 
   const over = (e: ThreeEvent<PointerEvent>) => {

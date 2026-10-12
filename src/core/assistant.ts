@@ -141,7 +141,7 @@ const corpus: Evidence[] = [
   }),
   ...experience.map((r) => ({ source: `${r.company} (${r.title})`, text: r.summary })),
   { source: 'Intro', text: site.intro },
-  { source: 'About', text: `${about.intro.before}${about.intro.name}${about.intro.after}` },
+  { source: 'About', text: about.body },
 ].map((e) => ({ ...e, w: words(e.text) }))
 
 /**
@@ -368,8 +368,6 @@ interface Topic {
   reply: (q: Question, ctx: AskContext) => Omit<Reply, 'topic' | 'known'> & { topic?: string }
 }
 
-const hiringLine = `${site.availability}.`
-
 const TOPICS: Topic[] = [
   {
     id: 'greeting',
@@ -419,7 +417,7 @@ const TOPICS: Topic[] = [
     keys: keys('who is', 'who is he', 'about him', 'about vinayak', 'tell me about', 'introduce', 'introduction', 'background', 'bio', 'summary', 'profile', 'overview', 'what does he do', 'what doe he do', 'work on', 'what is he', 'yourself', 'himself', 'vinayak'),
     bias: -0.25,
     reply: () => ({
-      text: `**${site.name}** is an ${site.role} based in ${site.location}.\n\nIn his words: “${site.intro}”\n\nHe’s currently ${roleLine(currentRole)}. ${about.closing}\n\n*${hiringLine}*`,
+      text: `**${site.name}** is an ${site.role} based in ${site.location}.\n\nIn his words: “${site.intro}”\n\nHe’s currently ${roleLine(currentRole)}.`,
       suggestions: ['Show me his projects', 'What’s his experience?', 'What’s his tech stack?'],
     }),
   },
@@ -517,8 +515,8 @@ const TOPICS: Topic[] = [
       const lines = [`**Email:** ${mail}`, ...contact.links.map((l) => `**${l.label}:** [${l.href.replace(/^https?:\/\/(www\.)?/, '')}](${l.href})`)]
       if (ctx.resume) lines.push(`**Résumé:** [PDF](${ctx.resume})`)
       return {
-        text: `${list(lines)}\n\nOr use the [form in the Contact section](#contact). ${hiringLine}`,
-        suggestions: ['Is he open to new roles?', 'Where is he based?'],
+        text: `${list(lines)}\n\nOr use the [form in the Contact section](#contact).`,
+        suggestions: ['Where is he based?', 'What’s his experience?'],
       }
     },
   },
@@ -537,7 +535,7 @@ const TOPICS: Topic[] = [
     id: 'availability',
     keys: keys('available', 'availability', 'open to', 'looking for', 'job search', 'opportunity', 'opportunities', 'hiring', 'hire', 'freelance', 'open for work', 'new role', 'new roles', 'job change'),
     reply: () => ({
-      text: `${hiringLine} He’s currently ${roleLine(currentRole)}.\n\nThe best way to start a conversation is email: ${mail}.`,
+      text: `He’s currently ${roleLine(currentRole)}.\n\nThe best way to start a conversation is email: ${mail}.`,
       suggestions: ['How can I contact him?', 'What’s his tech stack?'],
     }),
   },
@@ -553,7 +551,7 @@ const TOPICS: Topic[] = [
       }
       return {
         text: `He’s based in **${site.location}** (${site.timezoneLabel}).${time ? ` It’s ${time} there right now.` : ''}`,
-        suggestions: ['Is he open to new roles?', 'How can I contact him?'],
+        suggestions: ['How can I contact him?'],
       }
     },
   },

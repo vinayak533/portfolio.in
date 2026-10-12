@@ -8,11 +8,9 @@
  * to a 96 BPM beat only it hears (beat.ts). It never leaves the chair. Its eyes
  * are its only expression; the laptop's screen is the scene's second light.
  *
- * Load (from reveal(), once the loader has gone): up from black, the stage and
- * the floor (0.6 .. 1.4 s), the horizon and the beam (stage.ts, hero.css), the
- * furniture fades in (1.4 .. 2.0 s), the robot materialises in a dot-scan from
- * the feet up, already seated with its hands on the keys (1.6 .. 2.5 s), the
- * laptop flickers on (2.5 .. 3.0 s), the beat starts; the header comes last.
+ * Load: the hero's poster (Hero.tsx) is the first paint. Once the shaders have
+ * compiled, the first frame is drawn and the canvas crossfades over the poster
+ * (300 ms, robot.css); the beat starts with it.
  *
  * Scroll (setProgress, from src/hero/transition.ts), as a pure function of
  * progress so scrolling back replays it exactly:
@@ -60,7 +58,6 @@ import {
   Matrix4,
   Mesh,
   MeshBasicMaterial,
-  MeshStandardMaterial,
   OrthographicCamera,
   PCFShadowMap,
   PerspectiveCamera,
@@ -90,6 +87,7 @@ import { createPerformance } from './perform'
 import { PULSE, SCREEN } from './props'
 import { SLOW_FRAME, TIERS, type HeroTier } from '../tier'
 import { signals, useStore } from '../../store/useStore'
+import { FROZEN } from '../freeze'
 
 const FOV = 28
 const TAN = Math.tan(((FOV / 2) * Math.PI) / 180)
@@ -149,6 +147,8 @@ const UNDER = 0.05
 const FURNITURE = { desktop: 1, tablet: 0.9, phone: 0.8 }
 /** Clear space under the header (px), and at the bottom (phones: room for the home indicator). */
 const HEADER_CLEAR = 24
+/** Portrait screens: the clear space kept between the scene (its dais's front rim) and the copy under it (px). */
+const COPY_GAP = 16
 const BOTTOM = { wide: 18, phone: 40 }
 /** The floor reflection: opacity, and how far down it lasts (share of the figure's height). */
 const REFLECT = { opacity: 0.11, length: 0.3 }
@@ -167,19 +167,27 @@ const POINTER_IDLE = 3000
 const IDLE_MOUSE = 4500
 const IDLE_TOUCH = 1600
 
-/** Load sequence (s after reveal). The header (Hud.tsx) fades in at 3.2 s, last. */
-const INTRO = { dais: [0.6, 1.4], furniture: [1.4, 2.0], scan: [1.6, 2.5], power: [2.5, 3.0], music: 3.0 }
+/**
+ * The key light: warm (#FFF1E6, the palette's one exception, on the robot only) or the palette's own near-white
+ * text colour. The studio environment's key softbox follows it.
+ */
+const WARM_KEY_ENABLED = true
+const KEY_COLOR = WARM_KEY_ENABLED ? '#fff1e6' : '#f5f3ff'
+/**
+ * A new descent agent (terrain.ts, stageCues.agentAt): the eyes find it and follow it for `hold` s (in over
+ * `in`, back over `out`), the head turning `head` of the way; not while the pointer leads or during a glance.
+ */
+const AGENT_LOOK = { in: 0.12, hold: 1.2, out: 0.4, head: 0.3 }
 
 /** The laptop display as a light (the area light's intensity, the keyboard's backlight under the hands). */
 const SCREEN_LIGHT = 3.2
-const KEY_LIGHT = 0.22
+const KEY_LIGHT = 0.12
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t
 const lerpLog = (a: number, b: number, t: number) => Math.exp(lerp(Math.log(a), Math.log(b), t))
 
 export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHandle {
   const layer = createLayer()
-  if (opts.skipIntro) layer.el.classList.add('is-instant')
   const canvas = document.createElement('canvas')
   canvas.className = 'robot-canvas'
   canvas.setAttribute('aria-hidden', 'true')
@@ -209,17 +217,18 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
   const scene = new Scene()
   const pmrem = new PMREMGenerator(renderer)
   const studio = studioEnvironment()
-  const env = pmrem.fromScene(studio.scene, 0.04).texture
+  // 128 px faces: the studio is a few soft boxes in the dark, and a 256 cube's prefilter costs the load ~0.5 s on a phone.
+  const env = pmrem.fromScene(studio.scene, 0.04, 0.1, 100, { size: 128 }).texture
   pmrem.dispose()
   studio.dispose()
   scene.environment = env
   scene.environmentIntensity = 0.5
 
-  // Lit in the hero's one hue: a near-white key from above, front-left (the stage's beam, hero.css),
-  // violet rims from behind on both edges, and a soft lilac fill so the shadow side keeps its detail.
+  // Lit in the hero's one hue: a warm key from above, front-left (the stage's beam, hero.css), violet rims
+  // from behind on both edges, and a soft lilac fill (the violet bounce) so the shadow side keeps its detail.
   // The key casts soft shadows (the head onto the torso, the arms onto the lap, everything on the dais).
   // The laptop's display is the scene's second light (furniture.ts).
-  const key = new DirectionalLight('#f5f3ff', 2.1)
+  const key = new DirectionalLight(KEY_COLOR, 2.1)
   key.position.set(-1.4, 7, 2.6)
   key.castShadow = true
   key.shadow.mapSize.set(2048, 2048)
@@ -269,23 +278,13 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
   }
 
   // ---- the body's dissolve (scroll): discarded below a height that climbs from the dais to the collar,
-  // broken up by noise, with a thin glowing seam where it is coming apart. The load's scan reveal: the
-  // same, upside down (discarded above a height that climbs from the feet to the headphones). The
-  // furniture fades in before the robot (a fine dither), and dissolves with it on the scroll.
+  // broken up by noise, with a thin glowing seam where it is coming apart. The furniture dissolves with
+  // it; the head and its headphones never do.
   const cut = { value: CUT_FROM - 1 }
-  const phonesCut = { value: -100 }
-  const noCut = { value: -100 }
-  const reveal = { value: 1e3 }
-  const noReveal = { value: 1e3 }
-  const shown = { value: 1 }
-  const furnitureShow = { value: 1 }
   const seam = { value: new Color('#9c86ff') }
-  for (const m of robot.bodyMaterials) dissolvable(m, cut, reveal, shown, seam)
-  for (const m of robot.furnitureMaterials) dissolvable(m, cut, noReveal, furnitureShow, seam)
-  for (const m of robot.phones.solids) dissolvable(m, phonesCut, reveal, shown, seam)
-  // The head: only the scan reveal (it never dissolves; once revealed the patch does nothing).
-  for (const m of robot.headMaterials) if (m instanceof MeshBasicMaterial || m instanceof MeshStandardMaterial) dissolvable(m, noCut, reveal, shown, seam)
-  /** The top of the seated figure (the headphones), stage space: the scan's end. */
+  for (const m of robot.bodyMaterials) dissolvable(m, cut, seam)
+  for (const m of robot.furnitureMaterials) dissolvable(m, cut, seam)
+  /** The top of the seated figure (the headphones), stage space. */
   let top = 2.4
 
   // ---- the floor reflection: the figure mirrored in the dais plane, drawn at a quarter of the
@@ -342,7 +341,7 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
   const topPt = new Vector3()
 
   const camera = new PerspectiveCamera(FOV, 1, 0.1, 60)
-  if (import.meta.env.DEV) Object.assign(window, { __heroRobot: { robot, scene, perform, renderer, camera, stageCues, dock: () => ({ docked, face: shownMood, busy: dockBusy, cost: dockCost.n ? dockCost.sum / dockCost.n : 0, drawMs: dockCost.n ? dockCost.draw / dockCost.n : 0, frames: dockCost.n, calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, box: L.box }) } })
+  if (import.meta.env.DEV) Object.assign(window, { __heroRobot: { robot, scene, perform, renderer, camera, stageCues, frame: () => stageFrame.get(), dock: () => ({ docked, face: shownMood, busy: dockBusy, cost: dockCost.n ? dockCost.sum / dockCost.n : 0, drawMs: dockCost.n ? dockCost.draw / dockCost.n : 0, frames: dockCost.n, calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, box: L.box }) } })
   const tall = window.matchMedia(MOBILE_QUERY)
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)')
   const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)')
@@ -365,7 +364,7 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
   let degrade = 0
   const perf = { sum: 0, n: 0 }
   /** Development only: ?hq holds the governor off (for captures on slow, software-rendered machines). */
-  const holdQuality = import.meta.env.DEV && new URLSearchParams(location.search).has('hq')
+  const holdQuality = (import.meta.env.DEV && new URLSearchParams(location.search).has('hq')) || FROZEN
   function governor(dt: number) {
     if (holdQuality) return
     perf.sum += dt
@@ -374,6 +373,11 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     const avg = perf.sum / perf.n
     perf.sum = perf.n = 0
     if (avg <= SLOW_FRAME.ms / 1000 || degrade >= 8) return
+    // The landscape's inflow vortex goes first: half its dots, then all of them (terrain.ts).
+    if (stageCues.vortex < 2) {
+      stageCues.vortex++
+      return
+    }
     degrade++
     stageCues.degrade = degrade
     if (degrade === 5) {
@@ -420,8 +424,9 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     const a = robotLink.anchor?.getBoundingClientRect()
     if (a && a.width) return { x: a.left, y: a.top, w: a.width, h: a.height }
     const size = VW > 1024 ? 64 : VW >= 768 ? 56 : 52
+    const side = clamp(VW * 0.044, 24, 64) - 0.17 * dockSize() + (dockSize() - size) / 2
     const m = (dockSize() - size) / 2 + (VW > 1024 ? 28 : VW >= 768 ? 24 : 16)
-    return { x: VW - m - size, y: VH - m - size, w: size, h: size }
+    return { x: VW - side - size, y: VH - m - size, w: size, h: size }
   }
 
   /** The dock: a box centred on the launcher button, the head at its share of it. */
@@ -508,7 +513,8 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     let yFloor = (phone ? COMPOSE.floor.phone : COMPOSE.floor.wide) * VH
     const gut = clamp(VW * 0.044, 16, 64)
     const topPx = 44 + 2 * clamp(VW * 0.014, 10, 20) + HEADER_CLEAR
-    const bottom = VH - (phone ? BOTTOM.phone : BOTTOM.wide) - safeBottom()
+    // Portrait screens: the scene also keeps COPY_GAP above the hero's copy (it never runs under the text).
+    const bottom = Math.min(VH - (phone ? BOTTOM.phone : BOTTOM.wide) - safeBottom(), copyTop() - COPY_GAP)
     const per = VH / 2
     let s = (yFloor - yHead) / ((headN.y - floorN.y) * per)
     // The top of the scene may not come nearer than topPx; the dais's front rim not past the bottom.
@@ -583,6 +589,13 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     measureDock()
   }
 
+  /** Portrait screens: the top of the hero's copy (px; its box is fixed from the first paint, hero.css), else Infinity. */
+  function copyTop() {
+    if (!tall.matches) return Infinity
+    const r = document.querySelector('.hero-copy-layer .hero-intro')?.getBoundingClientRect()
+    return r && r.height ? r.top : Infinity
+  }
+
   /** The bottom safe-area inset (px), read once per layout. */
   const safeProbe = document.createElement('div')
   safeProbe.style.cssText = 'position:fixed;bottom:0;height:env(safe-area-inset-bottom,0px);width:0;visibility:hidden;pointer-events:none'
@@ -653,7 +666,7 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     if (st.section !== prev.section && st.section !== 'hero' && docked && !staticDock() && now - moodAt >= DOCKED.gap) helloUntil = now + DOCKED.hello
   })
   /** Below 500 px of height (or with reduced motion) the docked head holds still: no float, no greeting. */
-  const staticDock = () => VH < 500 || reduced.matches
+  const staticDock = () => VH < 500 || reduced.matches || FROZEN
 
   // ---- gaze input (the hero's pointer tracking)
 
@@ -748,6 +761,7 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
   let revealed = false
   /** The first revealed frame has been drawn (onReady called). */
   let ready = false
+  /** performance.now() of reveal() (the governor waits out the first second after it). */
   let revealedAt = Infinity
   let lost = false
   const proj = new Matrix4()
@@ -800,16 +814,6 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     return hi
   })()
 
-  /** The display's power-on: a 500 ms flicker, then steady. */
-  function flicker(t: number) {
-    if (t <= 0) return 0
-    if (t >= 0.5) return 1
-    const on = [0.04, 0.09, 0.15, 0.2, 0.27, 0.34, 0.4]
-    let lit = false
-    for (const x of on) if (t >= x) lit = !lit
-    return (lit ? 0.85 : 0.12) * (0.4 + 0.6 * (t / 0.5))
-  }
-
   /** Docked: time carried over skipped frames (30 a second while nothing moves), and whether anything moves. */
   let dockCarry = 0
   let dockBusy = true
@@ -843,7 +847,7 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     const t0 = performance.now()
     const now = t0
     const p = progress
-    const still = reduced.matches
+    const still = reduced.matches || FROZEN
 
     // Beats.
     const a = easeInOutCubic(remap(p, heroConfig.transition.hold, GLIDE_END))
@@ -854,16 +858,8 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     // In the launcher with the chat open: the icon is put away, nothing to draw.
     if (docked && (!homed || robotLink.open)) return
 
-    // ---- the load sequence: the dais, the furniture, the scan up the figure, the power-on, then the music.
-    const t = still ? 99 : (now - revealedAt) / 1000
-    const introDais = smoothstep(INTRO.dais[0], INTRO.dais[1], t)
-    const introFurniture = smoothstep(INTRO.furniture[0], INTRO.furniture[1], t)
-    const scan = smoothstep(INTRO.scan[0], INTRO.scan[1], t)
-    reveal.value = scan >= 1 ? 1e3 : lerp(-0.12, top + 0.12, scan)
-    furnitureShow.value = introFurniture
-    robot.face.visible = reveal.value > headLocal.y - 0.1
-    const power = still ? 1 : flicker(t - INTRO.power[0])
-    if (!still && t >= INTRO.music && !beat.running) beat.start()
+    // The music: from the first frame (the scene takes over from the poster already playing).
+    if (!still && revealed && !beat.running) beat.start()
     if (still && beat.running) beat.stop()
     beat.sample(now, beatNow)
 
@@ -895,12 +891,10 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     // (It rises with the head's lift, so the neck stays behind and is gone: nothing hangs under the head.)
     cut.value = d <= 0 ? CUT_FROM - 1 : lerp(CUT_FROM, neck.y + CUT_OVER, d) + DETACH_LIFT * lifted
     // (The headphones stay with the head: phonesCut never rises.)
-    const props = (1 - smoothstep(POWER_OFF[0], POWER_OFF[1], p)) * power
-    const stageFade = (1 - smoothstep(0, 0.22, d)) * introDais
-    robot.setStage(stageFade)
+    const props = 1 - smoothstep(POWER_OFF[0], POWER_OFF[1], p)
+    robot.setStage(1 - smoothstep(0, 0.22, d))
     if (docked) robot.stage.visible = false
-    robot.shadowFloor.opacity *= introFurniture
-    const furnitureFade = introFurniture * (1 - smoothstep(0, 0.3, d))
+    const furnitureFade = 1 - smoothstep(0, 0.3, d)
     robot.desk.underglow.opacity = 0.08 * furnitureFade
     for (const m of robot.furnitureFades) m.uniforms.uFade.value = furnitureFade
 
@@ -966,11 +960,6 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
         sinceSuccess = 0
         if (!lowPower && !still) stageCues.commitAt = now
       } else sinceSuccess += dt
-      // Read only, for the backdrop's descent (terrain.ts): when the next build is due, and when this one began.
-      if (!lowPower && !still && weight > 0.02) {
-        stageCues.buildDue = now + pf.compileIn * 1000
-        if (pf.buildT >= 0) stageCues.buildAt = now - pf.buildT * 1000
-      } else stageCues.buildDue = Infinity
       // A typing burst starting (read only, from the performance): the floor's tremor (terrain.ts) and the rings'.
       const bursting = pf.action === 'type' && pf.scroll >= 1 && weight > 0.5 && !still
       if (bursting && !wasBursting) stageCues.burstAt = now
@@ -985,8 +974,8 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
       boost = sinceSuccess < 0.8 ? 0.15 * Math.sin(Math.PI * (sinceSuccess / 0.8)) : 0
       const glow = 1 + 0.06 * scrollPulse * 0.5 + boost
       sm.uGlow.value = 0.94 + 0.06 * (0.5 + 0.5 * scrollPulse) + boost
-      sm.uPower.value = power
-      sm.uFade.value = props / Math.max(power, 1e-3)
+      sm.uPower.value = 1
+      sm.uFade.value = props
       // The cast light; in lite a static emissive (the display and its glow on the table only).
       lap.screenLight.intensity = lowPower ? 0 : SCREEN_LIGHT * props * glow
       lap.keyLight.intensity = lowPower ? 0 : KEY_LIGHT * props
@@ -998,6 +987,9 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
       // ---- the stage: the dais ripples every 2nd beat, the equaliser jumps, the rings turn, the commit pulse
       // (On every 2nd beat, with the landscape's pulse waves, terrain.ts.)
       robot.dais.uniforms.uPulse.value = lowPower || beatNow.index % 2 ? 0 : beatNow.pulse * 0.55 * weight
+      // The vortex's swallow light on the outer ring (terrain.ts); the disc's local angle runs the other way.
+      robot.dais.uniforms.uArc.value = -stageCues.swallow.angle
+      robot.dais.uniforms.uArcGain.value = lowPower || still ? 0 : stageCues.swallow.gain
       const eq = robot.eq.material.uniforms
       eq.uBeat.value = beatNow.index
       eq.uSince.value = beatNow.since
@@ -1030,8 +1022,8 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
         pulseU.uRise.value.set(-pulseU.uTop.value.x * 0.5, 1.25, -pulseU.uTop.value.z * 0.4)
       }
     }
-    // Shadows come in with the furniture and go with the dissolve (the shadow pass does not dissolve).
-    key.shadow.intensity = shadows ? introFurniture * (1 - smoothstep(0, 0.15, d)) : 0
+    // Shadows go with the dissolve (the shadow pass does not dissolve).
+    key.shadow.intensity = shadows ? 1 - smoothstep(0, 0.15, d) : 0
 
     // ---- mood: the launcher's, once the head is home (^ ^ as a new section arrives); in the hero, the
     // performance's (^ ^ on a build); coming off the neck, wide eyes then ^ ^ (no swap blink: at once).
@@ -1083,7 +1075,8 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     let eyeTY: number
     if (!docked) {
       // Pointer -> ray through this frame's projection -> plane before the face -> neck angles.
-      const look = lookAt(now, time)
+      // (Frozen / reduced motion: the idle wander holds one point, so the glide is a pure function of the scroll.)
+      const look = lookAt(now, still ? 0 : time)
       pointerRay(look.x, look.y)
       yawRaw = ray.yaw
       pitchRaw = ray.pitch
@@ -1121,6 +1114,18 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
       pitchT = lerp(glidePitch, heroPitch, hw)
       eyeTX = lerp(glideEyeX, lerp(baseEyeX, pEyeX, head.pointer), hw)
       eyeTY = lerp(glideEyeY, lerp(baseEyeY, pEyeY, head.pointer), hw)
+
+      // A new descent agent on the landscape: the eyes find it (in 120 ms), follow it, and come back to the
+      // screen; the head turns a little with them. Not while the pointer leads or the robot glances at us.
+      const ta = (now - stageCues.agentAt) / 1000
+      const onAgent = still ? 0 : smoothstep(0, AGENT_LOOK.in, ta) * (1 - smoothstep(AGENT_LOOK.hold, AGENT_LOOK.hold + AGENT_LOOK.out, ta)) * hw * (1 - head.pointer) * (1 - pf.glance)
+      if (onAgent > 0.001) {
+        pointerRay(stageCues.agent.x, stageCues.agent.y)
+        yawT += clamp(ray.yaw - yawT, -POINTER_LIMIT, POINTER_LIMIT) * AGENT_LOOK.head * onAgent
+        pitchT += clamp(ray.pitch - pitchT, -POINTER_LIMIT, POINTER_LIMIT) * AGENT_LOOK.head * onAgent
+        eyeTX = lerp(eyeTX, clamp((ray.yaw - head.yaw) * 0.09, -0.075, 0.075), onAgent)
+        eyeTY = lerp(eyeTY, clamp(-(ray.pitch - head.pitch) * 0.09, -0.055, 0.055), onAgent)
+      }
     } else {
       // Docked: the eyes follow the pointer (fine pointers, within +-12 deg of the viewer, the eyes a cell or two
       // further), else a glance now and then; a scan while thinking, a droop while asleep or crying, held still
@@ -1200,7 +1205,7 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     robot.narrow.value = docked ? 0 : pf.narrow * (1 - head.pointer * 0.6)
 
     // Blinks: every 4-6 s (8 s when still) the LEDs collapse onto one row for about 120 ms.
-    if (blinkT < 0 && now >= blinkAt) blinkT = 0
+    if (blinkT < 0 && now >= blinkAt && !FROZEN) blinkT = 0
     let lid = 1
     if (blinkT >= 0) {
       blinkT += dt
@@ -1238,9 +1243,9 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     syncWorld()
     // The shadow map is drawn every frame in the hero (once without shadows, where it is unused), never docked.
     renderer.shadowMap.needsUpdate = !docked && (shadows || !shadowReady)
-    if (!docked && !lowPower && a < 0.05 && t > INTRO.music + 1) governor(dt)
+    if (!docked && !lowPower && a < 0.05 && now - revealedAt > 1000) governor(dt)
     const tDraw = performance.now()
-    draw(docked || !shadows || degrade >= 4 || !shadowReady ? 0 : REFLECT.opacity * (1 - smoothstep(0, 0.12, a)) * introDais)
+    draw(docked || !shadows || degrade >= 4 || !shadowReady ? 0 : REFLECT.opacity * (1 - smoothstep(0, 0.12, a)))
     if (docked) dockCost.draw += performance.now() - tDraw
     shadowReady ||= renderer.shadowMap.needsUpdate === false
     // Docked, anything moving (the eyes, the neck's spring, a blink or a change of face) earns full frame rate.
@@ -1266,7 +1271,7 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     if (revealed && !ready) {
       ready = true
       requestAnimationFrame(() => {
-        if (opts.skipIntro) layer.el.classList.add('is-revealed')
+        layer.el.classList.add('is-revealed')
         opts.onReady?.()
       })
     }
@@ -1371,8 +1376,8 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     for (const prop of ['--robot-x', '--robot-y', '--robot-h', '--robot-foot', '--chest-y', '--dais-w', '--dais-h']) stageEl.style.removeProperty(prop)
     stageFrame.set(null)
     stageCues.commitAt = -Infinity
-    stageCues.buildAt = -Infinity
-    stageCues.buildDue = Infinity
+    stageCues.agentAt = -Infinity
+    stageCues.vortex = 0
     stageCues.degrade = 0
     stageCues.burstAt = -Infinity
     stageCues.governed = false
@@ -1380,11 +1385,9 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
 
   return {
     reveal() {
-      // With a poster up, the scene is shown finished at once (the load sequence's clock starts long past).
-      if (!revealed) revealedAt = performance.now() - (opts.skipIntro ? 60_000 : 0)
+      if (!revealed) revealedAt = performance.now()
       revealed = true
-      // With a poster up, the canvas shows with the first frame (draw()), crossfading with the poster.
-      if (!opts.skipIntro) layer.el.classList.add('is-revealed')
+      // The canvas shows with the first frame (draw()), crossfading with the poster.
       fallback?.reveal()
     },
     setTier(v) {
@@ -1399,9 +1402,6 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
       progress = p
       fallback?.setProgress(p)
     },
-    setRendering() {
-      // The robot outlives the stage (it becomes the launcher); it keeps its own loop.
-    },
     dispose() {
       if (fallback) fallback.dispose()
       else if (!lost) teardown()
@@ -1411,7 +1411,7 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
 
 /**
  * A dark studio for reflections and soft fill (instead of a photographic HDRI): a near-black room
- * with a large near-white softbox above front-left (the key), violet strip boxes behind on the right
+ * with a large softbox above front-left in the key's colour, violet strip boxes behind on the right
  * (#7C5CFF) and the left (#A78BFA), and a faint floor bounce. Prefiltered once (PMREM).
  */
 function studioEnvironment() {
@@ -1430,7 +1430,7 @@ function studioEnvironment() {
     scene.add(o)
     disposables.push(g, m)
   }
-  box('#f5f3ff', 5, 3.4, 2.2, -2.2, 3.6, 2.8)
+  box(KEY_COLOR, 5, 3.4, 2.2, -2.2, 3.6, 2.8)
   box('#7c5cff', 6, 1.2, 4.2, 3.6, 1.8, -3.2)
   box('#a78bfa', 3.5, 1, 3.4, -3.8, 1.6, -3)
   box('#c4b5fd', 1.4, 2.4, 1.4, 3.2, 1.2, 3.4)
@@ -1439,21 +1439,17 @@ function studioEnvironment() {
 }
 
 /**
- * Patches a material so fragments below `cut` (world height, rough-edged by noise) are discarded
- * (the scroll's dissolve), fragments above `reveal` too (the load's scan, climbing from the feet), and
- * a share of them by a fine dither while `show` is under 1 (the furniture's fade-in). A thin emissive
- * seam glows at the cut and the scan (solid surfaces only: on a glow or shadow quad it would light the
- * whole plane). With cut far below, reveal far above and show at 1, it changes nothing. A material's
- * own patch, if it has one (the keycaps'), runs first.
+ * Patches a material so fragments below `cut` (world height, rough-edged by noise) are discarded (the scroll's
+ * dissolve), with a thin emissive seam glowing at the cut (solid surfaces only: on a glow or shadow quad it would
+ * light the whole plane). With cut far below, it changes nothing. A material's own patch, if it has one (the
+ * keycaps'), runs first.
  */
-function dissolvable(m: Material, cut: { value: number }, reveal: { value: number }, show: { value: number }, seam: { value: Color }) {
+function dissolvable(m: Material, cut: { value: number }, seam: { value: Color }) {
   const own = m.onBeforeCompile.bind(m)
   const ownKey = m.customProgramCacheKey.bind(m)
   m.onBeforeCompile = (shader, r) => {
     own(shader, r)
     shader.uniforms.uCut = cut
-    shader.uniforms.uReveal = reveal
-    shader.uniforms.uShow = show
     shader.uniforms.uSeam = seam
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vDissolve;')
@@ -1464,8 +1460,6 @@ function dissolvable(m: Material, cut: { value: number }, reveal: { value: numbe
         `#include <common>
 varying vec3 vDissolve;
 uniform float uCut;
-uniform float uReveal;
-uniform float uShow;
 uniform vec3 uSeam;
 float dHash(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
 float dNoise(vec3 p) {
@@ -1484,16 +1478,10 @@ float dNoise(vec3 p) {
 float dN = dNoise(vDissolve * 11.0) * 0.6 + dNoise(vDissolve * 27.0) * 0.4;
 float dH = vDissolve.y + (dN - 0.5) * 0.22 - uCut;
 if (dH < 0.0) discard;
-// The fade-in: a fine low-discrepancy dither, so it reads as a fade rather than a wipe.
-if (uShow < 1.0 && fract(dot(floor(gl_FragCoord.xy), vec2(0.7548777, 0.5698403))) >= uShow) discard;
-// The scan: in rows of dots (a 0.02 world grid), so it reads as a dot-scan rather than a wipe.
-vec2 dCell = fract(vec2(vDissolve.x + vDissolve.z, vDissolve.y) / 0.02) - 0.5;
-float dR = uReveal - vDissolve.y;
-float dDots = step(length(dCell), 0.34);
-if (dR < 0.0 || (dR < 0.05 && dDots < 0.5)) discard;
-float dSeam = max(1.0 - smoothstep(0.0, 0.035, dH), (1.0 - smoothstep(0.0, 0.07, dR)) * step(uReveal, 500.0));`,
+float dSeam = 1.0 - smoothstep(0.0, 0.035, dH);`,
       )
-      .replace('#include <opaque_fragment>', `outgoingLight += uSeam * dSeam * ${m.transparent ? '0.0' : '2.2'};\n#include <opaque_fragment>`)
+      .replace('#include <opaque_fragment>', `outgoingLight += uSeam * dSeam * ${m.transparent ? '0.0' : '2.2'};
+#include <opaque_fragment>`)
   }
   m.customProgramCacheKey = () => `${ownKey()}|${m.transparent ? 'dissolve-t' : 'dissolve'}`
 }

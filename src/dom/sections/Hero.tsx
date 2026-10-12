@@ -1,3 +1,5 @@
+// DESIGN FROZEN: do not change visuals/timings without updating HERO_SPEC.md and the baselines
+// (npm run hero:baseline -- --update; the budgets in scripts/hero-perf.mjs).
 import { useEffect, useRef, type CSSProperties } from 'react'
 import { signals, useStore } from '../../store/useStore'
 import type { RobotHandle } from '../../hero/robot/dom'
@@ -49,12 +51,12 @@ function HeroPoster() {
  * the page's largest one, with the real copy and the navigation live over it; the
  * live scene comes up underneath, skips its build-up, and crossfades over it
  * (300 ms) once its first frame is drawn. Without WebGL, or if the context is
- * lost, the poster stays (with the copy). The stage behind it is made of light
- * dots: the beam and the floor's glow pool are CSS in hero.css; the halftone
- * field, the horizon wave, the dot floor, the edge streams and the two
- * far-field panels are drawn by src/hero/robot/stage.ts. This component only
- * provides the containers and forwards site state (loader done, overlay
- * pause, lite; lite is automatic, src/core/autoLite.ts).
+ * lost, the poster stays (with the copy). Behind the robot: the beam and the
+ * floor's glow pool (CSS, hero.css), the laptop's glow on the floor and the beam's
+ * pulse (src/hero/robot/stage.ts), and the loss landscape (terrain.ts). This
+ * component only provides the containers and forwards site state (overlay
+ * pause, the tier; lite is automatic, src/core/autoLite.ts). HERO_SPEC.md has the
+ * locked design.
  */
 export function Hero() {
   const track = useRef<HTMLElement>(null)
@@ -72,10 +74,13 @@ export function Hero() {
   useEffect(() => {
     let cancelled = false
     let backdrop: { dispose(): void } | null = null
-    import('../../hero/robot/stage').then(({ mountStage }) => {
-      if (!cancelled && host.current) backdrop = mountStage(host.current)
-    })
     const isWebgl = useStore.getState().mode === 'webgl'
+    // The live stage (the landscape, the beam's pulse): WebGL only. Without it the poster is the whole hero.
+    if (isWebgl) {
+      import('../../hero/robot/stage').then(({ mountStage }) => {
+        if (!cancelled && host.current) backdrop = mountStage(host.current)
+      })
+    }
     const engine = isWebgl ? import('../../hero/robot/engine') : import('../../hero/robot/still')
     engine.then(({ mountRobot }) => {
       if (cancelled || !host.current) return
@@ -85,8 +90,7 @@ export function Hero() {
         isPaused: () => signals.paused,
         tier: lite ? 'low' : heroTier,
         integratedGpu: quality === 'mid',
-        // The poster is up: no build-up; the live scene takes over from it with its first frame.
-        skipIntro: isWebgl,
+        // The live scene takes over from the poster with its first frame.
         onReady: () => el.setAttribute('data-live', ''),
         onLost: () => el.removeAttribute('data-live'),
       })
@@ -107,7 +111,6 @@ export function Hero() {
     const t = createHeroTransition({
       section: track.current!,
       stage: stage.current!,
-      host: host.current!,
       about: () => document.querySelector<HTMLElement>('[data-hero-portal-target]'),
       engine: () => handle.current,
       mode,
@@ -154,7 +157,6 @@ export function Hero() {
         <div
           ref={host}
           className="hero-cinematic"
-          data-on={webgl || loaded || undefined}
           role="img"
           aria-label="A small white robot in headphones sits at a desk coding on a glowing laptop, on a stage of violet light dots."
         >

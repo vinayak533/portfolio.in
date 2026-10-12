@@ -1,7 +1,7 @@
 /* The hero robot (src/hero/robot). Scoped to the hero host, the robot's own layer and its canvas. */
 
-/* ---- Backdrop: the spotlit stage (Hero.tsx markup, hero.css; stage.ts moves its dust). src/hero/robot
-   fades --robot-bg as About's world comes through. */
+/* ---- Backdrop: the spotlit stage (Hero.tsx markup, hero.css; stage.ts, terrain.ts). The engine fades
+   --robot-bg as About's world comes through. */
 /* Vignette: soft, so the landscape's ridges still climb bright up the left and right edges, but the
    corners fall to near-black whatever the aspect. Sized from the height (capped by the width on phones),
    so ultrawide screens get darker sides rather than a stretched gradient. */
@@ -53,18 +53,13 @@
   height: 100vh;
   height: 100lvh;
   pointer-events: none;
+  /* Over the hero's poster (Hero.tsx): the canvas comes in with its first frame (engine.ts adds
+     .is-revealed), crossfading with the poster (300 ms, the motion tokens' ease-in-out). */
   opacity: 0;
-  /* The load sequence (hero.css): the canvas comes up with the dot floor, showing the dais; the engine
-     then scans the robot in from the feet up and powers its screen on (engine.ts INTRO). */
-  transition: opacity 0.8s ease-out 0.6s;
+  transition: opacity 0.3s cubic-bezier(0.65, 0, 0.35, 1);
 }
 .robot-layer.is-revealed .robot-canvas {
   opacity: 1;
-}
-/* Over the hero's poster (Hero.tsx): the canvas comes in with its first frame, crossfading with the poster
-   (300 ms, the motion tokens' ease-in-out). */
-.robot-layer.is-instant .robot-canvas {
-  transition: opacity 0.3s cubic-bezier(0.65, 0, 0.35, 1);
 }
 /* Landed with no launcher on the page yet: wait unseen. */
 .robot-canvas.is-waiting {

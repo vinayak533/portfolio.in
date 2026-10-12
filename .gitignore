@@ -9,3 +9,5 @@ dist
 .claude/
 # Reel masters: encoded into public/works/ by `npm run videos`
 src/project-videos/
+# Hero visual-regression output (scripts/hero-baseline.mjs) and audit scratch
+.hero-shots/

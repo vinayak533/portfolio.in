@@ -273,6 +273,7 @@ a { color: inherit; text-decoration: none; }
 .hud-menu-btn {
   min-height: 44px;
   padding: 0 0.25rem;
+  margin-right: -0.25rem;
   color: var(--h-text);
 }
 .hud-menu {
@@ -322,4 +323,27 @@ a { color: inherit; text-decoration: none; }
   line-height: 1.2;
   text-transform: uppercase;
   white-space: nowrap;
+}
+
+/* The focused exhibit's reel at native resolution, over its WebGL screen (src/core/reelWindow.ts): between
+   the scene (z 0) and the page's DOM (z 10), never in the pointer's way. */
+.reel-window {
+  position: fixed;
+  z-index: 5;
+  left: 0;
+  top: 0;
+  overflow: hidden;
+  transform-origin: 0 0;
+  pointer-events: none;
+  visibility: hidden;
+  opacity: 0;
+  background: #040309;
+}
+.reel-window > video {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }

@@ -223,9 +223,7 @@ export function Contact() {
 
             <div className="ct-aside">
               <p className="ct-lede" data-ct-fade>
-                {contact.lede[0]}
-                <br />
-                {contact.lede[1]}
+                {contact.lede}
               </p>
 
               <div className="ct-email" data-ct-fade>

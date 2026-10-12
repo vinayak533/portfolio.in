@@ -32,9 +32,9 @@
  * body and reports what the head and eyes should do; the engine blends the
  * pointer over the head (never the body) and hands everything to the scroll.
  */
-import { Object3D, Vector3 } from 'three'
+import { Color, Object3D, Vector3 } from 'three'
 import { BEAT, type BeatSample } from './beat'
-import { orient, span, type Arm, type Leg } from './body'
+import { orient, PALETTE, span, type Arm, type Leg } from './body'
 import { keyAt } from './props'
 import type { RobotModel } from './model'
 
@@ -115,6 +115,8 @@ const TIP_REST = 0.001
 const CLEAR = { tip: TIP_R, wrist: 0.03, fore: 0.042 }
 const DUR = { read: LINE * 4, build: 1.2, nod: 0.6, glance: 1.2, phones: 2.6 }
 const BLEND = 0.6
+/** The headphone cups' violet rings (#7C5CFF), lifted up to 25% on the beat. */
+const RING = new Color(PALETTE.accent)
 
 export function createPerformance(robot: RobotModel) {
   const { rig, body, seat, laptop, chair } = robot
@@ -485,12 +487,13 @@ export function createPerformance(robot: RobotModel) {
       const coreBreath = 1 + (o.still ? 0 : 0.15 * Math.sin((now / 6) * Math.PI * 2))
       const pulse = beatLive ? b.pulse : 0
       for (const vent of rig.vents) {
-        vent.uniforms.uTime.value = now
+        // (Still: its shimmer holds, so the frozen frame is the same on every run.)
+        vent.uniforms.uTime.value = o.still ? 0 : now
         vent.uniforms.uBreath.value = coreBreath
         vent.uniforms.uPulse.value = pulse * w
       }
       rig.coreGlow.opacity = (0.22 + (0.05 * (coreBreath - 1)) / 0.15 + 0.08 * pulse) * w
-      robot.phones.rings.color.setRGB(0.655, 0.545, 0.98).multiplyScalar(1.15 + 0.35 * pulse)
+      robot.phones.rings.color.copy(RING).multiplyScalar(1 + 0.25 * pulse)
       const wv = robot.phones.waves.uniforms
       wv.uPhase.value = beatLive ? Math.min(1, b.since / (BEAT * 0.95)) : 0
       wv.uOn.value = beatLive ? w : 0

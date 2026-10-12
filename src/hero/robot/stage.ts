@@ -21,6 +21,7 @@
 import { stageFrame, type StageFrame } from './dom'
 import { beat, emptySample } from './beat'
 import { mountTerrain, type TerrainHandle } from './terrain'
+import { FROZEN } from '../freeze'
 
 const VIOLET = '124,92,255'
 /** Parallax easing rate (1/s): a 200 ms time constant. */
@@ -40,6 +41,8 @@ export function mountStage(host: HTMLElement): StageHandle {
   const ctx = canvas.getContext('2d')
 
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)')
+  /** Reduced motion, or the frozen baseline frame (src/hero/freeze.ts). */
+  const calm = () => reduced.matches || FROZEN
   const beamLight = host.querySelector<HTMLElement>('.hero-beam__light')
   const beatNow = emptySample()
   const finePointer = window.matchMedia('(hover: hover) and (pointer: fine) and (min-width: 1025px)')
@@ -96,7 +99,7 @@ export function mountStage(host: HTMLElement): StageHandle {
   const aim = { x: 0, y: 0 }
   const at = { x: 0, y: 0 }
   let written = ''
-  const pointerFx = () => finePointer.matches && !lite() && !reduced.matches
+  const pointerFx = () => finePointer.matches && !lite() && !calm()
   const onMove = (e: PointerEvent) => {
     if (e.pointerType !== 'mouse') return
     aim.x = (e.clientX / window.innerWidth) * 2 - 1
@@ -121,7 +124,7 @@ export function mountStage(host: HTMLElement): StageHandle {
 
   function pulseBeam() {
     beat.sample(performance.now(), beatNow)
-    const still = reduced.matches || lite()
+    const still = calm() || lite()
     // The beam swells with every beat, +-8% about 92% (a cosine: eased in and out, full on the beat). No flicker.
     const v = still || !beatNow.on ? -1 : 0.92 + 0.08 * Math.cos(beatNow.phase * Math.PI * 2)
     // Only when it has moved visibly (the beam is masked: each change repaints it).
@@ -137,7 +140,7 @@ export function mountStage(host: HTMLElement): StageHandle {
   let disposed = false
   let raf = 0
   let last = 0
-  const moving = () => !reduced.matches && !lite() && onScreen && !document.hidden && backdrop() > 0.01
+  const moving = () => !calm() && !lite() && onScreen && !document.hidden && backdrop() > 0.01
 
   function tick(now: number) {
     raf = 0
@@ -157,7 +160,7 @@ export function mountStage(host: HTMLElement): StageHandle {
   function idle() {
     host.toggleAttribute('data-idle', !onScreen || document.hidden || backdrop() <= 0.01)
     // Still (lite, reduced motion): the parallax let go, the beam steady.
-    if (reduced.matches || lite()) {
+    if (calm() || lite()) {
       at.x = at.y = 0
       write()
       beamLight?.style.removeProperty('opacity')

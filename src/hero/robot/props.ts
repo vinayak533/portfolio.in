@@ -75,8 +75,7 @@ export function buildHeadphones(kit: Kit, head: Group): Headphones {
   const graphite = mat(new MeshStandardMaterial({ color: PALETTE.graphite, roughness: 0.38, metalness: 0.55 }))
   const cushion = mat(new MeshStandardMaterial({ color: PALETTE.graphite, roughness: 0.85, metalness: 0.0 }))
   const ceramic = mat(new MeshStandardMaterial({ color: PALETTE.shell, roughness: 0.4, metalness: 0 }))
-  const rings = mat(new MeshBasicMaterial({ color: PALETTE.soft, toneMapped: false }))
-  rings.color.multiplyScalar(1.4)
+  const rings = mat(new MeshBasicMaterial({ color: PALETTE.accent, toneMapped: false }))
   const grille = mat(
     new ShaderMaterial({
       transparent: true,

@@ -22,18 +22,22 @@
   --chat-ink: #eceaf2;
   --chat-ink-2: rgb(236 234 242 / 0.78);
   --chat-ink-3: rgb(236 234 242 / 0.6);
-  --chat-online: #3ddc97;
+  --chat-online: #a78bfa;
   --chat-font: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --chat-ease: cubic-bezier(0.16, 1, 0.3, 1);
   --chat-size: 52px;
   --chat-right: max(1rem, calc(env(safe-area-inset-right) + 0.75rem));
   --chat-bottom: max(1rem, calc(env(safe-area-inset-bottom) + 0.75rem));
-  /* The dock (the robot's head in the corner, src/hero/robot/engine.ts DOCK_BOX): a 72 px box 16 px from the
-     edges (above the safe area) on phones, 96 px at 24 px on tablets, 112 px at 28 px on desktops. The launcher
-     button is centred in it, so its offsets are the margin plus half the difference. */
+  /* The dock (the robot's head in the corner, src/hero/robot/engine.ts DOCK_BOX): a 72 px box on phones, 96 px
+     on tablets, 112 px on desktops, 16 / 24 / 28 px from the bottom (above the safe area). Across, the head's
+     right edge sits on the page margin (the header's and the hero copy's, hero.css --h-margin): the box is that
+     margin less the head's inset in it (17% of the box). The launcher button is centred in the box, so its
+     offsets are those plus half the difference. */
   --dock-box: 72px;
   --dock-margin: 16px;
-  --launch-right: calc(env(safe-area-inset-right, 0px) + var(--dock-margin) + (var(--dock-box) - var(--chat-size)) / 2);
+  --page-margin: clamp(24px, 4.4vw, 64px);
+  --dock-side: calc(var(--page-margin) - 0.17 * var(--dock-box));
+  --launch-right: calc(env(safe-area-inset-right, 0px) + var(--dock-side) + (var(--dock-box) - var(--chat-size)) / 2);
   --launch-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--dock-margin) + (var(--dock-box) - var(--chat-size)) / 2);
   --chat-lift: 0px;
   --chat-shift: 0px;
@@ -182,7 +186,6 @@
 .chat-launcher-wrap[data-robot='away'] .chat-launcher { pointer-events: none; }
 .chat-launcher-wrap[data-robot='away'] .chat-launcher::after { animation: none; opacity: 0; }
 .chat-launcher-wrap[data-robot='away'] .chat-launcher::before { opacity: 0; }
-.chat-launcher-wrap[data-robot='away'] .chat-launcher-status,
 .chat-launcher-wrap[data-robot='away'] .chat-tooltip { opacity: 0; }
 /* The SVG head (no 3D robot) pops in as the 3D one would have landed. */
 .chat-launcher-wrap[data-robot='away']:not([data-gl]) .chat-launcher-icon--robot { opacity: 0; transform: translateY(8px) scale(0.6); }
@@ -191,20 +194,6 @@
 .chat-launcher-icon--close { opacity: 0; transform: rotate(-60deg) scale(0.6); }
 [data-open] > .chat-launcher .chat-launcher-icon--robot { opacity: 0; transform: translateY(6px) scale(0.5) rotate(25deg); }
 [data-open] > .chat-launcher .chat-launcher-icon--close { opacity: 1; transform: none; }
-
-/* Availability: a small green light above the right ear. */
-.chat-launcher-status {
-  position: absolute;
-  top: 6%;
-  right: 2%;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--chat-online);
-  box-shadow: 0 0 0 2.5px var(--base, #07070d), 0 0 8px rgb(61 220 151 / 0.6);
-  transition: opacity 0.3s;
-}
-[data-open] .chat-launcher-status { opacity: 0; }
 
 .chat-launcher-spinner {
   position: absolute;
@@ -453,7 +442,7 @@
   height: 7px;
   border-radius: 50%;
   background: var(--chat-online);
-  box-shadow: 0 0 6px rgb(61 220 151 / 0.7);
+  box-shadow: 0 0 6px rgb(167 139 250 / 0.7);
 }
 
 .chat-icon-btn {

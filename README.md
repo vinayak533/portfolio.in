@@ -44,7 +44,7 @@ The particle sampler fades the bottom 30% of the cutout into dust, so a chest-up
 
 ## Swap content
 
-Everything on the page is in `src/content.ts`: name, role, location and timezone, intro, availability, bio, facts, projects (title, tagline, stack, case study, outcomes, optional `media`), roles, and the contact details (email, GitHub, LinkedIn, résumé path), which the hero, the mobile menu, Contact, the form's fallback and the server's default inbox all read. `index.html`'s `<noscript>` repeats them by hand; `npm run test:content` fails if it drifts. Layouts measure text at runtime (the bio is split into real rendered lines), so lengths can change freely.
+Everything on the page is in `src/content.ts`: name, role, location and timezone, intro, bio, facts, projects (title, tagline, stack, case study, outcomes, optional `media`), roles, and the contact details (email, GitHub, LinkedIn, résumé path), which the hero, the mobile menu, Contact, the form's fallback and the server's default inbox all read. `index.html`'s `<noscript>` repeats them by hand; `npm run test:content` fails if it drifts. Layouts measure text at runtime (the bio is split into real rendered lines), so lengths can change freely.
 
 - **Résumé:** drop the PDF at `public/resume.pdf`. The hero, the mobile menu and Contact link it only once it is actually served (a HEAD request in `src/dom/useResumeUrl.ts`), so nothing points at a missing file.
 - **Social card:** `npm run social` writes `public/og.jpg` (1200×630, name and role over `scripts/source/night.webp`) and `public/apple-touch-icon.png`. Set `SITE_URL` at build time (or deploy on Vercel) so `og:image`, `og:url` and the canonical link are absolute.

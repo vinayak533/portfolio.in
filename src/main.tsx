@@ -1,3 +1,5 @@
+// First: ?freeze seeds Math.random before anything draws a number (src/hero/freeze.ts).
+import { FROZEN } from './hero/freeze'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 
@@ -30,7 +32,7 @@ useStore.getState().set({
   lite: initialLite(reducedMotion),
   heroTier: initialHeroTier(reducedMotion),
 })
-if (mode === 'webgl') watchFrameRate()
+if (mode === 'webgl' && !FROZEN) watchFrameRate()
 document.documentElement.dataset.mode = mode
 
 expect('fonts', 'hero', ...(mode === 'webgl' ? ['portrait', 'compile'] : ['still']))

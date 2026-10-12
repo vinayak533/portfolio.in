@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { site } from '../content'
+import { introHtml } from '../hero/introCopy'
+import { playIntro } from '../hero/introFx'
 import { useStore } from '../store/useStore'
 import '@fontsource/instrument-serif/latin-400-italic.css'
 
@@ -31,19 +33,22 @@ function useIntroOn() {
 export function HeroCopy({ part }: { part: Part }) {
   const on = useIntroOn()
   const scrim = part === 'scrim'
+  const ref = useRef<HTMLDivElement>(null)
+  // The entrance (src/hero/introFx.ts) plays with the text, once it is on; the scrim's copy is never seen.
+  useEffect(() => {
+    if (on && !scrim) playIntro(ref.current)
+  }, [on, scrim])
+  // The same markup as the pre-painted copy (src/hero/introCopy.ts), so the scrim's lays out like the text's.
+  const [html] = useState(() => ({ __html: introHtml(site, !scrim) }))
   return (
-    <div className={`hero-intro hero-intro--${part}`} data-hero-intro data-on={on || undefined} aria-hidden={scrim || undefined}>
-      {scrim ? (
-        <div className="hero-intro__name">Vinayak</div>
-      ) : (
-        <h1 className="hero-intro__name">
-          Vinayak<span className="sr-only"> K V</span>
-        </h1>
-      )}
-      <span className="hero-intro__rule" aria-hidden="true" />
-      <p className="hero-intro__tagline">{site.tagline}</p>
-      <p className="hero-intro__role">{site.role}</p>
-    </div>
+    <div
+      ref={ref}
+      className={`hero-intro hero-intro--${part}`}
+      data-hero-intro
+      data-on={on || undefined}
+      aria-hidden={scrim || undefined}
+      dangerouslySetInnerHTML={html}
+    />
   )
 }
 

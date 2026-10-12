@@ -74,31 +74,26 @@ export const site = {
   timezoneLabel: 'IST',
   intro:
     'I build LLM applications and agent systems: tool-using agents, retrieval with citations, and the FastAPI and Next.js backends behind them.',
-  availability: 'Open to AI/ML engineering roles',
-  portrait: {
-    /** Background-removed cutout produced by `npm run portrait`. */
-    cutout: '/portrait/about.cutout.png',
-    /** Lighter copy for the static / reduced-motion fallback. */
-    still: '/portrait/about.cutout.webp',
-    alt: 'Portrait of Vinayak K V',
-  },
 }
 
 export const about = {
   kicker: 'About',
-  heading: ['I work where', 'the demo ends.'],
-  /** Rendered as: <before><name><after>, with the name emphasised. */
-  intro: {
-    before: 'I’m ',
-    name: 'Vinayak',
-    after: ', an AI/ML engineer at AMnova Technologies in Kochi, building multi-agent workflows and LLM pipelines, and a HackerRank Orchestrate finalist.',
+  /** Two lines: the lead, then the accent (italic serif). */
+  heading: ['Driven by Curiosity,', 'Defined by Impact'],
+  body: 'I enjoy exploring emerging AI technologies, solving challenging engineering problems, and turning experimentation into systems that deliver measurable value. Driven by continuous learning and thoughtful design, I strive to build technology that goes beyond innovation to make a meaningful difference.',
+  /**
+   * The portrait: the background-removed cutout (`npm run portrait`) the 3D crystals assemble into, and its
+   * sharp renditions (`npm run about-photo`: AVIF and WebP at each width, never upscaled) shown over the
+   * assembled crystals, registered to them, so the settled photo is drawn at the screen's own resolution.
+   */
+  photo: {
+    cutout: '/portrait/about.cutout.webp',
+    base: '/portrait/about',
+    widths: [800, 1201],
+    width: 1201,
+    height: 1214,
+    alt: 'Portrait of Vinayak K V',
   },
-  /** One paragraph per entry. */
-  body: [
-    'Anyone can make a model look smart for a minute. I build what comes after.',
-    'Agents, RAG, and LLM apps, wired into real data and real backends.',
-  ],
-  closing: 'That’s where a prototype becomes a product.',
 }
 
 export const projects: Project[] = [
@@ -279,7 +274,7 @@ export const experience: Role[] = [
  */
 export const contact = {
   heading: 'Let’s build something real',
-  lede: ['Hiring for an AI/ML or backend role?', 'Email me or send a message below.'],
+  lede: 'Email me or send a message below.',
   email: 'vinayakkv2004@gmail.com',
   links: [
     { label: 'GitHub', href: 'https://github.com/vinayak533' },

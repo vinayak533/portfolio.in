@@ -23,13 +23,16 @@ import beamVert from '../shaders/portrait/beam.vert'
 import beamFrag from '../shaders/portrait/beam.frag'
 import { visibility } from '../../theme'
 import { colors, world } from '../world'
-import { site } from '../../content'
+import { about } from '../../content'
 import { signals, useStore } from '../../store/useStore'
 import { tier } from '../../core/quality'
 import { track, complete } from '../../core/loading'
-import { damp, gsap, smoothstep } from '../../core/clock'
+import { damp, smoothstep } from '../../core/clock'
 import { useAct } from '../useAct'
 import { fit } from '../cameraPath'
+
+/** The locked crystals' depth in the portrait's local space (crystal.vert: z eased 80% toward 0.7). */
+const LOCKED_Z = 0.6
 
 /**
  * The portrait is never shown flat: tens of thousands of instanced crystals
@@ -38,14 +41,14 @@ import { fit } from '../cameraPath'
  */
 export function PortraitScan() {
   const quality = useStore((s) => (s.lite ? 'low' : s.quality))
-  const duotone = useStore((s) => s.duotone)
   const [sample, setSample] = useState<PortraitSample | null>(null)
   const { ref, presence } = useAct(visibility.about)
   const camera = useThree((s) => s.camera) as PerspectiveCamera
+  const size = useThree((s) => s.size)
 
   useEffect(() => {
     let alive = true
-    track('portrait', samplePortrait(site.portrait.cutout, tier[quality].particles))
+    track('portrait', samplePortrait(about.photo.cutout, tier[quality].particles))
       .then((s) => alive && setSample(s))
       .catch((e) => {
         console.warn('[portrait] sampling failed', e)
@@ -69,7 +72,6 @@ export function PortraitScan() {
           uPointer: { value: new Vector3(99, 99, 0) },
           uPointerStrength: { value: 0 },
           uIdle: { value: 0 },
-          uDuotone: { value: 0 },
           uOpacity: { value: 1 },
           uAccent: { value: colors.accent },
           uInk: { value: colors.ink },
@@ -134,11 +136,8 @@ export function PortraitScan() {
     return { m, g: new PlaneGeometry(1, 1) }
   }, [])
 
-  useEffect(() => {
-    gsap.to(material.uniforms.uDuotone, { value: duotone ? 1 : 0, duration: 1.4, ease: 'power3.inOut' })
-  }, [duotone, material])
-
   const pointer = useMemo(() => ({ local: new Vector3(99, 99, 0), strength: 0, ndc: new Vector3(), dir: new Vector3() }), [])
+  const corner = useMemo(() => new Vector3(), [])
 
   useFrame((state, dt) => {
     const g = ref.current
@@ -185,6 +184,27 @@ export function PortraitScan() {
     pointer.strength = damp(pointer.strength, target, target > pointer.strength ? 6 : 2.2, dt)
     u.uPointer.value.copy(pointer.local)
     u.uPointerStrength.value = pointer.strength
+
+    // Where the settled portrait is on screen, for its sharp copy (About.tsx): the photo plane's corners at the
+    // locked crystals' depth, and whether they are all locked and still (the scan and the shimmer pass done, no
+    // cursor scatter reaching the photo).
+    const out = signals.aboutPhoto
+    g.updateMatrixWorld()
+    const hw = sample.width / 2
+    const hh = sample.height / 2
+    corner.set(-hw, hh, LOCKED_Z).applyMatrix4(g.matrixWorld).project(camera)
+    const x0 = (corner.x * 0.5 + 0.5) * size.width
+    const y0 = (-corner.y * 0.5 + 0.5) * size.height
+    corner.set(hw, -hh, LOCKED_Z).applyMatrix4(g.matrixWorld).project(camera)
+    out.x = x0
+    out.y = y0
+    out.w = (corner.x * 0.5 + 0.5) * size.width - x0
+    out.h = (-corner.y * 0.5 + 0.5) * size.height - y0
+    const dx = Math.max(Math.abs(pointer.local.x) - hw, 0)
+    const dy = Math.max(Math.abs(pointer.local.y) - hh, 0)
+    const reach = Math.exp(-(dx * dx + dy * dy) * 2.6) * pointer.strength
+    out.settled = signals.scan >= 0.999 && (signals.shimmer <= 0 || signals.shimmer >= 0.999) && reach < 0.03 && presence.current > 0.98
+    out.frame = performance.now()
 
     // Beam follows the exact same mapping as the vertex shader.
     const scan = signals.scan

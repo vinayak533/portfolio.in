@@ -18,6 +18,7 @@
  */
 import { gpuName, isTouchDevice } from '../core/quality'
 import { isLowEndDevice } from '../core/autoLite'
+import { FROZEN } from './freeze'
 
 export type HeroTier = 'high' | 'medium' | 'low'
 
@@ -44,9 +45,11 @@ function connection(): Connection {
 
 /** The tier the device's own signals point to (before any frame has been measured). */
 export function initialHeroTier(reducedMotion: boolean): HeroTier {
-  if (import.meta.env.DEV) {
+  // ?tier= forces one in development, and with ?freeze (the baselines), where it defaults to HIGH.
+  if (import.meta.env.DEV || FROZEN) {
     const forced = new URLSearchParams(location.search).get('tier')
     if (forced === 'high' || forced === 'medium' || forced === 'low') return forced
+    if (FROZEN) return 'high'
   }
   const c = connection()
   if (reducedMotion || c.saveData || c.effectiveType === 'slow-2g' || c.effectiveType === '2g') return 'low'
@@ -67,6 +70,7 @@ export function lower(t: HeroTier): HeroTier {
  * `live` says whether the hero is being drawn (the probe waits for it).
  */
 export function watchHeroTier(get: () => HeroTier, set: (t: HeroTier) => void, live: () => boolean) {
+  if (FROZEN) return () => {}
   let stopped = false
   const nav = navigator as Navigator & { getBattery?: () => Promise<{ charging: boolean; level: number }> }
   nav

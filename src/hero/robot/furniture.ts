@@ -428,7 +428,8 @@ export function buildFurniture(kit: Kit): Furniture {
   lid.add(screenLight)
   // The keyboard's backlight, under the fingers and wrists.
   const keyLight = new PointLight(PALETTE.accent, 0, 0.45, 2)
-  keyLight.position.set(0, top + 0.012, L.keysZ)
+  // (Far enough above the caps that none of them takes a near-white hot spot.)
+  keyLight.position.set(0, top + 0.03, L.keysZ)
   laptop.add(keyLight)
   // The screen's light on the tabletop round the laptop: in the table's frame, clipped to the top
   // (model.ts sets uOff to the laptop's place on it), brightest along the laptop's front.

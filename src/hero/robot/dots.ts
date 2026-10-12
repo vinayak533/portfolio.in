@@ -320,6 +320,9 @@ export function createDais(): ShaderMaterial {
       uR: { value: DAIS_R },
       // The beat (0..1) on the dots.
       uPulse: { value: 0 },
+      // The inflow vortex's swallow light on the outer ring (terrain.ts): its angle (disc frame) and gain (0 off).
+      uArc: { value: 0 },
+      uArcGain: { value: 0 },
     },
     vertexShader: /* glsl */ `
       varying vec2 vP;
@@ -333,6 +336,8 @@ export function createDais(): ShaderMaterial {
       uniform float uFade;
       uniform float uR;
       uniform float uPulse;
+      uniform float uArc;
+      uniform float uArcGain;
       varying vec2 vP;
       const float R0 = ${R0.toFixed(3)};
       const float DR = ${DR.toFixed(3)};
@@ -356,6 +361,11 @@ export function createDais(): ShaderMaterial {
           // Under 30% at the centre, 16% at the rim (the outer ring a touch brighter, as an edge).
           float op = mix(0.27, 0.15, k / LAST) + (k == LAST ? 0.06 : 0.0);
           op *= 1.0 + 0.1 * uPulse;
+          // The swallow light: a soft ~70 degree arc on the outer ring, turning with the vortex's arms.
+          if (k == LAST && uArcGain > 0.0) {
+            float da = atan(sin(th - uArc), cos(th - uArc));
+            op *= 1.0 + uArcGain * exp(-da * da / ${(2 * (70 * Math.PI / 180 / 2.355) ** 2).toFixed(4)});
+          }
           a = dotA * op + exp(-d * d / (size * size * 9.0)) * op * 0.25;
         }
         // A soft violet glow lifting off the disc's surface.
