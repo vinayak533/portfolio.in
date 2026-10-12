@@ -1,13 +1,14 @@
 /**
  * The chat assistant's answer engine. No language model: a question is matched
- * against topics built from src/content.ts (plus the hand-written entries in
- * src/assistant.ts) and answered only with what those say. Anything it can't
- * ground there gets an honest "not covered here" and the way to ask directly.
+ * against topics built from src/content.ts and the knowledge in src/assistant.ts,
+ * and answered only with what those say. Anything it can't ground there gets an
+ * honest "not something I have details on" and the way to ask directly.
  *
  * Pure: no DOM, no network, deterministic. Tested by scripts/assistant.test.mjs.
  */
 import { about, captionParts, contact, experience, projects, site, type Project, type Role } from '../content'
-import { assistant, type FaqEntry } from '../assistant'
+import { assistant, type Certification, type Doc, type FaqEntry, type MoreProject, type ProjectExtra } from '../assistant'
+import { toPlainText } from './markdown'
 
 export interface AskContext {
   /** Project the previous reply was about, so "what stack did it use?" works. */
@@ -30,7 +31,18 @@ export interface Reply {
   suggestions: string[]
   /** False when nothing in the knowledge base matched (the honest fallback). */
   known: boolean
+  /** What the engine did to answer, as tool-call steps: shown as the "thinking" trace. */
+  trace: TraceStep[]
 }
+
+/** One step of the reasoning trace, e.g. { tool: 'read_source', detail: 'Loom.ai case study' }. */
+export interface TraceStep {
+  tool: 'classify_intent' | 'search_knowledge' | 'read_source' | 'check_grounding' | 'compose_answer'
+  detail: string
+}
+
+/** A reply before its trace is written, with what was asked and what was read to answer it. */
+type Draft = Omit<Reply, 'trace'> & { intent?: string; sources?: string[]; missed?: boolean }
 
 /* ------------------------------------------------------------------ text */
 
@@ -104,21 +116,47 @@ const score = (q: Question, k: Keys) => k.reduce((s, p) => (contains(q.w, p) ? s
 /* ---------------------------------------------------------------- helpers */
 
 const projectById = new Map(projects.map((p) => [p.id, p]))
+const moreById = new Map(assistant.moreProjects.map((p) => [p.id, p]))
 const caseStudy = (p: Project) => `[Open the ${p.title} case study](#work-${p.id})`
 const list = (items: string[]) => items.map((i) => `- ${i}`).join('\n')
 const mail = `[${contact.email}](mailto:${contact.email})`
 const link = (label: string) => contact.links.find((l) => l.label === label)
+const image = (i: { alt: string; src: string }) => `![${i.alt}](${i.src})`
+const docLinks = (docs: Doc[]) => docs.map((d) => `[${d.label}](${d.href})`).join(' · ')
+
+const extra = (p: Project): ProjectExtra => assistant.projectExtras[p.id] ?? {}
+const repo = (p: Project) => p.links?.find((l) => l.label === 'GitHub')?.href
+/** The project's name, linked to its repository when it has one. */
+const named = (p: Project) => (repo(p) ? `[**${p.title}**](${repo(p)})` : `**${p.title}**`)
+const namedMore = (m: MoreProject) => `[**${m.title}**](${m.href})`
 
 /** Echoed visitor text, stripped of anything Markdown would act on. */
 const plain = (s: string) => s.replace(/[^\p{L}\p{N} .+#/-]/gu, '').replace(/\s+/g, ' ').trim()
 
 const currentRole = experience.find((r) => /present/i.test(r.end)) ?? experience[0]
+const earlierRoles = experience.filter((r) => r !== currentRole)
 const roleLine = (r: Role) => `**${r.title}**, ${r.company} (${r.start} – ${r.end})`
+const roleInfo = (r: Role) => assistant.roles[r.company]
 
-/** Every sentence the site says about Vinayak's work, with where it came from. */
+/** "remote, or in Bangalore, Kochi or Hyderabad" */
+const workPlaces = (() => {
+  const [first, ...rest] = assistant.profile.workLocations
+  const cities = rest.length > 1 ? `${rest.slice(0, -1).join(', ')} or ${rest[rest.length - 1]}` : rest[0]
+  return cities ? `${first}, or in ${cities}` : first
+})()
+
+const contactBlock = list([
+  `**Email:** ${mail}`,
+  ...contact.links.map((l) => `**${l.label}:** [${l.href.replace(/^https?:\/\/(www\.)?/, '')}](${l.href})`),
+])
+
+/** Every sentence the assistant knows about Vinayak's work, with where it came from. */
 interface Evidence {
   source: string
+  /** A project in content.ts, so the next question can say "it". */
   project?: string
+  /** The project's title, for a "Tell me about …" follow-up. */
+  title?: string
   text: string
   w: string[]
 }
@@ -126,20 +164,40 @@ interface Evidence {
 const sentences = (s: string) =>
   s
     .replace(/\n/g, ' ')
-    .split(/(?<=[.!?])\s+(?=[A-Z0-9“"])/)
+    .split(/(?<=[.!?])\s+(?=[A-Z0-9“"*])/)
     .map((t) => t.trim())
     .filter(Boolean)
 
 const corpus: Evidence[] = [
   ...projects.flatMap((p) => {
     const { lead, body } = captionParts(p.caption)
-    const texts = [p.tagline, lead, ...sentences(body), ...sentences(p.summary), ...sentences(p.problem), ...p.approach.flatMap(sentences)]
+    const x = extra(p)
+    const texts = [
+      p.tagline,
+      lead,
+      ...sentences(body),
+      ...sentences(p.summary),
+      ...sentences(p.problem),
+      ...p.approach.flatMap(sentences),
+      ...(x.details ?? []).flatMap(sentences),
+      ...(x.metrics ?? []),
+    ]
     return [
-      ...texts.filter(Boolean).map((text) => ({ source: p.title, project: p.id, text })),
-      { source: p.title, project: p.id, text: `Stack: ${p.tags.join(', ')}.` },
+      ...texts.filter(Boolean).map((text) => ({ source: p.title, project: p.id, title: p.title, text })),
+      { source: p.title, project: p.id, title: p.title, text: `Stack: ${[...p.tags, ...(x.stack ?? [])].join(', ')}.` },
     ]
   }),
-  ...experience.map((r) => ({ source: `${r.company} (${r.title})`, text: r.summary })),
+  // Roles before the projects the page doesn't show: on a tie, work evidence is listed first.
+  ...experience.flatMap((r) =>
+    [r.summary, ...(roleInfo(r)?.details ?? [])].map((text) => ({ source: `${r.company} (${r.title})`, text })),
+  ),
+  ...assistant.moreProjects.flatMap((m) =>
+    [m.tagline, ...(m.details ?? []).flatMap(sentences), `Stack: ${m.stack.join(', ')}.`].map((text) => ({ source: m.title, title: m.title, text })),
+  ),
+  ...assistant.skillGroups.map((g) => ({ source: 'Skills', text: `${g.label}: ${g.items.join(', ')}.` })),
+  ...assistant.achievements.map((text) => ({ source: 'Achievements', text })),
+  ...assistant.certifications.map((c) => ({ source: `${c.issuer} certificate`, text: `Certified: ${c.title}, ${c.issuer}${c.date ? ` (${c.date})` : ''}. ${c.covers}` })),
+  ...assistant.education.map((text) => ({ source: 'Education', text })),
   { source: 'Intro', text: site.intro },
   { source: 'About', text: about.body },
 ].map((e) => ({ ...e, w: words(e.text) }))
@@ -155,13 +213,16 @@ function evidence(terms: string[]): Evidence[] {
     const s = phrases.reduce((n, p, i) => (contains(e.w, p) ? n + (i === 0 ? 2 : 1) : n), 0)
     if (s && s > (best.get(e.source)?.s ?? 0)) best.set(e.source, { e, s })
   }
-  return [...best.values()].map((b) => b.e)
+  return [...best.values()].sort((a, b) => b.s - a.s).map((b) => b.e)
 }
 
-const clip = (s: string, max = 220) => (s.length <= max ? s : `${s.slice(0, max).replace(/\s+\S*$/, '')}…`)
+const clip = (s: string, max = 220) => {
+  const t = s.replace(/\*\*/g, '')
+  return t.length <= max ? t : `${t.slice(0, max).replace(/\s+\S*$/, '')}…`
+}
 
 /** Tag names exactly as the site writes them, for display. */
-const allTags = [...new Set(projects.flatMap((p) => p.tags))]
+const allTags = [...new Set([...projects.flatMap((p) => [...p.tags, ...(extra(p).stack ?? [])]), ...assistant.moreProjects.flatMap((m) => m.stack)])]
 const knownNames = [...allTags, ...assistant.skillGroups.flatMap((g) => g.items)]
 
 /* --------------------------------------------------------------- projects */
@@ -169,6 +230,7 @@ const knownNames = [...allTags, ...assistant.skillGroups.flatMap((g) => g.items)
 const projectKeys = new Map<string, Keys>(
   projects.map((p) => [p.id, keys(p.title, p.id.replace(/-/g, ' '), ...(assistant.projectAliases[p.id] ?? []))]),
 )
+const moreKeys = assistant.moreProjects.map((m) => ({ m, k: keys(m.title, ...m.aliases) }))
 
 const ORDINALS: [Keys, (n: number) => number][] = [
   [keys('first', '1st', 'top one'), () => 0],
@@ -193,16 +255,31 @@ function mentionedProjects(q: Question, ctx: AskContext): Project[] {
   return []
 }
 
+/** A project the page doesn't show, named outright. */
+function mentionedMore(q: Question): MoreProject | null {
+  let best: MoreProject | null = null
+  let top = 0
+  for (const { m, k } of moreKeys) {
+    const s = score(q, k)
+    if (s > top) {
+      top = s
+      best = m
+    }
+  }
+  return best
+}
+
 type Facet = 'overview' | 'stack' | 'how' | 'problem' | 'results' | 'links' | 'role' | 'more'
 
 /** In tie-break order: the broad "stack" words (model, use) come last. */
 const FACETS: [Facet, Keys][] = [
-  ['links', keys('link', 'github', 'repo', 'repository', 'source code', 'code', 'demo', 'live', 'url', 'try it', 'see it', 'website')],
+  ['links', keys('link', 'github', 'repo', 'repository', 'source code', 'code', 'demo', 'live', 'url', 'try it', 'see it', 'website', 'doc', 'docs', 'documentation')],
   ['how', keys('how does it work', 'how it work', 'how doe', 'how did', 'how was', 'how is', 'approach', 'architecture', 'pipeline', 'under the hood', 'implementation', 'implemented', 'design', 'feature')],
   ['problem', keys('problem', 'why', 'motivation', 'purpose', 'goal', 'solve', 'what for', 'point of', 'use case')],
-  ['results', keys('result', 'metric', 'number', 'impact', 'outcome', 'performance', 'stat', 'scale', 'accuracy', 'benchmark', 'at a glance')],
+  ['results', keys('result', 'metric', 'number', 'impact', 'outcome', 'performance', 'stat', 'scale', 'accuracy', 'benchmark', 'at a glance', 'latency', 'auc')],
   ['role', keys('role', 'solo', 'team', 'who built', 'alone', 'contribution', 'his part', 'did he build', 'original', 'open source', 'credit', 'own work', 'his own', 'himself', 'from scratch', 'tutorial')],
   ['more', keys('more', 'detail', 'deeper', 'elaborate', 'explain', 'expand', 'deep dive', 'case study', 'everything', 'full story')],
+  ['overview', keys('look like', 'screenshot', 'screen shot', 'interface', 'picture', 'image')],
   ['stack', keys('stack', 'tech stack', 'tech', 'technology', 'built with', 'made with', 'tool', 'framework', 'language', 'library', 'model', 'what does it use', 'what did it use', 'use', 'used', 'using')],
 ]
 
@@ -221,25 +298,28 @@ function facetOf(q: Question): Facet | null {
 
 const METRIC_WORDS = keys('accuracy', 'benchmark', 'f1', 'auc', 'precision', 'recall', 'latency', 'roc')
 
-function projectReply(p: Project, facet: Facet, q: Question): Reply {
+function projectReply(p: Project, facet: Facet, q: Question): Draft {
   const { lead, body } = captionParts(p.caption)
+  const x = extra(p)
   const others = projects.filter((o) => o.id !== p.id)
   const base = { topic: `project:${p.id}`, project: p.id, known: true }
-  const facts = list(p.facts.map((f) => `**${f.value}**: ${f.label}`))
-  const links = p.links?.length ? list(p.links.map((l) => `[${l.label}](${l.href})`)) : ''
+  const facts = list([...(x.metrics ?? []), ...p.facts.map((f) => `**${f.value}**: ${f.label}`)])
+  const links = p.links?.length ? list([...p.links.map((l) => `[${l.label}](${l.href})`), ...(x.docs ?? []).map((d) => `[${d.label}](${d.href})`)]) : ''
+  const docs = x.docs?.length ? `**Docs:** ${docLinks(x.docs)}` : ''
   const meta = `*${p.role} · ${p.year}*`
+  const stack = [...p.tags, ...(x.stack ?? []).filter((s) => !p.tags.includes(s))]
 
   switch (facet) {
     case 'stack':
       return {
         ...base,
-        text: `**${p.title}** is built with:\n\n${list(p.tags.map((t) => `**${t}**`))}\n\n${meta}`,
+        text: `${named(p)} is built with:\n\n${list(stack.map((t) => `**${t}**`))}\n\n${meta}`,
         suggestions: [`How does ${p.title} work?`, `Is ${p.title} on GitHub?`, 'What’s his tech stack?'],
       }
     case 'how':
       return {
         ...base,
-        text: `**How ${p.title} works**\n\n${list(p.approach)}\n\n${caseStudy(p)}`,
+        text: [`**How ${p.title} works**`, list([...p.approach, ...(x.details ?? [])]), docs, caseStudy(p)].filter(Boolean).join('\n\n'),
         suggestions: [`What problem does ${p.title} solve?`, `What stack does ${p.title} use?`, `Tell me about ${others[0].title}`],
       }
     case 'problem':
@@ -250,7 +330,7 @@ function projectReply(p: Project, facet: Facet, q: Question): Reply {
       }
     case 'results': {
       const askedMetric = METRIC_WORDS.some((k) => contains(q.w, k))
-      const note = askedMetric ? '\n\nThe case study doesn’t report other metrics such as accuracy; Vinayak can share those directly.' : ''
+      const note = askedMetric && !x.metrics?.length ? '\n\nI don’t have other metrics such as accuracy for it; Vinayak can share those directly.' : ''
       return {
         ...base,
         text: `**${p.title} at a glance**\n\n${facts}${note}`,
@@ -262,22 +342,22 @@ function projectReply(p: Project, facet: Facet, q: Question): Reply {
         ...base,
         text: links
           ? `**${p.title} links**\n\n${links}\n\n${caseStudy(p)}`
-          : `There’s no public link for **${p.title}** on this site. ${caseStudy(p)}, or ask Vinayak at ${mail}.`,
+          : `There’s no public link for **${p.title}**. ${caseStudy(p)}, or ask Vinayak at ${mail}.`,
         suggestions: [`How does ${p.title} work?`, 'Show me his projects'],
       }
     case 'role':
       return {
         ...base,
-        text: `**${p.title}**: ${p.role}, ${p.year}.${lead ? `\n\n${lead}` : ''}${p.id === 'health' ? `\n\n${body}` : ''}`,
+        text: `${named(p)}: ${p.role}, ${p.year}.${lead ? `\n\n${lead}` : ''}${p.id === 'health' ? `\n\n${body}` : ''}`,
         suggestions: [`How does ${p.title} work?`, `What stack does ${p.title} use?`],
       }
     case 'more':
       return {
         ...base,
         text: [
-          `**${p.title}**: ${p.summary}`,
+          `${named(p)}: ${p.summary}`,
           `**The problem:** ${p.problem}`,
-          `**Approach**\n\n${list(p.approach)}`,
+          `**Approach**\n\n${list([...p.approach, ...(x.details ?? [])])}`,
           `**At a glance**\n\n${facts}`,
           links ? `**Links**\n\n${links}` : '',
           caseStudy(p),
@@ -289,19 +369,96 @@ function projectReply(p: Project, facet: Facet, q: Question): Reply {
     default:
       return {
         ...base,
-        text: `**${p.title}**: ${p.tagline}\n\n${lead ? `${lead} ` : ''}${body}\n\n${meta} · ${p.tags.join(', ')}\n\n${caseStudy(p)}`,
+        text: [
+          `${named(p)}: ${p.tagline}`,
+          x.image ? image(x.image) : '',
+          `${lead ? `${lead} ` : ''}${body}`,
+          `${meta} · ${stack.join(', ')}`,
+          caseStudy(p),
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
         suggestions: [`How does ${p.title} work?`, p.links?.length ? `Is ${p.title} on GitHub?` : `What stack does ${p.title} use?`, 'Show me his projects'],
       }
   }
 }
 
-function compareReply(ps: Project[]): Reply {
+function moreReply(m: MoreProject): Draft {
+  return {
+    text: [`${namedMore(m)}${m.year ? ` (${m.year})` : ''}: ${m.tagline}`, m.details?.length ? list(m.details) : '', `*Stack:* ${m.stack.join(', ')}`]
+      .filter(Boolean)
+      .join('\n\n'),
+    topic: `more:${m.id}`,
+    suggestions: m.flagship ? ['Show me his best project', 'Why should I hire him?'] : ['Show me his projects', 'Show me his best project'],
+    known: true,
+  }
+}
+
+function compareReply(ps: Project[]): Draft {
   return {
     text: `${ps
-      .map((p) => `**${p.title}** (${p.year}, ${p.role.toLowerCase()}): ${p.tagline}\n\n*Stack:* ${p.tags.join(', ')}`)
+      .map((p) => `${named(p)} (${p.year}, ${p.role.toLowerCase()}): ${p.tagline}\n\n*Stack:* ${p.tags.join(', ')}`)
       .join('\n\n')}\n\nAsk about either one for the details.`,
     topic: 'compare',
     suggestions: ps.map((p) => `How does ${p.title} work?`).slice(0, 3),
+    known: true,
+  }
+}
+
+/* ---------------------------------------------------------- certifications */
+
+/** Words that make a question about a credential rather than a skill or a project. */
+const CERT_WORDS = keys('certificate', 'certification', 'cert', 'certified', 'badge', 'credential', 'course', 'courses')
+const certKeys = assistant.certifications.map((c) => ({ c, k: keys(c.title, ...c.keys) }))
+const certLine = (c: Certification) =>
+  `**${c.title}**: ${c.issuer}${c.date ? `, ${c.date}` : ''}${c.verify?.length ? ` · ${docLinks(c.verify)}` : ''}`
+
+/**
+ * The certificates a question asks about: the best-matching one, or all that tie for best
+ * ("IBM certificates", "SQL certification"). Null unless it names a credential and something matches.
+ */
+function mentionedCerts(q: Question): Certification[] | null {
+  if (!CERT_WORDS.some((k) => contains(q.w, k))) return null
+  let top = 0
+  let hits: Certification[] = []
+  for (const { c, k } of certKeys) {
+    const s = score(q, k)
+    if (s > top) {
+      top = s
+      hits = [c]
+    } else if (s && s === top) hits.push(c)
+  }
+  return hits.length ? hits : null
+}
+
+function certReply(c: Certification): Draft {
+  return {
+    text: [
+      `**${c.title}**, ${c.issuer}${c.date ? ` · ${c.date}` : ''}`,
+      image(c.image),
+      c.covers,
+      c.verify?.length ? `**Verify:** ${docLinks(c.verify)}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n\n'),
+    topic: `cert:${c.id}`,
+    suggestions: ['Show all his certifications', 'What are his achievements?'],
+    known: true,
+    intent: `certificate · ${c.title}`,
+    sources: [`${c.issuer} certificate`],
+  }
+}
+
+function certListReply(cs: Certification[], heading: string): Draft {
+  const example = cs.find((c) => c.id === 'aws-genai') ?? cs[0]
+  return {
+    text: [
+      `**${heading}**`,
+      list(cs.map(certLine)),
+      `Ask to see any one of them, for example “Show his ${example.issuer.split(' ')[0]} certificate”.`,
+    ].join('\n\n'),
+    topic: 'certifications',
+    suggestions: ['Show his AWS certificate', 'Show his HackerRank SQL certificate', 'Show his TensorFlow certificate'],
     known: true,
   }
 }
@@ -327,27 +484,33 @@ function askedTech(raw: string): string | null {
   return term
 }
 
-function techReply(term: string): Reply {
+function techReply(term: string): Draft {
   const key = words(term).join(' ')
   const display = knownNames.find((t) => words(t).join(' ') === key) ?? (term.length <= 4 ? term.toUpperCase() : term[0].toUpperCase() + term.slice(1))
   const terms = [term, ...(assistant.techSynonyms[term.toLowerCase()] ?? assistant.techSynonyms[key] ?? [])]
   const found = evidence(terms)
   if (!found.length) {
+    const related = assistant.relatedSkills[term.toLowerCase()] ?? assistant.relatedSkills[key]
+    const closest = related ? ` The closest thing he works with is **${related}**.` : ''
     return {
-      text: `**${display}** isn’t mentioned in any of the projects or roles on this site, so I can’t say. Vinayak can answer that directly at ${mail}.`,
+      text: `**${display}** isn’t mentioned in anything I know about his work, so I won’t claim it.${closest} Vinayak can answer that directly at ${mail}.`,
       topic: 'tech',
       suggestions: ['What’s his tech stack?', 'Show me his projects'],
       known: true,
+      intent: `skill check · ${display}`,
+      missed: true,
     }
   }
   const top = found.slice(0, 3)
-  const first = top.find((e) => e.project)
+  const first = top.find((e) => e.title)
   return {
     text: `Yes. **${display}** shows up in his work:\n\n${list(top.map((e) => `**${e.source}**: ${clip(e.text)}`))}`,
     topic: 'tech',
-    project: first?.project,
-    suggestions: [first ? `Tell me about ${projectById.get(first.project!)!.title}` : 'Show me his projects', 'What’s his tech stack?'],
+    project: top.find((e) => e.project)?.project,
+    suggestions: [first ? `Tell me about ${first.title}` : 'Show me his projects', 'What’s his tech stack?'],
     known: true,
+    intent: `skill check · ${display}`,
+    sources: found.map((e) => e.source),
   }
 }
 
@@ -365,8 +528,30 @@ interface Topic {
   keys: Keys
   /** Added to the score, to rank broad topics below specific ones. */
   bias?: number
-  reply: (q: Question, ctx: AskContext) => Omit<Reply, 'topic' | 'known'> & { topic?: string }
+  reply: (q: Question, ctx: AskContext) => Omit<Draft, 'topic' | 'known'> & { topic?: string }
 }
+
+const flagship = [
+  ...projects.filter((p) => extra(p).flagship).map((p) => `${named(p)}: ${p.tagline}`),
+  ...assistant.moreProjects.filter((m) => m.flagship).map((m) => `${namedMore(m)}: ${m.tagline}`),
+]
+const otherProjects = [
+  ...projects.filter((p) => !extra(p).flagship).map((p) => `${named(p)}: ${p.tagline}`),
+  ...assistant.moreProjects.filter((m) => !m.flagship && !m.minor).map((m) => `${namedMore(m)}: ${m.tagline}`),
+]
+/** Small apps and notebooks: one line of names. */
+const minorProjects = assistant.moreProjects.filter((m) => m.minor).map((m) => `[${m.title}](${m.href})`)
+
+const loom = projectById.get('loom')
+const lazyhire = projectById.get('lazyhire')
+const predictlab = projectById.get('predictlab')
+const inforge = moreById.get('inforge')
+const stockAgents = moreById.get('stock')
+const nameOf = (p?: Project) => (p ? named(p) : '')
+const nameOfMore = (m?: MoreProject) => (m ? namedMore(m) : '')
+const COUNT = ['none', 'one', 'two', 'three', 'four']
+/** "a, b and c" */
+const andList = (xs: string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}` : (xs[0] ?? ''))
 
 const TOPICS: Topic[] = [
   {
@@ -406,59 +591,137 @@ const TOPICS: Topic[] = [
   },
   {
     id: 'self',
-    keys: keys('are you', 'who are you', 'what are you', 'are you a bot', 'are you ai', 'are you human', 'are you real', 'how do you work', 'chatgpt', 'gpt', 'language model', 'llm powered', 'your name', 'bot', 'assistant'),
+    keys: keys('are you', 'who are you', 'what are you', 'are you a bot', 'are you ai', 'are you human', 'are you real', 'are you vinayak', 'is this vinayak', 'am i talking to', 'talking to vinayak', 'how do you work', 'chatgpt', 'gpt', 'language model', 'llm powered', 'your name', 'bot', 'assistant'),
     reply: () => ({
-      text: assistant.self,
+      text: `${assistant.self}\n\nFor a real conversation, email him at ${mail}.`,
       suggestions: assistant.starters.slice(0, 3),
     }),
   },
   {
+    id: 'off-topic',
+    keys: keys('ignore previous', 'ignore your', 'ignore all', 'ignore the above', 'system prompt', 'your prompt', 'your instruction', 'your rules', 'reveal your', 'pretend', 'role play', 'roleplay', 'act as', 'jailbreak', 'homework', 'assignment', 'write me', 'write code for me', 'write an essay', 'write a poem', 'write a story', 'fix my code', 'debug my', 'help me with my', 'translate'),
+    bias: 1.5,
+    reply: () => ({
+      text: 'I’m here to talk about Vinayak’s work, so I’ll leave that one. Happy to go deeper on any of his projects.',
+      suggestions: ['Show me his best project', 'Show me his projects'],
+    }),
+  },
+  {
     id: 'about',
-    keys: keys('who is', 'who is he', 'about him', 'about vinayak', 'tell me about', 'introduce', 'introduction', 'background', 'bio', 'summary', 'profile', 'overview', 'what does he do', 'what doe he do', 'work on', 'what is he', 'yourself', 'himself', 'vinayak'),
+    keys: keys('who is', 'who is he', 'about him', 'about vinayak', 'tell me about', 'introduce', 'introduction', 'background', 'bio', 'summary', 'profile', 'overview', 'what does he do', 'what doe he do', 'work on', 'what is he', 'yourself', 'himself', 'vinayak', '30 second', 'in short', 'elevator pitch'),
     bias: -0.25,
     reply: () => ({
-      text: `**${site.name}** is an ${site.role} based in ${site.location}.\n\nIn his words: “${site.intro}”\n\nHe’s currently ${roleLine(currentRole)}.`,
-      suggestions: ['Show me his projects', 'What’s his experience?', 'What’s his tech stack?'],
+      text: [
+        `**${site.name}** is an ${site.role} at **${currentRole.company}** in ${site.location}.`,
+        image(assistant.images.profile),
+        assistant.profile.pitch,
+        list(assistant.profile.proof),
+        '*Want to see his best project?*',
+      ].join('\n\n'),
+      suggestions: ['Show me his best project', 'Why should I hire him?', 'What’s his experience?'],
+    }),
+  },
+  {
+    id: 'why-hire',
+    keys: keys('why should i hire', 'why should we hire', 'why hire', 'why him', 'what makes him', 'stand out', 'good fit', 'good candidate', 'convince me', 'sell me', 'unique', 'different from'),
+    bias: 1,
+    reply: () => ({
+      text: [
+        'Three reasons:',
+        list([
+          `**He ships production agents at work.** His multi-agent LLM pipeline at ${currentRole.company} cut manual store-audit turnaround by **80%**.`,
+          `**He builds systems that are honest by design:** answers that cite their sources or abstain (${nameOf(loom)}), zero-fabrication CV guardrails (${nameOf(lazyhire)}) and a local fallback for every LLM call (${nameOfMore(inforge)}).`,
+          `**Strong fundamentals:** top 2% globally in LeetCode Weekly Contest 487, and a co-authored research preprint (${nameOf(predictlab)}).`,
+        ]),
+        `He’s open to ${assistant.profile.openTo}: ${workPlaces}.`,
+        contactBlock,
+      ].join('\n\n'),
+      suggestions: ['Show me his best project', 'What’s his LLM/agent experience?'],
+    }),
+  },
+  {
+    id: 'ai-experience',
+    keys: keys('llm agent experience', 'llm experience', 'agent experience', 'ai experience', 'genai', 'gen ai', 'generative ai', 'agentic', 'agent system', 'agent systems', 'llm work', 'llm application', 'multi agent'),
+    bias: 1,
+    reply: () => ({
+      text: [
+        `**At work:** he owns the AI/LLM track at ${currentRole.company}, where his multi-agent LLM pipeline (Python, LangChain, FastAPI) cut manual store-audit turnaround by **80%**.`,
+        '**In his own builds:**',
+        list(
+          [
+            loom && `${named(loom)}: a coding agent in a real E2B Linux sandbox; LangGraph routes across 8 models with provider fallback, and prompt caching cut median time to first token from 8.9 s to 5.0 s.`,
+            inforge && `${namedMore(inforge)}: 8 pipeline agents turn a CSV into a full analysis; every LLM call has a local fallback.`,
+            lazyhire && `${named(lazyhire)}: guarded CV tailoring that rejects anything not traceable to the source CV.`,
+            stockAgents && `${namedMore(stockAgents)}: CrewAI agents turning live market data into a Buy, Sell or Hold rationale.`,
+          ].filter((s): s is string => Boolean(s)),
+        ),
+        `**Toolkit:** ${assistant.skillGroups.find((g) => g.label === 'LLMs and agents')?.items.join(', ')}.`,
+        '*Want the architecture behind Loom.ai?*',
+      ].join('\n\n'),
+      suggestions: ['How does Loom.ai work?', 'Why should I hire him?'],
     }),
   },
   {
     id: 'current-role',
     keys: keys('current job', 'current role', 'currently', 'do at', 'at amnova', 'work at', 'works at', 'working at', 'where does he work', 'employer', 'company', 'job title', 'position', 'job', 'amnova', 'amnova technologies'),
-    reply: () => ({
-      text: `He’s ${roleLine(currentRole)}: ${currentRole.summary}`,
-      suggestions: ['What’s his experience?', 'Show me his projects'],
-    }),
+    reply: () => {
+      const info = roleInfo(currentRole)
+      return {
+        text: `He’s an **${currentRole.title}** at ${currentRole.company}${info ? ` in ${info.where}` : ''}, since ${currentRole.start}.\n\n${info ? list(info.details) : currentRole.summary}`,
+        suggestions: ['What’s his experience?', 'Show me his projects'],
+      }
+    },
   },
   {
     id: 'experience',
-    keys: keys('experience', 'work experience', 'work history', 'career', 'internship', 'intern', 'previous', 'previous company', 'past company', 'companies he worked', 'past roles', 'where has he worked', 'worked at', 'year of experience', 'employment', 'roles', 'role'),
+    keys: keys('experience', 'work experience', 'work history', 'career', 'internship', 'intern', 'previous', 'previous company', 'past company', 'companies he worked', 'past roles', 'where has he worked', 'worked at', 'employment', 'roles', 'role'),
     reply: () => ({
-      text: `**Experience**\n\n${list(experience.map((r) => `${roleLine(r)}: ${r.summary}`))}\n\n[See the Experience section](#experience)`,
-      suggestions: ['What does he do at AMnova?', 'Show me his projects', 'What’s his tech stack?'],
+      text: `**Experience**\n\n${list(experience.map((r) => `${roleLine(r)}${roleInfo(r) ? `, ${roleInfo(r).where}: ${roleInfo(r).headline}` : `: ${r.summary}`}`))}\n\n[See the Experience section](#experience)`,
+      suggestions: ['What does he do at AMnova?', 'What’s his LLM/agent experience?', 'What’s his tech stack?'],
     }),
   },
-  ...experience
-    .filter((r) => r !== currentRole)
-    .map<Topic>((r) => ({
-      id: `role:${r.company}`,
-      keys: keys(r.company, r.company.split(' ')[0]),
-      bias: 1,
-      reply: () => ({
-        text: `${roleLine(r)}: ${r.summary}`,
+  {
+    id: 'level',
+    keys: keys('experience level', 'how experienced', 'year of experience', 'years of experience', 'how many year', 'how long', 'senior', 'junior', 'fresher', 'entry level', 'seniority', 'mid level'),
+    bias: 1,
+    reply: () => ({
+      text: [
+        `He’s been an **${currentRole.title}** at ${currentRole.company} since **${currentRole.start}**, after ${earlierRoles.length === 1 ? 'an internship' : `${COUNT[earlierRoles.length] ?? earlierRoles.length} internships`}: ${earlierRoles.map((r) => `${r.title} at ${r.company} (${r.start} – ${r.end})`).join(' and ')}.`,
+        `Alongside that is a portfolio of shipped systems, including ${andList([nameOf(loom), nameOf(lazyhire), nameOfMore(inforge)].filter(Boolean))}.`,
+      ].join('\n\n'),
+      suggestions: ['What’s his experience?', 'Show me his best project'],
+    }),
+  },
+  ...earlierRoles.map<Topic>((r) => ({
+    id: `role:${r.company}`,
+    keys: keys(r.company, r.company.split(' ')[0]),
+    bias: 1,
+    reply: () => {
+      const info = roleInfo(r)
+      return {
+        text: `${roleLine(r)}${info ? `, ${info.where}` : ''}:\n\n${info ? list(info.details) : r.summary}`,
         suggestions: ['What’s his experience?', 'Show me his projects'],
-      }),
-    })),
+      }
+    },
+  })),
   {
     id: 'projects',
-    keys: keys('project', 'projects', 'portfolio', 'what has he built', 'what did he build', 'built', 'build', 'made', 'created', 'showcase', 'side project', 'app', 'apps', 'what else'),
+    keys: keys('project', 'projects', 'portfolio', 'what has he built', 'what did he build', 'built', 'build', 'made', 'created', 'showcase', 'side project', 'app', 'apps', 'what else', 'repo', 'repos', 'repositories'),
     reply: () => ({
-      text: `**Projects**\n\n${list(projects.map((p) => `**${p.title}** (${p.year}): ${p.tagline}`))}\n\nAsk about any of them, or [browse the Works section](#works).`,
-      suggestions: projects.slice(0, 3).map((p) => `Tell me about ${p.title}`),
+      text: [
+        `**Flagship**\n\n${list(flagship)}`,
+        `**More**\n\n${list(otherProjects)}`,
+        minorProjects.length ? `**Smaller ML apps and notebooks:** ${minorProjects.join(' · ')}` : '',
+        `He has **${assistant.repos.count} public repositories**: [see them all](${assistant.repos.href}). Ask about any project, or [browse the Works section](#works).`,
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
+      suggestions: projects.slice(0, 2).map((p) => `Tell me about ${p.title}`).concat(inforge ? [`Tell me about ${inforge.title}`] : []),
     }),
   },
   {
     id: 'links',
-    keys: keys('demo', 'demos', 'live demo', 'try', 'try it', 'repos', 'repositories', 'source code', 'code', 'links', 'deployed', 'hosted'),
+    keys: keys('demo', 'demos', 'live demo', 'try', 'try it', 'source code', 'code', 'links', 'deployed', 'hosted'),
     reply: () => ({
       text: `**Project links**\n\n${list(
         projects.map((p) => `**${p.title}**: ${p.links?.length ? p.links.map((l) => `[${l.label}](${l.href})`).join(' · ') : 'no public link'}`),
@@ -468,14 +731,23 @@ const TOPICS: Topic[] = [
   },
   {
     id: 'highlight',
-    keys: keys('best project', 'favorite', 'favourite', 'most impressive', 'flagship', 'proudest', 'standout', 'biggest', 'strongest', 'recommend', 'which one should i look at'),
+    keys: keys('best project', 'favorite', 'favourite', 'most impressive', 'flagship', 'proudest', 'standout', 'biggest', 'strongest', 'recommend', 'which one should i look at', 'best work'),
     bias: 1,
     reply: () => {
-      const p = projects[0]
+      const p = loom ?? projects[0]
+      const x = extra(p)
       return {
         topic: `project:${p.id}`,
         project: p.id,
-        text: `If you only look at one, **${p.title}** is the largest build here: ${p.summary}\n\n${list(p.facts.map((f) => `**${f.value}**: ${f.label}`))}\n\n${caseStudy(p)}`,
+        text: [
+          `${named(p)} is his flagship: ${p.tagline}`,
+          x.image ? image(x.image) : '',
+          list(x.metrics ?? p.facts.map((f) => `**${f.value}**: ${f.label}`)),
+          [x.docs?.[0] ? `[${x.docs[0].label}](${x.docs[0].href})` : '', caseStudy(p)].filter(Boolean).join(' · '),
+          `*Want the architecture behind ${p.title}?*`,
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
         suggestions: [`How does ${p.title} work?`, 'Show me his projects'],
       }
     },
@@ -483,42 +755,47 @@ const TOPICS: Topic[] = [
   {
     id: 'skills',
     keys: keys('skill', 'skills', 'tech stack', 'stack', 'technologies', 'technology', 'tools', 'languages', 'frameworks', 'expertise', 'good at', 'strength', 'proficient', 'specialize', 'specialise', 'specialty', 'what can he do'),
-    reply: () => {
-      const evidenced = (name: string) => evidence([name]).length > 0
-      const groups = assistant.skillGroups
-        .map((g) => ({ ...g, items: g.items.filter(evidenced) }))
-        .filter((g) => g.items.length)
-      return {
-        text: `**Skills, as used in his projects and roles**\n\n${list(groups.map((g) => `**${g.label}**: ${g.items.join(', ')}`))}\n\nAsk “does he know …?” about anything specific.`,
-        suggestions: ['Does he know LangGraph?', 'Has he built RAG systems?', 'Show me his projects'],
-      }
-    },
+    reply: () => ({
+      text: [
+        '**His stack**',
+        image(assistant.images.stack),
+        list(assistant.skillGroups.map((g) => `**${g.label}**: ${g.items.join(', ')}`)),
+        'Ask “does he know …?” about anything specific.',
+      ].join('\n\n'),
+      suggestions: ['Does he know LangGraph?', 'Has he built RAG systems?', 'Show me his projects'],
+    }),
   },
   {
     id: 'achievements',
-    keys: keys('achievement', 'award', 'hackerrank', 'orchestrate', 'finalist', 'competition', 'hackathon', 'won', 'win', 'accomplishment', 'recognition'),
+    keys: keys('achievement', 'award', 'hackerrank', 'orchestrate', 'finalist', 'competition', 'hackathon', 'won', 'win', 'accomplishment', 'recognition', 'leetcode', 'contest', 'rank', 'ranking', 'competitive programming', 'research', 'paper', 'preprint', 'publication', 'published', 'zenodo'),
     bias: 0.5,
-    reply: () => {
-      const found = evidence(['finalist', 'hackerrank'])
-      return {
-        text: found.length
-          ? `In his own words: “${found[0].text}”\n\nFor more detail on it, ask Vinayak at ${mail}.`
-          : `This site doesn’t list awards. Vinayak can tell you more at ${mail}.`,
-        suggestions: ['Show me his projects', 'What’s his experience?'],
-      }
-    },
+    reply: () => ({
+      text: `**Achievements**\n\n${list(assistant.achievements)}`,
+      suggestions: ['Show all his certifications', 'Where did he study?', 'Tell me about PredictLab'],
+    }),
+  },
+  {
+    id: 'certifications',
+    keys: keys('certification', 'certifications', 'certificate', 'certificates', 'certified', 'cert', 'certs', 'badge', 'badges', 'credential', 'credentials', 'licenses', 'licence'),
+    bias: 0.75,
+    reply: () => certListReply(assistant.certifications, `Certifications (${assistant.certifications.length})`),
+  },
+  {
+    id: 'education',
+    keys: keys('education', 'degree', 'college', 'university', 'graduate', 'graduation', 'bca', 'bachelor', 'masters', 'studied', 'did he study', 'study at', 'where did he study', 'school', 'qualification', 'course', 'avodha'),
+    bias: 0.5,
+    reply: () => ({
+      text: `**Education**\n\n${list(assistant.education)}\n\nAlongside these he holds **${assistant.certifications.length} certifications**, from IBM, AWS, Anthropic, HackerRank and others.`,
+      suggestions: ['Show all his certifications', 'What are his achievements?', 'What’s his experience?'],
+    }),
   },
   {
     id: 'contact',
     keys: keys('contact', 'email', 'mail', 'reach', 'get in touch', 'touch', 'message him', 'talk to him', 'connect', 'linkedin', 'github', 'social', 'hire him', 'how to hire'),
-    reply: (_q, ctx) => {
-      const lines = [`**Email:** ${mail}`, ...contact.links.map((l) => `**${l.label}:** [${l.href.replace(/^https?:\/\/(www\.)?/, '')}](${l.href})`)]
-      if (ctx.resume) lines.push(`**Résumé:** [PDF](${ctx.resume})`)
-      return {
-        text: `${list(lines)}\n\nOr use the [form in the Contact section](#contact).`,
-        suggestions: ['Where is he based?', 'What’s his experience?'],
-      }
-    },
+    reply: (_q, ctx) => ({
+      text: `${contactBlock}${ctx.resume ? `\n- **Résumé:** [PDF](${ctx.resume})` : ''}\n\nOr use the [form in the Contact section](#contact).`,
+      suggestions: ['Is he available?', 'What’s his experience?'],
+    }),
   },
   {
     id: 'resume',
@@ -533,10 +810,10 @@ const TOPICS: Topic[] = [
   },
   {
     id: 'availability',
-    keys: keys('available', 'availability', 'open to', 'looking for', 'job search', 'opportunity', 'opportunities', 'hiring', 'hire', 'freelance', 'open for work', 'new role', 'new roles', 'job change'),
+    keys: keys('available', 'availability', 'open to', 'looking for', 'job search', 'opportunity', 'opportunities', 'hiring', 'hire', 'freelance', 'open for work', 'new role', 'new roles', 'job change', 'relocate', 'relocation', 'remote', 'remotely', 'onsite', 'on site', 'hybrid', 'work from home', 'wfh', 'bangalore', 'bengaluru', 'hyderabad'),
     reply: () => ({
-      text: `He’s currently ${roleLine(currentRole)}.\n\nThe best way to start a conversation is email: ${mail}.`,
-      suggestions: ['How can I contact him?', 'What’s his tech stack?'],
+      text: `Yes. He’s open to **${assistant.profile.openTo}**: ${workPlaces}.\n\n${contactBlock}`,
+      suggestions: ['Why should I hire him?', 'What’s his tech stack?'],
     }),
   },
   {
@@ -550,7 +827,7 @@ const TOPICS: Topic[] = [
         // An unknown time zone just drops the clock line.
       }
       return {
-        text: `He’s based in **${site.location}** (${site.timezoneLabel}).${time ? ` It’s ${time} there right now.` : ''}`,
+        text: `He’s based in **${site.location}** (${site.timezoneLabel}).${time ? ` It’s ${time} there right now.` : ''}\n\nHe’s open to roles that are ${workPlaces}.`,
         suggestions: ['How can I contact him?'],
       }
     },
@@ -570,7 +847,9 @@ const TOPICS: Topic[] = [
     // Naming one of these ("open to relocation?") should beat the broader topic it sits in.
     bias: 1.5,
     reply: () => ({
-      text: `This site doesn’t cover ${n.label}, so I won’t guess. Vinayak can answer that directly at ${mail}.`,
+      text: n.direct
+        ? `Vinayak prefers to discuss his ${n.label} directly: ${mail}.`
+        : `That’s not something I have details on (${n.label}), so I won’t guess. Best to ask Vinayak directly at ${mail}.`,
       suggestions: ['How can I contact him?', 'What’s his experience?'],
     }),
   })),
@@ -593,7 +872,7 @@ function faqScore(q: Question, entry: (typeof faqKeys)[number]) {
   return s
 }
 
-const faqReply = (f: FaqEntry): Reply => ({
+const faqReply = (f: FaqEntry): Draft => ({
   text: f.answer,
   topic: `faq:${f.ask[0]}`,
   suggestions: f.suggestions ?? [],
@@ -606,17 +885,90 @@ const PRONOUN = keys('it', 'its', 'that', 'that one', 'this one', 'the project',
 const PERSON = keys('he', 'his', 'him', 'vinayak')
 const MORE = keys('tell me more', 'more', 'go on', 'continue', 'elaborate', 'more detail', 'details', 'deeper', 'expand')
 
-export function fallback(): Reply {
+export function fallback(): Draft {
   return {
-    text: `I don’t have that in my notes about Vinayak, and I’d rather not guess. I can tell you about his **projects**, **experience**, **skills** or **how to reach him**. For anything else, email ${mail}.`,
+    text: `That’s not something I have details on, and I’d rather not guess. Best to ask Vinayak directly at ${mail}.\n\nI can tell you about his **projects**, **experience**, **skills** or **how to reach him**.`,
     topic: 'fallback',
     suggestions: assistant.starters.slice(0, 3),
     known: false,
+    intent: 'no match',
+    missed: true,
   }
+}
+
+/** What each topic reads to answer, for the trace. Small talk reads nothing. */
+const TOPIC_SOURCES: Record<string, string[]> = {
+  self: ['About this assistant'],
+  about: ['Profile', `${currentRole.company} role`, 'Achievements'],
+  'why-hire': [`${currentRole.company} role`, 'Flagship projects', 'Achievements'],
+  'ai-experience': [`${currentRole.company} role`, 'Loom.ai', 'InForge-AI', 'Skills'],
+  'current-role': [`${currentRole.company} role`],
+  experience: experience.map((r) => `${r.company} role`),
+  level: ['Experience', 'Flagship projects'],
+  projects: ['Projects', 'GitHub repositories'],
+  links: ['Project links'],
+  highlight: ['Loom.ai case study', 'Loom.ai docs'],
+  skills: ['Skills'],
+  achievements: ['Achievements'],
+  certifications: ['Certifications'],
+  education: ['Education', 'Certifications'],
+  contact: ['Contact details'],
+  resume: ['Contact details'],
+  availability: ['Profile', 'Contact details'],
+  location: ['Profile'],
+  site: ['How this site is built'],
+  ...Object.fromEntries(earlierRoles.map((r) => [`role:${r.company}`, [`${r.company} role`]])),
+}
+
+/** Topic ids whose name alone wouldn't say what was asked. */
+const INTENT_LABEL: Record<string, string> = {
+  highlight: 'best project',
+  'ai-experience': 'LLM / agent experience',
+  level: 'experience level',
+  'why-hire': 'why hire him',
+  self: 'about this assistant',
+  'off-topic': 'off-topic · steer back',
+  site: 'how this site is built',
+}
+
+/** "current-role" → "current role", "not-covered:salary" → "private · salary". */
+const intentOf = (id: string) =>
+  INTENT_LABEL[id] ?? (id.startsWith('not-covered:') ? `private · ${id.slice(12)}` : id.replace(/-/g, ' ').replace(':', ' · '))
+
+/** The draft's steps as tool calls: what was asked, what was read, how it was checked, what was written. */
+function traceOf(d: Draft): TraceStep[] {
+  const steps: TraceStep[] = [{ tool: 'classify_intent', detail: d.intent ?? intentOf(d.topic) }]
+  const sources = d.sources ?? []
+  if (sources.length) {
+    steps.push({ tool: 'search_knowledge', detail: `${sources.length} source${sources.length === 1 ? '' : 's'} matched` })
+    for (const s of sources.slice(0, 3)) steps.push({ tool: 'read_source', detail: s })
+    steps.push({ tool: 'check_grounding', detail: 'every claim traced to a source' })
+  } else if (d.missed) {
+    steps.push({ tool: 'search_knowledge', detail: 'nothing matched' })
+    steps.push({ tool: 'check_grounding', detail: 'no source, so no guessing' })
+  }
+  const n = toPlainText(d.text).split(/\s+/).filter(Boolean).length
+  steps.push({ tool: 'compose_answer', detail: `${n} word${n === 1 ? '' : 's'}` })
+  return steps
 }
 
 /** Answers one question. `ctx` carries what the conversation was last about. */
 export function answer(input: string, ctx: AskContext = {}): Reply {
+  const d = route(input, ctx)
+  return { text: d.text, topic: d.topic, project: d.project, suggestions: d.suggestions, known: d.known, trace: traceOf(d) }
+}
+
+/** A project's reply, with what it read: the case study, plus the build notes when there are any. */
+function aboutProject(p: Project, facet: Facet, q: Question): Draft {
+  const x = extra(p)
+  return {
+    ...projectReply(p, facet, q),
+    intent: `project · ${p.title}${facet === 'overview' ? '' : ` · ${facet}`}`,
+    sources: [`${p.title} case study`, ...(x.details || x.metrics ? [`${p.title} build notes`] : []), ...(x.docs ? [`${p.title} docs`] : [])],
+  }
+}
+
+function route(input: string, ctx: AskContext): Draft {
   const q = question(input.slice(0, assistant.maxLength))
   if (!q.w.length) {
     return { text: 'Ask me anything about Vinayak’s work.', topic: 'empty', suggestions: assistant.starters, known: true }
@@ -632,13 +984,29 @@ export function answer(input: string, ctx: AskContext = {}): Reply {
       bestFaq = e
     }
   }
-  if (bestFaq && faqTop >= 1) return faqReply(bestFaq.f)
+  if (bestFaq && faqTop >= 1) return { ...faqReply(bestFaq.f), intent: 'owner FAQ', sources: ['Vinayak’s own answers'] }
 
-  // 2. A project named outright (or "the second one").
-  const named = mentionedProjects(q, ctx)
+  // A certificate asked for by issuer or subject ("his AWS certificate", "IBM courses").
+  const certs = mentionedCerts(q)
+  if (certs?.length === 1) return certReply(certs[0])
+  if (certs) {
+    return {
+      ...certListReply(certs, `${certs.length} matching certifications`),
+      intent: 'certifications · filtered',
+      sources: [...new Set(certs.map((c) => `${c.issuer} certificate`))],
+    }
+  }
+
+  // 2. A project named outright (or "the second one"), then one the page doesn't show.
+  const mentioned = mentionedProjects(q, ctx)
   const facet = facetOf(q)
-  if (named.length > 1) return compareReply(named.slice(0, 3))
-  if (named.length === 1) return projectReply(named[0], facet ?? 'overview', q)
+  if (mentioned.length > 1) {
+    const ps = mentioned.slice(0, 3)
+    return { ...compareReply(ps), intent: `compare · ${ps.map((p) => p.title).join(' vs ')}`, sources: ps.map((p) => `${p.title} case study`) }
+  }
+  if (mentioned.length === 1) return aboutProject(mentioned[0], facet ?? 'overview', q)
+  const more = mentionedMore(q)
+  if (more) return { ...moreReply(more), intent: `project · ${more.title}`, sources: [`${more.title} repository`] }
 
   // 3. "Does he know X?"
   const tech = askedTech(q.raw)
@@ -647,12 +1015,13 @@ export function answer(input: string, ctx: AskContext = {}): Reply {
   // 4. Follow-ups about the project just discussed: "what stack did it use?", "tell me more".
   // A bare "github?" follows on; "his tech stack" is about Vinayak, not the project.
   const last = ctx.project ? projectById.get(ctx.project) : undefined
-  const more = MORE.some((p) => contains(q.w, p)) && q.content.length <= 2
+  const wantsMore = MORE.some((p) => contains(q.w, p)) && q.content.length <= 2
   const followUp = PRONOUN.some((p) => contains(q.w, p)) || (q.content.length <= 2 && !PERSON.some((p) => contains(q.w, p)))
-  if (last && facet && followUp) return projectReply(last, facet, q)
-  if (last && more) return projectReply(last, 'more', q)
-  if (more) {
+  if (last && facet && followUp) return aboutProject(last, facet, q)
+  if (last && wantsMore) return aboutProject(last, 'more', q)
+  if (wantsMore) {
     return {
+      intent: 'follow-up · needs a subject',
       text: 'Happy to go deeper. What would you like more on?',
       topic: 'more',
       suggestions: ctx.topic === 'projects' ? projects.slice(0, 3).map((p) => `Tell me about ${p.title}`) : assistant.starters.slice(0, 3),
@@ -679,7 +1048,7 @@ export function answer(input: string, ctx: AskContext = {}): Reply {
 
   if (best && top > 0) {
     const r = best.reply(q, ctx)
-    return { known: true, ...r, topic: r.topic ?? best.id }
+    return { known: true, sources: TOPIC_SOURCES[best.id], ...r, intent: intentOf(best.id), topic: r.topic ?? best.id }
   }
   return fallback()
 }

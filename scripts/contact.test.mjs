@@ -49,7 +49,7 @@ test('delivers a valid message through Resend and reports success', async () => 
   const { url, init, body } = calls[0]
   assert.equal(url, 'https://api.resend.com/emails')
   assert.equal(init.headers.authorization, 'Bearer re_test_key')
-  assert.deepEqual(body.to, ['vinayakkv2004@gmail.com'])
+  assert.deepEqual(body.to, ['vinayakkvjob@gmail.com'])
   assert.equal(body.from, 'Portfolio contact <onboarding@resend.dev>')
   assert.equal(body.reply_to, 'ann@example.com')
   assert.equal(body.subject, 'Portfolio: A project')

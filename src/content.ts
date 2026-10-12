@@ -275,7 +275,7 @@ export const experience: Role[] = [
 export const contact = {
   heading: 'Let’s build something real',
   lede: 'Ideas are everywhere. Let’s turn one into something people can actually use.',
-  email: 'vinayakkv2004@gmail.com',
+  email: 'vinayakkvjob@gmail.com',
   links: [
     { label: 'GitHub', href: 'https://github.com/vinayak533' },
     { label: 'LinkedIn', href: 'https://www.linkedin.com/in/vinayak-kv-ds' },
