@@ -10,7 +10,8 @@ import './styles/global.css'
 
 import { App } from './App'
 import { useStore } from './store/useStore'
-import { detectQuality, hasWebGL2, isTouchDevice, prefersReducedMotion, readLitePreference } from './core/quality'
+import { detectQuality, hasWebGL2, isTouchDevice, prefersReducedMotion } from './core/quality'
+import { initialLite, watchFrameRate } from './core/autoLite'
 import { expect } from './core/loading'
 
 // Decide the render mode once, before first paint.
@@ -24,8 +25,10 @@ useStore.getState().set({
   reducedMotion,
   isTouch: isTouchDevice(),
   quality: detectQuality(),
-  lite: readLitePreference(),
+  // Lite is automatic (src/core/autoLite.ts): reduced motion or a low-end device now, a low frame rate later.
+  lite: initialLite(reducedMotion),
 })
+if (mode === 'webgl') watchFrameRate()
 document.documentElement.dataset.mode = mode
 
 expect('fonts', 'hero', ...(mode === 'webgl' ? ['portrait', 'compile'] : ['still']))

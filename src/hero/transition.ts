@@ -16,15 +16,12 @@
  * place with the camera's settle. Reduced motion / static mode gets a 400 ms
  * crossfade instead.
  */
-import { gsap, ScrollTrigger, easeInOutCubic, onTick, remap, smoothstep } from '../core/clock'
+import { gsap, ScrollTrigger, easeInOutCubic, remap, smoothstep } from '../core/clock'
 import { getLenis } from '../core/scroll'
 import { signals, useStore } from '../store/useStore'
 import { heroConfig as cfg, MOBILE_QUERY, transitionProfile } from './config'
 import { shotAt } from './shot'
 import type { RobotHandle } from './robot/dom'
-
-/** Live state for the ?debug panel: `freeze` holds the transition at `progress`. */
-export const transitionDebug = { freeze: false, progress: 0, live: 0, raw: 0 }
 
 export interface TransitionOptions {
   /** The tall scroll track (the hero section). */
@@ -83,8 +80,6 @@ function webglTransition(o: TransitionOptions): TransitionHandle {
 
   function apply(pv: number) {
     p = pv
-    transitionDebug.live = +pv.toFixed(4)
-    transitionDebug.raw = +raw.toFixed(4)
     const T = cfg.transition
     const shot = shotAt(pv)
 
@@ -105,8 +100,11 @@ function webglTransition(o: TransitionOptions): TransitionHandle {
     // The intro leaves with the first push; hidden once gone, so its links drop out of the tab order.
     const intro = 1 - smoothstep(0, 0.07, Math.max(pv, raw))
     stage.style.setProperty('--hero-intro', String(intro))
-    const introEl = stage.querySelector<HTMLElement>('[data-hero-intro]')
-    if (introEl) introEl.style.visibility = intro <= 0.001 ? 'hidden' : ''
+    // The copy: its scrim in the stage, its text in a layer of its own over the robot (src/dom/HeroCopy.tsx).
+    for (const introEl of document.querySelectorAll<HTMLElement>('[data-hero-intro]')) {
+      introEl.style.setProperty('--hero-intro', String(intro))
+      introEl.style.visibility = intro <= 0.001 ? 'hidden' : ''
+    }
 
     // The clouds clear the canvas themselves; the stage only steps aside at the very
     // end. Raw scroll wins so a fast fling never leaves a wisp behind.
@@ -155,7 +153,7 @@ function webglTransition(o: TransitionOptions): TransitionHandle {
         invalidateOnRefresh: true,
         onUpdate: (self) => {
           raw = self.progress
-          if (!transitionDebug.freeze) apply(p)
+          apply(p)
         },
         onToggle: (self) => {
           if (self.isActive) useStore.getState().set({ section: 'hero' })
@@ -168,22 +166,12 @@ function webglTransition(o: TransitionOptions): TransitionHandle {
       {
         p: 1,
         duration: 1,
-        onUpdate: () => {
-          if (!transitionDebug.freeze) apply(proxy.p)
-        },
+        onUpdate: () => apply(proxy.p),
       },
     )
       .addLabel('move', cfg.transition.hold)
   }
   build()
-
-  // Debug freeze: hold any frame, regardless of scroll.
-  let wasFrozen = false
-  const stopTick = onTick(() => {
-    if (transitionDebug.freeze) apply(transitionDebug.progress)
-    else if (wasFrozen) apply(proxy.p)
-    wasFrozen = transitionDebug.freeze
-  })
 
   // PageDown / Space inside the pin play the whole shot and land on the end
   // state; PageUp / Shift+Space from there play it back. Never stuck halfway.
@@ -232,7 +220,7 @@ function webglTransition(o: TransitionOptions): TransitionHandle {
     // The proxy, not the last applied value: a refresh re-renders the timeline from 0 (with events) and
     // restores it silently, so `p` can be left at 0 while the scroll is past the hero, and the robot
     // (which outlives the stage) would show its opening frame.
-    apply(transitionDebug.freeze ? transitionDebug.progress : proxy.p)
+    apply(proxy.p)
   }
   ScrollTrigger.addEventListener('refreshInit', unlift)
   ScrollTrigger.addEventListener('refresh', relift)
@@ -240,14 +228,13 @@ function webglTransition(o: TransitionOptions): TransitionHandle {
   relift()
 
   return {
-    sync: () => apply(transitionDebug.freeze ? transitionDebug.progress : p),
+    sync: () => apply(p),
     refresh() {
       setPin()
       build()
       ScrollTrigger.refresh()
     },
     destroy() {
-      stopTick()
       signals.heroCovers = false
       ScrollTrigger.removeEventListener('refreshInit', unlift)
       ScrollTrigger.removeEventListener('refresh', relift)
@@ -257,7 +244,10 @@ function webglTransition(o: TransitionOptions): TransitionHandle {
       tl?.kill()
       host.classList.remove('is-parting')
       for (const prop of ['opacity', 'visibility', 'will-change', 'pointer-events', '--hero-cue', '--hero-intro']) stage.style.removeProperty(prop)
-      stage.querySelector<HTMLElement>('[data-hero-intro]')?.style.removeProperty('visibility')
+      for (const introEl of document.querySelectorAll<HTMLElement>('[data-hero-intro]')) {
+        introEl.style.removeProperty('visibility')
+        introEl.style.removeProperty('--hero-intro')
+      }
       const about = o.about()
       about?.classList.remove('hero-hold')
       about?.style.removeProperty('--hero-hold-h')

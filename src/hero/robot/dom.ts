@@ -75,8 +75,9 @@ export const stageCues = {
   buildDue: Infinity,
   /**
    * The frame-rate governor's step (engine.ts), only ever rising. The landscape (terrain.ts) gives up, in
-   * order: 1 its depth of field, 2 grid density, 3 trail length, 4 the contours and glow, 5 ring dots,
-   * 6 its pixel ratio; the engine its own from 4 (glows, shadows, equaliser, pixel ratio).
+   * order: 1 its pulse waves, 2 the contour shimmer, 3 grid density, 4 trail length, 5 the glow, depth of
+   * field and ring dots, 6 its pixel ratio; the engine its own from 4 (glows, shadows, equaliser, pixel
+   * ratio).
    */
   degrade: 0,
 }

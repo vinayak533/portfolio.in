@@ -1,24 +1,22 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
-import { sections, site } from '../content'
+import { sections } from '../content'
 import { useStore } from '../store/useStore'
 import { scrollToSection } from '../core/scroll'
-import { writeLitePreference } from '../core/quality'
 import { gsap } from '../core/clock'
 import { useResumeUrl } from './useResumeUrl'
 import '@fontsource-variable/space-grotesk/index.css'
 import '@fontsource-variable/inter/opsz.css'
 
 /**
- * Fixed chrome: mark, centred pill navigation with a sliding indicator, lite-mode switch.
- * Below md the pill gives way to a Menu button with the same links (plus the résumé).
+ * Fixed chrome: the centred pill navigation with a sliding indicator (its Home item is the way back to
+ * the top). Below md the pill gives way to the section count and a Menu button with the same links
+ * (plus the résumé). Lite rendering is automatic (src/core/autoLite.ts): there is no switch.
  */
 export function Hud() {
   const section = useStore((s) => s.section)
   const loaded = useStore((s) => s.loaded)
   const mode = useStore((s) => s.mode)
-  const lite = useStore((s) => s.lite)
   const layoutKey = useStore((s) => s.layoutKey)
-  const set = useStore((s) => s.set)
   const root = useRef<HTMLDivElement>(null)
   const pill = useRef<HTMLOListElement>(null)
   const [indicator, setIndicator] = useState({ left: 0, width: 0 })
@@ -67,27 +65,9 @@ export function Hud() {
     setIndicator({ left: a.offsetLeft, width: a.offsetWidth })
   }, [index, layoutKey])
 
-  const toggleLite = () => {
-    writeLitePreference(!lite)
-    set({ lite: !lite })
-  }
-
   return (
     <div ref={root} className="pointer-events-none fixed inset-x-0 top-0 z-[100]">
-      <header className="hud relative flex items-center justify-between">
-        <a
-          data-hud
-          href="#hero"
-          onClick={(e) => {
-            e.preventDefault()
-            scrollToSection('hero')
-          }}
-          className="hud-mark pointer-events-auto opacity-0"
-          aria-label={`${site.name}, back to top`}
-        >
-          {site.mark}
-        </a>
-
+      <header className="hud relative flex items-center justify-end">
         <nav aria-label="Sections" data-hud className="pointer-events-auto absolute inset-y-0 left-1/2 hidden -translate-x-1/2 items-center opacity-0 md:flex">
           <ol ref={pill} className="nav-pill">
             <li aria-hidden="true" role="presentation" className="nav-pill-indicator" style={{ left: indicator.left, width: indicator.width }} />
@@ -123,22 +103,6 @@ export function Hud() {
           >
             {menuOpen ? 'Close' : 'Menu'}
           </button>
-          {mode === 'webgl' && (
-            <button
-              data-hud
-              type="button"
-              onClick={toggleLite}
-              aria-pressed={lite}
-              className="hud-lite pointer-events-auto mono mono-sm flex items-center gap-2 opacity-0"
-              title="Lighter 3D for slower machines"
-            >
-              <span className="hud-lite__label hidden sm:inline">Lite</span>
-              <span className="hud-lite__track">
-                <span className="hud-lite__knob" />
-              </span>
-              <span className="sr-only">Lite mode</span>
-            </button>
-          )}
         </div>
 
         <div ref={menu} id={menuId} className="hud-menu pointer-events-auto md:hidden" hidden={!menuOpen}>

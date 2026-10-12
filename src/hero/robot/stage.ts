@@ -4,9 +4,9 @@
  *
  *   wash      the laptop's glow spilling onto the floor at its side (#7C5CFF at under 10%), on one
  *             small static canvas (.hero-dots) under the beam
- *   beam      its light pulses on the beat (+-12%), flickering faintly between beats
- *   pointer   desktop only: an eased parallax (--hero-px / --hero-py on the host, -1..1), which the
- *             landscape shifts against
+ *   beam      its light pulses on every beat (+-8%, a smooth ease-in-out swell, peaking on the beat)
+ *   pointer   desktop only: an eased parallax (--hero-px / --hero-py on the host, -1..1, a 200 ms
+ *             response), which the landscape shifts against
  *
  * The orbit rings, the equaliser and the commit pulse are the robot's own (3D, so the furniture can hide
  * what passes behind it): model.ts.
@@ -15,15 +15,16 @@
  * figure; without it, from the CSS defaults' formulas.
  *
  * Idle: [data-idle] on the host while the tab is hidden, the hero is off screen or its backdrop has faded
- * out (hero.css pauses its animations, and this loop stops). Lite and reduced motion: still, no parallax.
+ * out (hero.css pauses its animations, and this loop stops). Lite (automatic, src/core/autoLite.ts) and
+ * reduced motion: still, no parallax.
  */
 import { stageFrame, type StageFrame } from './dom'
 import { beat, emptySample } from './beat'
 import { mountTerrain, type TerrainHandle } from './terrain'
 
 const VIOLET = '124,92,255'
-/** Parallax easing rate (1/s). */
-const EASE = 2.2
+/** Parallax easing rate (1/s): a 200 ms time constant. */
+const EASE = 5
 
 export interface StageHandle {
   dispose(): void
@@ -43,7 +44,7 @@ export function mountStage(host: HTMLElement): StageHandle {
   const beatNow = emptySample()
   const finePointer = window.matchMedia('(hover: hover) and (pointer: fine) and (min-width: 1025px)')
   const hero = host.closest<HTMLElement>('#hero')
-  /** The landscape's lite (the LITE toggle, or a software renderer; phones have their own profile). */
+  /** The landscape's lite (automatic lite, or a software renderer; phones have their own profile). */
   const lite = () => !!host.closest('[data-lite-landscape]')
   /** The backdrop's fade as About's world comes through (engine.ts writes it inline on the host). */
   const backdrop = () => {
@@ -121,12 +122,10 @@ export function mountStage(host: HTMLElement): StageHandle {
   function pulseBeam() {
     beat.sample(performance.now(), beatNow)
     const still = reduced.matches || lite()
-    // The beam breathes with the beat (+-12%) and flickers faintly between beats.
-    const t = performance.now() / 1000
-    const flicker = 0.03 * Math.sin(t * 9.3) * Math.sin(t * 3.1)
-    const v = still || !beatNow.on ? -1 : 0.86 + 0.14 * beatNow.pulse + flicker
+    // The beam swells with every beat, +-8% about 92% (a cosine: eased in and out, full on the beat). No flicker.
+    const v = still || !beatNow.on ? -1 : 0.92 + 0.08 * Math.cos(beatNow.phase * Math.PI * 2)
     // Only when it has moved visibly (the beam is masked: each change repaints it).
-    if (!beamLight || Math.abs(v - beamShown) < 0.012) return
+    if (!beamLight || Math.abs(v - beamShown) < 0.008) return
     beamShown = v
     beamLight.style.opacity = v < 0 ? '' : v.toFixed(3)
   }

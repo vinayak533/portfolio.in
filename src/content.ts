@@ -66,9 +66,9 @@ export interface Role {
 
 export const site = {
   name: 'Vinayak K V',
-  /** Short form used for the corner mark. */
-  mark: 'VKV',
   role: 'AI / ML Engineer',
+  /** The hero's one line under the name. */
+  tagline: 'I take autonomous agents from prototype chaos to production.',
   location: 'Kochi, Kerala, India',
   timezone: 'Asia/Kolkata',
   timezoneLabel: 'IST',

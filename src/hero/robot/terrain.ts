@@ -15,24 +15,32 @@
  *             stay distinct (not streaks) from the foreground to the rim. Slopes #A78BFA at 30-50%; the
  *             basin round the plateau #C4B5FD at 60-75%; crests and rim #C4B5FD at 55-70%, 20% larger,
  *             with a soft halo; every 7% of height a contour row 35% brighter; far dots smaller, hazier,
- *             toward #7C5CFF, the farthest quarter out of focus. Round the robot (its silhouette plus
- *             12%, feathered) everything is dimmed to 45%, a dark pocket that frames it.
+ *             toward #7C5CFF, the farthest quarter out of focus. Dot sizes come in three tiers by depth
+ *             (large, medium, small), fixed per row. Round the robot (its silhouette plus 12%, feathered)
+ *             everything is dimmed to 45%, a dark pocket that frames it.
+ *   motion    on the hero's 96 BPM clock (beat.ts), precise rather than busy: the surface breathes (+-2.5%,
+ *             a 5 s sine); every 2 beats (1.25 s) a low pulse wave runs out from the stage (1% of the relief
+ *             high, 12% of the width long, 14% of the width a second, decaying with distance), the dots
+ *             riding it 10% brighter on its crest; every 3.5 s a band of light (+12%) travels out along the
+ *             contours. No per-dot jitter or twinkle.
  *   agent     a bright point doing momentum gradient descent (0.9) on the same f, planned here on the
  *             CPU with finite differences: from a high rim at the far left or right (alternating), down
- *             through a secondary well or two (it slows, circles, escapes), to the plateau's front edge,
- *             landing as the laptop's build passes (stageCues.buildDue / buildAt / commitAt, read only;
- *             an 11 s cycle without them). The landing: the plateau flashes, a ring of dots runs out over
- *             the surface (up the slopes), a faint column rises; then the wells and hills ease into a new
- *             arrangement and the next agent comes from the other side.
- *   plot      four dotted corner crosshairs and two edge rulers of fine ticks, the left one with a
- *             cursor tick following the agent's elevation (an SVG; no rulers on phones).
+ *             through one secondary well (it slows, circles, escapes), to the plateau's front edge, on a
+ *             7 s cycle: spawn 0.4 s, descent 5.2 s, the landing (the plateau flashes for 0.4 s, a ring of
+ *             dots runs out over the surface for 1.1 s, a faint column rises), the wells and hills easing
+ *             into a new arrangement over 1.6 s as the next agent comes from the other side. The laptop's
+ *             builds (stageCues.buildDue / buildAt / commitAt, read only) come every 10-13 s, too slow for
+ *             this tempo, so the cycle runs on its own timer (SYNC_BUILDS turns the old build-paced
+ *             landing back on).
  *
  * Everything is emissive and additive on its own canvas under the robot's layer: it lights, shadows and
- * covers nothing of the robot. Lite: 55% of the grid, no depth of field, glow, morph or parallax, a
- * 24-dot trail, a 60-dot ring. Reduced motion: one still frame, the agent resting at the plateau's edge
- * with its trail. Paused while the hero is off screen, the tab hidden or the backdrop faded. The
- * frame-rate governor (stageCues.degrade) takes away, in order: the depth of field, grid density, trail
- * length, the contours and glow, ring dots, then the pixel ratio.
+ * covers nothing of the robot. Lite (automatic, src/core/autoLite.ts): 55% of the grid, no waves,
+ * shimmer, depth of field, glow, morph or parallax, a 24-dot trail, a 60-dot ring. Reduced motion: one
+ * still frame, the agent resting at the plateau's edge with its trail. Paused while the hero is off
+ * screen, the tab hidden or the backdrop faded. When the frame rate drops (the engine's governor,
+ * stageCues.degrade, on desktops; this layer's own watchdog on phones and tablets) it gives up, in order:
+ * the pulse waves, the contour shimmer, grid density, trail length, the glow, depth of field and ring
+ * dots, then its pixel ratio.
  */
 import { stageCues, type StageFrame } from './dom'
 import { beat, emptySample } from './beat'
@@ -62,8 +70,19 @@ const RELIEF = { side: 0.34, far: 0.07, lip: 0.065 }
  * in the far rows, beside and above the robot, instead of shooting off the top), with gentler walls.
  */
 const PHONE = { side: 0.18, far: 0.05, lip: 0.05, width: 1.35 }
-/** The dots' life (not in lite or reduced motion): ripples running over the surface, a shimmer, a twinkle. */
-const VIBE = { ripple: 0.022, jitter: 0.6 }
+/** Seconds per beat on the hero's clock (beat.ts: 96 BPM). */
+const BEAT_S = 60 / 96
+/**
+ * The pulse waves: one every 2 beats, a single raised-sine swell `amp` of the relief high and `length` of
+ * the width long, travelling `speed` of the width a second, fading over `reach` of the width; its crest
+ * `crest` brighter. Phones at 70%.
+ */
+const WAVE = { every: 2 * BEAT_S, amp: 0.01, length: 0.12, speed: 0.14, reach: 0.55, crest: 0.1, phone: 0.7 }
+/** The contour shimmer: a band of light (+12%) running out along the contours every 3.5 s. */
+const SHIMMER = { every: 3.5, gain: 0.12, width: 0.05, reach: 0.75 }
+/** The surface's breath: +-2.5% over a 5 s sine. The horizon's glow: +-8% over 4 s. */
+const BREATH = { amp: 0.025, period: 5 }
+const HAZE = { amp: 0.08, period: 4 }
 /** The landing point: on the plateau's edge, this far (radians) round from its front, on the agent's side. */
 const LAND_ANGLE = (60 * Math.PI) / 180
 const WELLS = 4
@@ -74,17 +93,26 @@ const GRID = {
   tablet: { sx: 16, sy: 11, budget: 140 * 80 },
   phone: { sx: 8, sy: 6.5, budget: 100 * 60 },
 } as const
-/** Dot size (px): nearest .. farthest. */
-const DOT = { wide: [3, 5.5], phone: [2.2, 4.2] } as const
+/** The grid's density against the spacing above: 15% fewer dots, 25% on phones. */
+const DENSITY = { desktop: 0.85, tablet: 0.85, phone: 0.75 } as const
+/** Dot size tiers (px): small (far), medium, large (near). */
+const DOT = { wide: [3, 4, 5], phone: [2.4, 3.2, 4] } as const
 /** Gradient descent: momentum, step, the arrival radius (world), the most steps. */
 const GD = { beta: 0.9, lr: 0.0016, arrive: 0.05, max: 2600 }
 /**
- * Cycle timing (s): the agent's fade-in, the timer-mode descent, the final approach (as long as the
- * build prints: perform.ts DUR.build), the landing's effects, the morph and when it starts, the rest
- * before the next run (timer mode), and the longest hold for a build that does not come.
+ * Cycle timing (s), 7 s in all: the agent's fade-in, the descent, the final approach (build-paced mode: as
+ * long as the build prints, perform.ts DUR.build), the landing's ring, the reshape and when it starts, the
+ * wait from the landing to the next spawn, and the longest hold for a build that does not come.
  */
-const CYCLE = { spawn: 0.5, descent: 8.5, phoneDescent: 7, final: 1.2, land: 1.6, morphAt: 0.3, morph: 3, rest: 2, hold: 6 }
-/** The load sequence (s after the reveal): the landscape's dot-wave, then the horizon and plot, then the agent at power-on. */
+const CYCLE = { spawn: 0.4, descent: 5.2, phoneDescent: 5.2, final: 1.2, land: 1.1, morphAt: 0.1, morph: 1.6, rest: 1.4, hold: 6 }
+/** The landing's flash on the plateau (s): at most 0.4 s, to 85%. */
+const FLASH = 0.4
+/**
+ * Pace the descent to the laptop's builds (the old behaviour: the descent runs until the next build is due,
+ * which comes every 10-13 s) instead of the 7 s timer. Off: the builds are too far apart for this tempo.
+ */
+const SYNC_BUILDS = false
+/** The load sequence (s after the reveal): the landscape's dot-wave, then the horizon, then the agent at power-on. */
 const LOAD = { terrain: [0.4, 1.8], details: [1.8, 2.3], agent: 2.5 }
 /** The landing ring: dots, peak opacity, reach (share of the width; phones). */
 const RING = { dots: 140, lite: 60, degraded: 70, alpha: 0.75, reach: 0.6, phoneReach: 0.8 }
@@ -163,13 +191,13 @@ const TERRAIN_VS = /* glsl */ `
 precision highp float;
 attribute vec2 aPos;           // world x, z
 uniform float uDpr;
-uniform float uTime;
 uniform vec2 uDepth;           // the grid's nearest and farthest depth
-uniform vec3 uSize;            // size at the stage's depth (px), min, max
+uniform vec4 uSize;            // size at the stage's depth (px); the small, medium and large tiers (px)
 uniform float uRowK;           // the depth ratio between rows (log)
 uniform float uReveal;         // the reveal front's radius (world)
 uniform vec2 uFx;              // depth of field, contours+glow (0/1)
-uniform float uVibe;           // the dots' life: ripples, shimmer, twinkle (0/1)
+uniform vec4 uWave;            // the pulse waves: newest front's distance, spacing, length, height (world; 0 off)
+uniform vec4 uShimmer;         // the contour band: its distance, width (world), strength (0 off), the waves' fade distance
 uniform vec4 uLand;            // the landing point (x, z), the flash (0..1), the bottom fade's start (px)
 uniform vec3 uRing;            // the ring's radius and width (in plateau radii, from the plateau's centre), strength
 varying vec4 vCol;
@@ -186,27 +214,29 @@ float hillPeak(vec2 p) {
 }
 void main() {
   float f = field(aPos);
-  // Life: ripples running across the surface (two crossing wave trains), each dot shimmering on its own
-  // phase, now and then a twinkle. The plateau stays still under the dais.
-  float ph = fract(sin(dot(aPos, vec2(127.1, 311.7))) * 43758.5453);
-  float live = uVibe * smoothstep(1.05, 1.4, plateau(aPos));
-  float ripple = sin(dot(aPos, vec2(2.6, 1.9)) * 3.0 - uTime * 2.6) + 0.7 * sin(dot(aPos, vec2(-2.1, 2.8)) * 2.4 - uTime * 3.4);
-  f += live * ${VIBE.ripple.toFixed(3)} * uBowl.z * ripple;
-  vec3 s = project(vec3(aPos.x, f, aPos.y));
-  s.xy += live * ${VIBE.jitter.toFixed(2)} * vec2(sin(uTime * 7.0 + ph * 6.283), cos(uTime * 5.3 + ph * 9.1));
-  float hn = clamp(f / uBowl.z, 0.0, 1.0);
   float rP = plateau(aPos);
+  // The pulse waves: concentric swells out from the stage, each one raised-sine hump (pure, eased), fading
+  // with distance. The plateau under the dais stays still.
+  float away = max(rP - 1.0, 0.0) * uPlat.x;
+  float sw = mod(uWave.x - away, uWave.y);
+  float hump = uWave.w > 0.0 && sw < uWave.z ? 0.5 - 0.5 * cos(6.2832 * sw / uWave.z) : 0.0;
+  hump *= smoothstep(1.02, 1.3, rP) * exp(-away / uShimmer.w);
+  f += uWave.w * hump;
+  vec3 s = project(vec3(aPos.x, f, aPos.y));
+  float hn = clamp(f / uBowl.z, 0.0, 1.0);
   float far = clamp((s.z - uDepth.x) / (uDepth.y - uDepth.x), 0.0, 1.0);
 
   // Slopes: #A78BFA at 30-50%.
   vec3 col = ${vec3(LILAC)};
   float a = mix(0.30, 0.50, smoothstep(0.06, 0.5, hn));
-  float size = uSize.x * uCam.x / s.z;
+  // Size: three tiers by the row's depth on flat ground (fixed per row, so nothing pops as the surface
+  // moves): the perspective size rounded to small, medium or large.
+  float row = uSize.x * uCam.x / (uCam.x - aPos.y * uCam.w);
+  float size = row < 0.5 * (uSize.y + uSize.z) ? uSize.y : row < 0.5 * (uSize.z + uSize.w) ? uSize.z : uSize.w;
   // The basin round the plateau: #C4B5FD, brightest at its rim (75%), fading outward.
   float basin = smoothstep(0.98, 1.06, rP) * (1.0 - smoothstep(1.2, 1.9, rP));
   a = mix(a, mix(0.75, 0.6, smoothstep(1.1, 1.6, rP)), basin);
   col = mix(col, ${vec3(GLOW)}, basin);
-  size *= 1.0 + 0.15 * basin;
   // On the plateau, under the dais: as faint as the dais's own dots, so the two meet without a seam.
   float on = 1.0 - smoothstep(0.96, 1.06, rP);
   a = mix(a, 0.14 + 0.1 * rP, on);
@@ -215,18 +245,16 @@ void main() {
   float crest = max(max(smoothstep(0.6, 0.9, hn), hillPeak(aPos)), 0.7 * rim) * (1.0 - on);
   a = mix(a, mix(0.55, 0.7, smoothstep(0.75, 1.0, hn)), crest);
   col = mix(col, ${vec3(GLOW)}, crest);
-  size *= 1.0 + 0.2 * crest;
   float halo = crest * uFx.y;
-  // Contours: every 7% of height a row 35% brighter, its brightness drifting.
+  // Contours: every 7% of height a row 35% brighter; a band of light (+12%) travelling out along them.
   float c = fract(hn / 0.07);
   float line = (1.0 - smoothstep(0.0, 0.3, min(c, 1.0 - c))) * smoothstep(1.1, 1.3, rP) * step(0.03, hn);
-  a *= 1.0 + 0.35 * line * uFx.y * (0.8 + 0.2 * sin(uTime * 0.4 - hn * 11.0));
-  size *= 1.0 + 0.1 * line * uFx.y;
-  // Distance: smaller, hazier, toward #7C5CFF; the farthest quarter out of focus.
+  float bd = (away - uShimmer.x) / uShimmer.y;
+  a *= 1.0 + line * uFx.y * (0.35 + ${SHIMMER.gain.toFixed(2)} * uShimmer.z * exp(-bd * bd));
+  // Distance: hazier, toward #7C5CFF; the farthest quarter out of focus (softer, not larger).
   a *= mix(1.0, 0.7, smoothstep(0.3, 1.0, far));
   col = mix(col, ${vec3(VIOLET)}, 0.6 * smoothstep(0.4, 1.0, far) * (1.0 - 0.5 * crest));
   float blur = uFx.x * smoothstep(0.75, 0.95, far);
-  size *= 1.0 + 0.5 * blur;
   a *= 1.0 - 0.3 * blur;
   // Where rows crowd together on screen (a slope turned away), each dot is fainter: dots, not lines.
   vec2 nb = vec2(aPos.x, aPos.y - s.z * uRowK / uCam.w);
@@ -243,22 +271,20 @@ void main() {
   float front = exp(-rr * rr) * uRing.z;
   float wake = (1.0 - smoothstep(-4.0, -1.2, rr)) * smoothstep(-9.0, -5.0, rr) * uRing.z;
   size *= 1.0 + 0.25 * front;
-  a = (a + 0.4 * front) * (1.0 - 0.5 * wake);
+  a = (a + 0.3 * front) * (1.0 - 0.5 * wake);
   col = mix(col, ${vec3(GLOW)}, front);
-  // A twinkle: each dot flares briefly every few seconds on its own beat; the ripples' crests a touch brighter.
-  float tw = pow(0.5 + 0.5 * sin(uTime * (1.3 + ph * 1.7) + ph * 40.0), 18.0);
-  a *= 1.0 + uVibe * (0.6 * tw + 0.12 * ripple);
-  size *= 1.0 + uVibe * 0.35 * tw;
+  // The dots riding a wave's crest, 10% brighter.
+  a *= 1.0 + ${WAVE.crest.toFixed(2)} * hump;
   // The robot's dark pocket; the plateau's flash (to 85%) shows round it.
   float flash = uLand.z * (1.0 - smoothstep(1.0, 1.35, rP));
   a = mix(a * clearing(s.xy), 0.85, flash);
-  a = min(a, 0.8);
-  // Size within its range (the halo grows the sprite, not the dot).
-  size = clamp(size, uSize.y, uSize.z * 1.25);
-  float sprite = size * (1.0 + 2.2 * halo);
+  // Never brighter than ~70%: the robot's visor and the laptop's screen stay the brightest things in frame.
+  a = min(a, max(0.7, 0.85 * flash));
+  // The halo grows the sprite, not the dot; whole device pixels, so sizes never shimmer.
+  float sprite = max(1.0, floor(size * (1.0 + 2.2 * halo) * uDpr + 0.5));
   vCol = vec4(col, a);
-  vShape = vec4(size / sprite, blur, halo * 0.32, 0.0);
-  gl_PointSize = sprite * uDpr;
+  vShape = vec4(min(1.0, size * uDpr / sprite), blur, halo * 0.32, 0.0);
+  gl_PointSize = sprite;
   gl_Position = a < 0.004 || s.z < 0.1 ? vec4(2.0, 2.0, 2.0, 1.0) : toClip(s.xy);
 }
 `
@@ -315,7 +341,7 @@ export interface TerrainHandle {
 }
 
 export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () => StageFrame): TerrainHandle {
-  // Back to front: the horizon's glow, the landscape's canvas, the plot marks (under the beam).
+  // Back to front: the horizon's glow, the far ridges, the landscape's canvas (under the beam).
   const haze = document.createElement('div')
   haze.className = 'hero-haze'
   haze.setAttribute('aria-hidden', 'true')
@@ -330,18 +356,16 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
   ridgeSvg.setAttribute('aria-hidden', 'true')
   ridgeSvg.setAttribute('focusable', 'false')
   parent.insertBefore(ridgeSvg, canvas)
-  const plot = createPlot(parent)
 
   const gl = canvas.getContext('webgl', { alpha: true, antialias: false, premultipliedAlpha: true, preserveDrawingBuffer: false, powerPreference: 'low-power' })
   const programs = gl ? build(gl) : null
   if (!gl || !programs) {
     return {
-      resize: () => plot.size(host.clientWidth, host.clientHeight, null),
+      resize: () => {},
       dispose() {
         canvas.remove()
         haze.remove()
         ridgeSvg.remove()
-        plot.el.remove()
       },
     }
   }
@@ -355,8 +379,14 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
   let gridCount = 0
 
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)')
-  /** Lite: the LITE toggle or a software renderer (Hero.tsx); phones are not lite, they have their own profile. */
+  /** Lite: automatic lite (src/core/autoLite.ts) or a software renderer (Hero.tsx); phones are not lite, they have their own profile. */
   const lite = () => !!host.closest('[data-lite-landscape]')
+  /**
+   * How far this layer has stepped down (0..6): the engine's governor on desktops, its own watchdog on phones
+   * and tablets. 1 the pulse waves, 2 the contour shimmer, 3 grid density, 4 trail length, 5 the glow, depth
+   * of field and ring dots, 6 the pixel ratio.
+   */
+  const degradeStep = () => Math.max(stageCues.degrade, watchdog.level)
   const backdrop = () => {
     const v = parseFloat(host.style.getPropertyValue('--robot-bg'))
     return Number.isFinite(v) ? v : 1
@@ -450,8 +480,9 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
     G.dF = C.D + B.bz * COS
     const spec = GRID[size]
     const ultra = size === 'desktop' ? Math.min(1.25, Math.max(1, W / 1920)) : 1
-    // Density: lite 55%, the governor's step 2 80%; and never more points than the size's budget.
-    const k0 = Math.sqrt((tune.grid ?? 1) * (lite() ? 0.55 : 1) * (stageCues.degrade >= 2 ? 0.8 : 1) * (watchdog.level >= 1 ? 0.75 : 1))
+    // Density: the size's (15% under the spacing, 25% on phones), lite 55%, step 3 80%; and never more points
+    // than the size's budget.
+    const k0 = Math.sqrt((tune.grid ?? 1) * DENSITY[size] * (lite() ? 0.55 : 1) * (degradeStep() >= 3 ? 0.8 : 1))
     const budget = spec.budget * k0 * k0
     let k = k0
     let sx = 0
@@ -492,13 +523,12 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
     }
 
     // Up to 1.25x (the dots are soft; on 3x phones this is a ninth of the native fill), less once degraded.
-    dpr = (tune.dpr ?? Math.min(window.devicePixelRatio || 1, 1.25)) * (stageCues.degrade >= 6 || watchdog.level >= 3 ? 0.75 : 1)
+    dpr = (tune.dpr ?? Math.min(window.devicePixelRatio || 1, 1.25)) * (degradeStep() >= 6 ? 0.75 : 1)
     canvas.width = Math.round(W * dpr)
     canvas.height = Math.round(H * dpr)
     layoutVersion++
     haze.style.top = `${Math.round(B.horizon)}px`
     buildRidges()
-    plot.size(W, H, size)
     // The arrangement's slots are in world units: a new shape of world re-places them.
     const worldKey = `${B.bx.toFixed(2)}:${B.bz.toFixed(2)}:${B.rz.toFixed(2)}`
     if (worldKey !== placedKey && cur.wells.length) setArrangement(lite() ? fixedArrangement() : arrangement(side))
@@ -745,8 +775,8 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
         const pull = Math.min(3, 0.02 * (k - escapeAt)) * B.relief * (toL > 0.4 ? 1 : 0.3)
         gx += (pull * (x - sim.gx)) / toL
         gz += (pull * (z - sim.gz)) / toL
-        // Out of the well and moving again: the next one may catch it.
-        if (caught && speed > 0.008 && k > escapeAt + 40 && detours < 2) {
+        // Out of the well and moving again (only one detour a run: never caught twice).
+        if (caught && speed > 0.008 && k > escapeAt + 40 && detours < 1) {
           caught = false
           escapeAt = -1
           slow = 0
@@ -832,7 +862,6 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
   let trailN = 0
   let trailAt = 0
   let agentA = 0
-  let elevation = 0.5
 
   function go(p: Phase) {
     phase = p
@@ -840,10 +869,10 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
   }
 
   /** The builds can be followed (the engine publishes them: not in lite, reduced motion or the scroll). */
-  const syncable = () => !lite() && Number.isFinite(stageCues.buildDue)
+  const syncable = () => SYNC_BUILDS && !lite() && Number.isFinite(stageCues.buildDue)
 
   function startRun() {
-    while (!planner.ready) planTry(morphT < 1 ? next : cur, GD.max)
+    while (!planner.ready && !planner.held) planTry(morphT < 1 ? next : cur, GD.max)
     side = planner.side
     planner.side = -side
     replan()
@@ -903,10 +932,12 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
     }
     stepMorph(dt)
 
-    // Phones plan in smaller slices (slower CPUs): no frame pays more than a fraction of a millisecond.
-    if (phase === 'wait' || phase === 'rest') planTry(morphT < 1 ? next : cur, size === 'phone' ? 70 : 160)
-    // A run starts once it is planned (planning goes a slice per frame), or after 1.5 s more regardless.
-    const planned = (late: number) => planner.ready || late > 1.5
+    // Planning starts as soon as the next arrangement is known (the reshape has begun). Phones plan in smaller
+    // slices (slower CPUs): no frame pays more than a fraction of a millisecond.
+    if (phase === 'wait' || phase === 'rest' || (phase === 'land' && (phaseAt === -1 || lite()))) planTry(morphT < 1 ? next : cur, size === 'phone' ? 120 : 240)
+    // A run starts once it is planned (planning goes a slice per frame), with the best run so far a moment
+    // later, or after 1.5 s more regardless.
+    const planned = (late: number) => planner.ready || (late > 0.3 && planner.held) || late > 1.5
     if (phase === 'wait' && since >= LOAD.agent && planned(since - LOAD.agent)) startRun()
     else if (phase === 'spawn' && clock - phaseAt >= CYCLE.spawn) go('descent')
 
@@ -941,7 +972,8 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
       }
       if (t >= CYCLE.land) go('rest')
     } else if (phase === 'rest') {
-      const wait = lite() ? CYCLE.rest : timerMode ? Math.max(CYCLE.rest, CYCLE.morphAt + CYCLE.morph * 0.6) : CYCLE.morphAt + CYCLE.morph
+      // The timer: 7 s from spawn to spawn (the reshape finishes as the next agent fades in).
+      const wait = timerMode || lite() ? CYCLE.rest : CYCLE.morphAt + CYCLE.morph
       if (clock - landAt >= wait && planned(clock - landAt - wait)) startRun()
     }
 
@@ -959,13 +991,9 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
       } else trailN = Math.max(0, trailN - 2)
     }
     agentA = phase === 'spawn' ? smoothstep(0, CYCLE.spawn, clock - phaseAt) : live ? 1 : phase === 'land' ? 1 - smoothstep(0.2, 0.8, clock - landAt) : 0
-    if (live || phase === 'land') {
-      const hn = Math.min(1, field(cur, at[0], at[1]) / B.relief)
-      elevation += (hn - elevation) * (1 - Math.exp(-4 * dt))
-    }
   }
 
-  const trailMax = () => (lite() ? TRAIL.lite : stageCues.degrade >= 3 ? TRAIL.degraded : TRAIL.dots)
+  const trailMax = () => (lite() ? TRAIL.lite : degradeStep() >= 4 ? TRAIL.degraded : TRAIL.dots)
 
   function agentPos(): [number, number] {
     if (phase === 'wait' || phase === 'rest' || !nPath) return [L.x, L.z]
@@ -1003,17 +1031,17 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
     }
     const a = still ? 1 : agentA
     if (a > 0) {
-      // A soft glow (~28 px radius) and the core (9 px).
-      pushFx(at[0], at[1], 0, phone ? 46 : 60, 0.42 * a, 1, 1)
-      pushFx(at[0], at[1], 0, phone ? 8 : 9.5, 0.8 * a, 1, 0.2)
+      // A soft glow (~28 px radius) and the core (9 px), kept under the visor's brightness.
+      pushFx(at[0], at[1], 0, phone ? 46 : 60, 0.3 * a, 1, 1)
+      pushFx(at[0], at[1], 0, phone ? 8 : 9.5, 0.6 * a, 1, 0.2)
     }
     if (phase !== 'land' || still) return
     const t = clock - landAt
     // The ring: out from the plateau's rim across the landscape and up its slopes, to 60% of the width (80% on
-    // phones) in 1.6 s. It spreads from the global minimum itself, so it runs out both sides of the robot.
+    // phones) in 1.1 s (CYCLE.land). It spreads from the global minimum itself, so it runs out both sides of the robot.
     const ring = ringAt(t)
     if (ring.a > 0.003) {
-      const count = lite() ? RING.lite : stageCues.degrade >= 5 ? RING.degraded : RING.dots
+      const count = lite() ? RING.lite : degradeStep() >= 5 ? RING.degraded : RING.dots
       for (let i = 0; i < count; i++) {
         const th = (i / count) * Math.PI * 2
         const x = ring.r * B.rx * Math.cos(th)
@@ -1042,9 +1070,9 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
     return { r: R, a: lite() ? a * 0.8 : a }
   }
 
-  let lastDegrade = stageCues.degrade
+  let lastDegrade = 0
   const beatNow = emptySample()
-  const shown = { hazeV: -1, ridges: -1, plot: false }
+  const shown = { hazeV: -1, ridges: -1 }
   let wasLite = lite()
   const at = { x: 0, y: 0 }
 
@@ -1080,9 +1108,9 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
   let arrVersion = 0
 
   function draw(time: number, still: boolean) {
-    if (stageCues.degrade !== lastDegrade || lite() !== wasLite) {
+    if (degradeStep() !== lastDegrade || lite() !== wasLite) {
       const liteChanged = lite() !== wasLite
-      lastDegrade = stageCues.degrade
+      lastDegrade = degradeStep()
       wasLite = lite()
       layout()
       if (liteChanged) {
@@ -1099,18 +1127,16 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
     const since = (performance.now() - onAt) / 1000
     const grow = still ? 1 : smoothstep(LOAD.terrain[0], LOAD.terrain[1], since)
     const details = still ? 1 : smoothstep(LOAD.details[0], LOAD.details[1], since)
-    // The horizon's glow pulses with the beat (+-18%) and shimmers a little between beats. Style writes only
-    // when the value has moved visibly (an opacity change is composited, no layout or paint).
+    // The horizon's glow breathes, +-8% over 4 s (a sine). Style writes only when the value has moved (an
+    // opacity change is composited, no layout or paint).
     beat.sample(performance.now(), beatNow)
-    const pulse = still || lite() || !beatNow.on ? 0 : beatNow.pulse * 0.18 + 0.05 * Math.sin(time * 5.1)
-    const hazeV = Math.min(1, details * (0.86 + pulse))
-    if (Math.abs(hazeV - shown.hazeV) >= 0.025 || (hazeV >= 1) !== (shown.hazeV >= 1)) {
+    const hazeBreath = still || lite() ? 0 : HAZE.amp * Math.sin((time * Math.PI * 2) / HAZE.period)
+    const hazeV = Math.min(1, details * (0.9 + hazeBreath))
+    if (Math.abs(hazeV - shown.hazeV) >= 0.006 || (hazeV >= 1) !== (shown.hazeV >= 1)) {
       shown.hazeV = hazeV
       haze.style.opacity = hazeV.toFixed(3)
     }
     if (Math.abs(details - shown.ridges) >= 0.05 || (details >= 1 && shown.ridges < 1)) ridgeSvg.style.opacity = String((shown.ridges = details))
-    const plotOn = details > 0.01
-    if (plotOn !== shown.plot) plot.el.toggleAttribute('data-on', (shown.plot = plotOn))
     if (grow <= 0) return
 
     // Pointer parallax (desktop): 11 px opposite the pointer at the stage's depth, more for nearer dots.
@@ -1120,25 +1146,38 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
     at.y = para ? parseFloat(host.style.getPropertyValue('--hero-py')) || 0 : 0
     const px = -11 * at.x
     const py = -7 * at.y
-    const breath = still ? 1 : 1 + 0.02 * Math.sin((time * Math.PI * 2) / 12)
+    const breath = still ? 1 : 1 + BREATH.amp * Math.sin((time * Math.PI * 2) / BREATH.period)
 
     g.blendFunc(g.ONE, g.ONE)
     const tLand = phase === 'land' && !still ? clock - landAt : -1
     setShared(terrain, px, py, breath)
     const tu = terrain.u
-    g.uniform1f(tu.uTime, still ? 0 : time)
     g.uniform2f(tu.uDepth, G.dN, G.dF)
     const phone = size === 'phone'
-    const [sMin, sMax] = phone ? DOT.phone : DOT.wide
-    g.uniform3f(tu.uSize, G.sizeK, sMin, sMax)
+    const [small, medium, large] = phone ? DOT.phone : DOT.wide
+    g.uniform4f(tu.uSize, G.sizeK, small, medium, large)
     g.uniform1f(tu.uRowK, G.rowK)
     // The reveal front: out from the stage to past the farthest corner.
     const reach = Math.hypot(B.bx * 2.6, B.bz) + 0.8
     g.uniform1f(tu.uReveal, grow * reach + (grow >= 1 ? 99 : 0))
-    const glow = !lite() && stageCues.degrade < 4 && watchdog.level < 2 ? 1 : 0
-    g.uniform2f(tu.uFx, !lite() && stageCues.degrade < 1 && !phone ? 1 : 0, glow)
-    g.uniform1f(tu.uVibe, still || lite() || watchdog.level >= 2 ? 0 : 1)
-    const flash = tLand >= 0 ? Math.sin(Math.PI * Math.min(1, tLand / 0.5)) : 0
+    const glow = !lite() && degradeStep() < 5 ? 1 : 0
+    g.uniform2f(tu.uFx, glow && !phone ? 1 : 0, glow)
+    // The pulse waves and the contour band, in world units at the stage's depth (from shares of the width).
+    // The waves run on the beat clock (one every 2 beats, from an even beat), on their own before it starts.
+    const wpx = (W * C.D) / C.f
+    const waveT = beatNow.on ? beatNow.t * BEAT_S : time
+    const waveOn = !still && !lite() && degradeStep() < 1
+    g.uniform4f(
+      tu.uWave,
+      WAVE.speed * wpx * (waveT % WAVE.every),
+      WAVE.speed * wpx * WAVE.every,
+      WAVE.length * wpx,
+      waveOn ? WAVE.amp * B.relief * (phone ? WAVE.phone : 1) * details : 0,
+    )
+    const band = (time % SHIMMER.every) / SHIMMER.every
+    const shimmerOn = !still && !lite() && degradeStep() < 2
+    g.uniform4f(tu.uShimmer, band * SHIMMER.reach * wpx, SHIMMER.width * wpx, shimmerOn ? Math.sin(Math.PI * band) : 0, WAVE.reach * wpx)
+    const flash = tLand >= 0 ? Math.sin(Math.PI * Math.min(1, tLand / FLASH)) : 0
     g.uniform4f(tu.uLand, L.x, L.z, flash, H * 0.9)
     const ring = ringAt(tLand)
     g.uniform3f(tu.uRing, ring.r, 0.14, ring.a > 0 ? Math.min(1, ring.a / RING.alpha + 0.25) : 0)
@@ -1167,8 +1206,6 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
       g.disableVertexAttribArray(fx.a.aSoft)
     }
 
-    // The left ruler's cursor follows the agent's elevation.
-    plot.cursor(elevation, still ? 0.8 : 0.3 + 0.7 * agentA)
     if (import.meta.env.DEV && snapWaiter) {
       snapWaiter(canvas.toDataURL())
       snapWaiter = null
@@ -1199,7 +1236,6 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
       trail[i * 2 + 1] = path[k * 2 + 1]
       trailN++
     }
-    elevation = 0
     draw(0, true)
   }
 
@@ -1242,14 +1278,15 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
   let resizeRaf = 0
   /**
    * Its own frame-rate watchdog: the engine's governor (stageCues.degrade) does not run in low power, which is
-   * every phone, so on phones and tablets this layer watches the page's frame rate itself (2 s windows, once the intro is over) and,
-   * only ever downward, gives up: 1 a quarter of its dots, 2 the shimmer, twinkle and glow, 3 resolution, and
-   * draws at 20 frames a second.
+   * every phone, so on phones and tablets this layer watches the page's frame rate itself (2 s windows, once
+   * the intro is over) and, only ever downward, gives up in the governor's order (degradeStep): 1 the pulse
+   * waves, 2 the contour shimmer, 3 grid density, 4 trail length, 5 the glow and ring dots, 6 resolution,
+   * and draws at 20 frames a second.
    */
   const watchdog = { sum: 0, n: 0, level: 0 }
   function watch(ms: number) {
     // Desktops have the engine's governor (stageCues.degrade); this is for phones and tablets.
-    if (size === 'desktop' || watchdog.level >= 3 || (performance.now() - onAt) / 1000 < 6 || ms > 400) return
+    if (size === 'desktop' || watchdog.level >= 6 || (performance.now() - onAt) / 1000 < 6 || ms > 400) return
     watchdog.sum += ms
     watchdog.n++
     if (watchdog.sum < 2000) return
@@ -1273,7 +1310,7 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
     last = now
     carry += dt
     // Phones: ~30 frames a second is plenty for motion this slow (20 once the watchdog has stepped down).
-    if ((size !== 'phone' && watchdog.level < 3) || carry >= (watchdog.level >= 3 ? 1 / 21 : 1 / 32)) {
+    if ((size !== 'phone' && watchdog.level < 6) || carry >= (watchdog.level >= 6 ? 1 / 21 : 1 / 32)) {
       const t0 = performance.now()
       gpuBegin()
       update(carry)
@@ -1380,7 +1417,6 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
       canvas.remove()
       haze.remove()
       ridgeSvg.remove()
-      plot.el.remove()
     },
   }
 }
@@ -1428,91 +1464,7 @@ function build(gl: WebGLRenderingContext) {
     return { p, u, a, layout: -1, arr: -1 }
   }
   const shared = ['uWell', 'uHill', 'uBowl', 'uBowl2', 'uPlat', 'uCam', 'uScr', 'uShift', 'uHead', 'uBody', 'uClear', 'uDpr']
-  const terrain = link(TERRAIN_VS, DOT_FS, ['aPos'], [...shared, 'uTime', 'uDepth', 'uSize', 'uRowK', 'uReveal', 'uFx', 'uVibe', 'uLand', 'uRing'])
+  const terrain = link(TERRAIN_VS, DOT_FS, ['aPos'], [...shared, 'uDepth', 'uSize', 'uRowK', 'uReveal', 'uFx', 'uWave', 'uShimmer', 'uLand', 'uRing'])
   const fx = link(FX_VS, DOT_FS, ['aPos', 'aK', 'aSoft'], shared)
   return terrain && fx ? { terrain, fx } : null
-}
-
-// ---- the plot details: corner crosshairs, edge rulers, the elevation cursor
-
-const SVG = 'http://www.w3.org/2000/svg'
-
-function createPlot(parent: HTMLElement) {
-  const el = document.createElementNS(SVG, 'svg')
-  el.setAttribute('class', 'hero-plot')
-  el.setAttribute('aria-hidden', 'true')
-  el.setAttribute('focusable', 'false')
-  parent.insertBefore(el, parent.querySelector('.hero-beam'))
-  let cursorEl: SVGGElement | null = null
-  let span = { top: 0, bottom: 1 }
-  let shownY = -1
-  let shownA = -1
-
-  return {
-    el,
-    size(W: number, H: number, size: 'desktop' | 'tablet' | 'phone' | null) {
-      el.setAttribute('viewBox', `0 0 ${W} ${H}`)
-      el.setAttribute('width', String(W))
-      el.setAttribute('height', String(H))
-      // Below the header (Hud: a 44 px row with clamp(10px, 1.4vw, 20px) above and below).
-      const header = 44 + 2 * Math.min(20, Math.max(10, W * 0.014))
-      const inset = 28
-      const top = header + 16
-      const bottom = Math.min(H, window.innerHeight || H) - inset
-      // Crosshairs: a 10 px "+" of dots, #A78BFA at 30%.
-      const marks: string[] = []
-      for (const [x, y] of [
-        [inset, top],
-        [W - inset, top],
-        [inset, bottom],
-        [W - inset, bottom],
-      ]) {
-        for (let k = -2; k <= 2; k++) {
-          marks.push(`<circle cx="${x + k * 2.5}" cy="${y}" r="0.9"/>`)
-          if (k) marks.push(`<circle cx="${x}" cy="${y + k * 2.5}" r="0.9"/>`)
-        }
-      }
-      // Rulers: 6 px ticks every 24 px, every fifth 12 px, #A78BFA at 25%, fading toward the centre.
-      let rulers = ''
-      cursorEl = null
-      if (size && size !== 'phone') {
-        const y0 = top + 28
-        const y1 = bottom - 28
-        span = { top: y0, bottom: y1 }
-        let dl = ''
-        let dr = ''
-        for (let i = 0, y = y0; y <= y1; i++, y += 24) {
-          const len = i % 5 === 0 ? 12 : 6
-          dl += `M${inset} ${y}h${len}`
-          dr += `M${W - inset} ${y}h${-len}`
-        }
-        rulers = `
-          <defs>
-            <linearGradient id="hero-tick-l" gradientUnits="userSpaceOnUse" x1="${inset}" x2="${inset + 12}"><stop offset="0" stop-color="#A78BFA" stop-opacity="0.25"/><stop offset="1" stop-color="#A78BFA" stop-opacity="0.08"/></linearGradient>
-            <linearGradient id="hero-tick-r" gradientUnits="userSpaceOnUse" x1="${W - inset}" x2="${W - inset - 12}"><stop offset="0" stop-color="#A78BFA" stop-opacity="0.25"/><stop offset="1" stop-color="#A78BFA" stop-opacity="0.08"/></linearGradient>
-          </defs>
-          <g opacity="${size === 'tablet' ? 0.8 : 1}">
-            <path d="${dl}" stroke="url(#hero-tick-l)" stroke-width="1" fill="none"/>
-            <path d="${dr}" stroke="url(#hero-tick-r)" stroke-width="1" fill="none"/>
-            <g class="hero-plot__cursor"><path d="M${inset - 3} 0h17" stroke="#C4B5FD" stroke-opacity="0.6" stroke-width="1.5" stroke-linecap="round"/></g>
-          </g>`
-      }
-      el.innerHTML = `${rulers}<g fill="#A78BFA" fill-opacity="0.3">${marks.join('')}</g>`
-      cursorEl = el.querySelector('.hero-plot__cursor')
-      shownY = shownA = -1
-    },
-    /** Elevation 0 (the basin) .. 1 (the ridges): high on the ruler for high ground. */
-    cursor(elevation: number, alpha: number) {
-      if (!cursorEl) return
-      const y = span.bottom - (span.bottom - span.top) * (0.08 + 0.84 * elevation)
-      if (Math.abs(y - shownY) > 0.2) {
-        shownY = y
-        cursorEl.setAttribute('transform', `translate(0 ${y.toFixed(1)})`)
-      }
-      if (Math.abs(alpha - shownA) > 0.02) {
-        shownA = alpha
-        cursorEl.setAttribute('opacity', alpha.toFixed(2))
-      }
-    },
-  }
 }

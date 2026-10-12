@@ -331,8 +331,8 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
 
   /**
    * Quality steps taken when the hero cannot hold its frame rate (measured over 2 s windows while the
-   * scene plays), in this order: 1 the backdrop's depth of field, 2 its far-field panels, 3 its horizon
-   * wave (stage.ts reads these), 4 the glows that stand in for bloom and the floor reflection, 5 the
+   * scene plays), in this order: 1-3 the backdrop's pulse waves, contour shimmer and grid density
+   * (terrain.ts reads these), 4 the glows that stand in for bloom and the floor reflection, 5 the
    * shadow map halves, 6 the equaliser drops to 28 columns, 7-8 the pixel ratio steps down. Only ever
    * downward (no oscillation); the head, the eyes and the laptop's screen are never touched.
    */
@@ -859,8 +859,9 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     lap.lidEdge.opacity = 0.3 * (0.6 + 0.4 * props) * furnitureFade
     lap.keyboard.update(dt, props)
 
-    // ---- the stage: the dais breathes on the beat, the equaliser jumps, the rings turn, the commit pulse
-    robot.dais.uniforms.uPulse.value = lowPower ? 0 : beatNow.pulse * 0.55 * weight
+    // ---- the stage: the dais ripples every 2nd beat, the equaliser jumps, the rings turn, the commit pulse
+    // (On every 2nd beat, with the landscape's pulse waves, terrain.ts.)
+    robot.dais.uniforms.uPulse.value = lowPower || beatNow.index % 2 ? 0 : beatNow.pulse * 0.55 * weight
     const eq = robot.eq.material.uniforms
     eq.uBeat.value = beatNow.index
     eq.uSince.value = beatNow.since

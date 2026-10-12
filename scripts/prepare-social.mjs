@@ -35,8 +35,8 @@ const overlay = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${
   <text x="72" y="466" fill="#eceaf2" fill-opacity="0.6" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="24">${esc(site.location)}</text>
 </svg>`
 
-// The original photo: the hero's own plates have the moon cut out (the engine draws it).
-await sharp(resolve('public/hero/night.original.webp'))
+// The social card's background photo.
+await sharp(resolve('scripts/source/night.webp'))
   .resize(W, H, { fit: 'cover', position: 'centre' })
   .composite([{ input: Buffer.from(overlay) }])
   .jpeg({ quality: 84, mozjpeg: true })

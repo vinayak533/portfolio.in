@@ -8,6 +8,7 @@ import { site } from './content'
 import { Loader } from './dom/Loader'
 import { Cursor } from './dom/Cursor'
 import { Hud } from './dom/Hud'
+import { HeroCopyLayer } from './dom/HeroCopy'
 import { Hero } from './dom/sections/Hero'
 import { About } from './dom/sections/About'
 import { Works } from './dom/sections/Works'
@@ -87,6 +88,8 @@ export function App() {
         </Suspense>
       )}
       <Hud />
+      {/* The hero's copy, over the robot's fixed canvas (src/dom/HeroCopy.tsx). */}
+      {mode === 'webgl' && <HeroCopyLayer />}
       <main id="main" className="relative z-10">
         <Hero />
         {/* Portal target: the hero transition only fades this wrapper in as About arrives. */}

@@ -210,20 +210,12 @@ a { color: inherit; text-decoration: none; }
 .btn-line:hover { border-color: var(--ink); }
 
 /* ---------------------------------------------------------------- header (Hud.tsx) */
-/* Palette tokens (--h-*) live in src/hero/hero.css, shared with the hero. Mark, pill and
-   Lite switch share one vertical centre and one page margin. */
+/* Palette tokens (--h-*) live in src/hero/hero.css, shared with the hero. The pill is centred on the
+   page (absolutely, so nothing beside it can shift it); below md the count and Menu sit on the right
+   page margin. The row keeps its 44 px height with nothing in flow (desktop). */
 .hud {
+  min-height: calc(44px + 2 * clamp(10px, 1.4vw, 20px));
   padding: clamp(10px, 1.4vw, 20px) var(--h-margin, clamp(24px, 4.4vw, 64px));
-}
-.hud-mark {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  font-family: var(--h-display);
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--h-text);
 }
 .hud-count {
   color: var(--h-muted);
@@ -271,41 +263,6 @@ a { color: inherit; text-decoration: none; }
   background: var(--h-surface-2, #14102a);
   box-shadow: inset 0 0 0 1px var(--h-accent, #7c5cff);
   transition: left 0.9s var(--ease-out), width 0.9s var(--ease-out);
-}
-
-/* ---------------------------------------------------------------- lite switch */
-.hud-lite {
-  min-height: 44px;
-  font-size: 11px;
-  color: var(--h-muted);
-}
-.hud-lite__track {
-  position: relative;
-  display: inline-block;
-  width: 30px;
-  height: 18px;
-  border-radius: 999px;
-  border: 1px solid var(--h-line);
-  background: rgb(11 9 22 / 0.6);
-  transition: background-color 0.5s var(--ease-out), border-color 0.5s var(--ease-out);
-}
-.hud-lite__knob {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background: var(--h-muted);
-  transition: left 0.5s var(--ease-out), background-color 0.5s var(--ease-out);
-}
-.hud-lite[aria-pressed='true'] .hud-lite__track {
-  background: rgb(124 92 255 / 0.35);
-  border-color: var(--h-accent);
-}
-.hud-lite[aria-pressed='true'] .hud-lite__knob {
-  left: 15px;
-  background: var(--h-text);
 }
 
 /* ---------------------------------------------------------------- mobile menu */

@@ -1,5 +1,4 @@
 import { useEffect, useRef, type CSSProperties } from 'react'
-import { site } from '../../content'
 import { signals, useStore } from '../../store/useStore'
 import type { RobotHandle } from '../../hero/robot/dom'
 import { transitionProfile } from '../../hero/config'
@@ -9,11 +8,13 @@ import '../../hero/hero.css'
 import '../../hero/robot/robot.css'
 import '@fontsource-variable/space-grotesk/index.css'
 import '@fontsource-variable/inter/opsz.css'
+import { HeroCopy } from '../HeroCopy'
 
 /**
  * The opening frame: an interactive 3D robot (src/hero/robot) seated at its
- * desk, coding on its laptop on a spotlit stage, with no copy beside it (the
- * name is kept for screen readers and search only). Its head and eyes follow
+ * desk, coding on its laptop on a spotlit stage, and one small block of copy
+ * in the bottom-left corner (src/dom/HeroCopy.tsx: with WebGL its scrim is
+ * here and its text in a layer over the robot's canvas). Its head and eyes follow
  * the pointer. The section is a tall track with a sticky stage (the pin);
  * src/hero/transition.ts scrubs the hand-over to About: the camera closes on
  * the robot's head as its body dissolves away, then the head flies down into
@@ -23,7 +24,7 @@ import '@fontsource-variable/inter/opsz.css'
  * field, the horizon wave, the dot floor, the edge streams and the two
  * far-field panels are drawn by src/hero/robot/stage.ts. This component only
  * provides the containers and forwards site state (loader done, overlay
- * pause, lite).
+ * pause, lite; lite is automatic, src/core/autoLite.ts).
  */
 export function Hero() {
   const track = useRef<HTMLElement>(null)
@@ -35,7 +36,7 @@ export function Hero() {
   const mode = useStore((s) => s.mode)
   const lowPower = useStore((s) => s.lite || s.quality === 'low')
   // The landscape behind the robot (src/hero/robot/terrain.ts) has its own phone profile, so being a phone
-  // (the low tier's usual reason) does not make it lite: only the LITE toggle or a software renderer does.
+  // (the low tier's usual reason) does not make it lite: only automatic lite or a software renderer does.
   const liteLandscape = useStore((s) => s.lite || (s.quality === 'low' && !isTouchDevice() && window.innerWidth >= 760))
   const webgl = mode === 'webgl'
 
@@ -102,9 +103,6 @@ export function Hero() {
       style={webgl ? ({ '--hero-pin': `${transitionProfile().pinVh}vh` } as CSSProperties) : undefined}
     >
       <div ref={stage} className="hero-stage">
-        <h1 className="sr-only">
-          {site.name}, {site.role}
-        </h1>
         <div
           ref={host}
           className="hero-cinematic"
@@ -124,6 +122,8 @@ export function Hero() {
           </div>
           <div className="hero-grain" />
         </div>
+        {/* With WebGL only the scrim is here, under the robot's canvas; the text is over it (App.tsx). */}
+        <HeroCopy part={webgl ? 'scrim' : 'both'} />
       </div>
     </section>
   )
