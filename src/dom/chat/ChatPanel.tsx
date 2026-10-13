@@ -73,7 +73,7 @@ function pathOf(v?: View, focus?: string): string[] {
  * /commands, with a palette and a preview), one view at a time (a project, a technology, a
  * capability, an architecture, an answer…), a relation map that lights up what the view is about,
  * and a trail of everything run, which Esc walks back through. Answers resolve locally and
- * synchronously (src/core/console.ts); the status bar shows how, and how long it took.
+ * synchronously (src/core/console.ts); the status bar shows how.
  */
 export function ChatPanel({ id, open, onClose }: ChatPanelProps) {
   const resume = useResumeUrl()
@@ -160,20 +160,37 @@ export function ChatPanel({ id, open, onClose }: ChatPanelProps) {
     }
   }, [open, sheet])
 
-  // Each view starts at its top.
-  useLayoutEffect(() => {
-    scroller.current?.scrollTo({ top: 0 })
-  }, [cur?.id])
 
-  // A new response arrives animated (thinking, then streaming); one reopened from the trail, or any
-  // under reduced motion, is shown whole.
+  // The newest response arrives animated (thinking, then streaming); earlier turns, and every turn
+  // under reduced motion, are shown whole.
   const reduced = useMedia('(prefers-reduced-motion: reduce)')
   const seen = useRef(new Set<string>())
-  const animate = Boolean(cur) && !reduced && !seen.current.has(cur!.id)
+  const newest = session.entries[session.entries.length - 1]
+  const animate = Boolean(newest) && !reduced && !seen.current.has(newest.id)
   useEffect(() => {
-    if (cur) seen.current.add(cur.id)
-  }, [cur])
+    if (newest) seen.current.add(newest.id)
+  }, [newest])
   const [phase, setPhase] = useState<Phase>('done')
+
+  // The thread: every question and its response stay on the page, oldest first, like a chat. A new
+  // question scrolls up to the top of the pane with its response growing beneath it; the trail and
+  // Esc scroll back to earlier turns. The last turn is at least a pane tall, so it can sit at the top.
+  useEffect(() => {
+    const sc = scroller.current
+    if (!sc) return
+    const sync = () => sc.style.setProperty('--cx-main-h', `${sc.clientHeight}px`)
+    sync()
+    const ro = new ResizeObserver(sync)
+    ro.observe(sc)
+    return () => ro.disconnect()
+  }, [])
+  useLayoutEffect(() => {
+    const sc = scroller.current
+    if (!sc) return
+    const turn = session.cursor >= 0 ? sc.querySelector<HTMLElement>(`[data-turn="${session.cursor}"]`) : null
+    const top = turn ? turn.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 10 : 0
+    sc.scrollTo({ top, behavior: reduced || !turn ? 'auto' : 'smooth' })
+  }, [session.cursor, cur?.id, reduced])
 
   // The robot thinks while a response is on its way, reacts once it is in, then settles: pleased by
   // a match, sorry about a miss.
@@ -327,18 +344,32 @@ export function ChatPanel({ id, open, onClose }: ChatPanelProps) {
           </aside>
         )}
         <div ref={scroller} className="cx-main" data-lenis-prevent hidden={!wide && mapOpen}>
-          {cur && (
-            <p className="cx-query">
-              <span className="cx-prompt" aria-hidden="true">
-                ›
-              </span>
-              <span className="cx-query-text">{cur.input}</span>
-              <span className="cx-route" data-route={cur.res.route}>
-                {ROUTE_LABEL[cur.res.route]}
-              </span>
-            </p>
+          {session.entries.length ? (
+            <ol className="cx-thread" aria-label="Conversation">
+              {session.entries.map((e, i) => {
+                const last = i === session.entries.length - 1
+                return (
+                  <li key={e.id} className="cx-turn" data-turn={i} data-last={last || undefined} aria-current={i === session.cursor ? 'true' : undefined}>
+                    <div className="cx-ask">
+                      <p className="cx-bubble">
+                        <span className="sr-only">You asked: </span>
+                        {e.input}
+                      </p>
+                    </div>
+                    <ViewPane
+                      res={e.res}
+                      actions={actions}
+                      animate={last && animate}
+                      onPhase={last ? setPhase : undefined}
+                      showNext={last}
+                    />
+                  </li>
+                )
+              })}
+            </ol>
+          ) : (
+            <ViewPane key="home" res={null} actions={actions} onPhase={setPhase} />
           )}
-          <ViewPane key={cur?.id ?? 'home'} res={cur?.res ?? null} actions={actions} animate={animate} onPhase={setPhase} />
         </div>
       </div>
 
@@ -393,7 +424,7 @@ function Status({ live, cur, draft }: { live: Resolution | null; cur: Entry | nu
     return (
       <p className="cx-status-main">
         <span className="cx-status-text">
-          {cur.res.rule} · <span className="cx-num">{cur.ms < 0.1 ? '<0.1' : cur.ms.toFixed(1)} ms</span>
+          {cur.res.rule}
           {cur.res.focus ? ` · ${cur.res.focus}` : ''}
         </span>
       </p>

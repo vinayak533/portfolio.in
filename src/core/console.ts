@@ -15,7 +15,7 @@
  */
 import { assistant } from '../assistant'
 import { experience } from '../content'
-import { answer, type AskContext, type Reply } from './assistant'
+import { answer, unstretch, vocabulary, words, type AskContext, type Reply } from './assistant'
 import {
   capabilitiesOf,
   commandFor,
@@ -417,7 +417,7 @@ function ask(input: string, ctx: ConsoleContext): Resolution {
  * Resolves one input against the index. Null for empty input (nothing to run).
  * Pure: the same input and context give the same resolution.
  */
-export function resolve(raw: string, ctx: ConsoleContext = {}): Resolution | null {
+export function resolve(raw: string, ctx: ConsoleContext = {}, depth = 0): Resolution | null {
   const input = raw.trim().slice(0, assistant.maxLength)
   if (!input) return null
 
@@ -450,7 +450,66 @@ export function resolve(raw: string, ctx: ConsoleContext = {}): Resolution | nul
   }
 
   // 4–5. The question engine, then the honest fallback.
-  return ask(input, ctx)
+  const res = ask(input, ctx)
+  if (res.route !== 'fallback' || depth) return res
+
+  // 6. Before giving up: the same input with misspelt words corrected ("projcts", "experiance").
+  const fixed = correct(input)
+  if (!fixed) return res
+  const again = resolve(fixed, ctx, 1)
+  return again && again.route !== 'fallback' ? { ...again, input, rule: `${again.rule} · read as “${fixed}”` } : res
+}
+
+/* ------------------------------------------------------------ typo repair */
+
+/** Words worth correcting towards: everything a topic listens for, plus every name in the index. */
+let known: Set<string> | null = null
+const knownWords = () =>
+  (known ??= new Set([...vocabulary, ...graph.nodes.flatMap((n) => words(n.label)), ...Object.keys(assistant.techAliases).flatMap(words)].filter((w) => w.length >= 3)))
+
+/** Edit distance with adjacent swaps (optimal string alignment), stopping early past `max`. */
+function distance(a: string, b: string, max: number): number {
+  if (Math.abs(a.length - b.length) > max) return max + 1
+  const d: number[][] = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array<number>(b.length).fill(0)])
+  for (let j = 1; j <= b.length; j++) d[0][j] = j
+  for (let i = 1; i <= a.length; i++) {
+    let rowMin = Infinity
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost)
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1)
+      rowMin = Math.min(rowMin, d[i][j])
+    }
+    if (rowMin > max) return max + 1
+  }
+  return d[a.length][b.length]
+}
+
+/**
+ * The input with each unknown word swapped for the closest known one: one edit for words of four or
+ * five letters, two for longer ones, same first letter. Null when nothing changed.
+ */
+function correct(input: string): string | null {
+  const dict = knownWords()
+  let changed = false
+  const out = words(unstretch(input)).map((w) => {
+    if (w.length < 4 || dict.has(w) || /\d/.test(w)) return w
+    const max = w.length >= 7 ? 2 : 1
+    let best = ''
+    let bestD = max + 1
+    for (const k of dict) {
+      if (k[0] !== w[0]) continue
+      const dd = distance(w, k, max)
+      if (dd < bestD || (dd === bestD && best && k.length > best.length)) {
+        best = k
+        bestD = dd
+      }
+    }
+    if (!best || bestD > max) return w
+    changed = true
+    return best
+  })
+  return changed ? out.join(' ') : null
 }
 
 /** An example argument, for a command offered without one. */

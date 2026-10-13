@@ -207,7 +207,6 @@ function Home() {
           ))}
         </ul>
       </Sec>
-      <p className="cx-honest">{c.honesty}</p>
     </div>
   )
 }
@@ -869,11 +868,12 @@ function Help() {
 }
 
 /*
- * How a response arrives, the way Claude's do: a short beat of "thinking", then an answer's text
- * streams in a few words at a time and the "Next" actions follow once it is done. Structured views
- * (a project, the stack…) skip the stream and unfold section by section instead. Only the
- * presentation is paced: the status bar still shows the real resolve time, and reopening a view
- * from the trail shows it whole. Timers, not requestAnimationFrame, which the WebGL page can starve.
+ * How a response arrives: a short "processing" beat that walks through what the resolver actually
+ * did (read the input, the rule that matched, what it read), then an answer's text streams in a few
+ * words at a time and the "Next" actions follow once it is done. Structured views (a project, the
+ * stack…) skip the stream and unfold section by section instead. Only the presentation is paced:
+ * earlier turns in the thread are shown whole.
+ * Timers and CSS, not requestAnimationFrame, which the WebGL page can starve.
  */
 export type Phase = 'thinking' | 'live' | 'done'
 
@@ -891,31 +891,78 @@ const STREAM_RATE = 34
 const STREAM_MAX_MS = 3600
 /** A list marker or heading mark on its own would render as a stray "-" until its words arrive. */
 const BARE_MARK = /(^|\n)[^\S\n]*(?:[-*•]|\d+[.)]|#{1,6})[^\S\n]*$/
+/** Each processing step lands this long after the one before (keep in step with --cx-step in chat.css). */
+const STEP_MS = 230
 
-/** How long the "thinking" beat lasts: a little longer for a longer answer, never long. */
-function thinkFor(res: Resolution | null): number {
-  if (res?.view?.kind !== 'answer') return 420
-  const n = toPlainText(res.view.reply.text).split(/\s+/).length
-  return 380 + Math.min(n, 160) * 2
+const ROUTE_WORD: Record<Route, string> = { command: 'command', entity: 'name in the index', context: 'follow-up', intent: 'intent', fallback: 'no exact rule' }
+
+/** The processing steps, read off the resolution itself. */
+function stepsOf(res: Resolution): string[] {
+  const read = res.sources.length ? `Reading ${res.sources.slice(0, 2).join(' · ')}` : res.route === 'fallback' ? 'Looking for the closest names' : 'Composing the reply'
+  return [res.route === 'command' ? 'Parsing the command' : 'Reading your question', `Matched ${ROUTE_WORD[res.route]} · ${res.rule}`, read]
 }
 
-/** Claude's spark: rounded rays that turn and breathe while a response is on its way. */
-function Spark({ className }: { className?: string }) {
+/** How long the processing beat lasts: every step lands, a little longer for a longer answer, never long. */
+function thinkFor(res: Resolution | null): number {
+  const steps = 3 * STEP_MS
+  if (res?.view?.kind !== 'answer') return steps + 60
+  const n = toPlainText(res.view.reply.text).split(/\s+/).length
+  return steps + Math.min(n, 120) * 1.5
+}
+
+/** A small orbit: a turning violet-to-blue ring around a breathing core, two satellites circling it. */
+function Orb({ size = 22 }: { size?: number }) {
   return (
-    <svg className={`cx-spark${className ? ` ${className}` : ''}`} viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-      {Array.from({ length: 8 }, (_, i) => (
-        <rect key={i} x="11" y="2" width="2" height={i % 2 ? 7 : 9} rx="1" transform={`rotate(${i * 45} 12 12)`} />
-      ))}
-    </svg>
+    <span className="cx-orb" style={{ '--s': `${size}px` } as CSSProperties} aria-hidden="true">
+      <span className="cx-orb-ring" />
+      <span className="cx-orb-core" />
+      <span className="cx-orb-sat" />
+      <span className="cx-orb-sat cx-orb-sat--b" />
+    </span>
   )
 }
 
-function Thinking() {
+function Thinking({ res }: { res: Resolution }) {
+  const steps = stepsOf(res)
   return (
-    <p className="cx-thinking" role="status">
-      <Spark />
-      <span className="cx-thinking-text">Thinking</span>
+    <div className="cx-thinking" role="status" aria-label="Processing">
+      <p className="cx-thinking-head">
+        <Orb />
+        <span className="cx-thinking-text">Processing</span>
+      </p>
+      <ol className="cx-steps" aria-hidden="true">
+        {steps.map((t, i) => (
+          <li key={i} style={{ '--n': i } as CSSProperties}>
+            <span className="cx-step-mark" />
+            <span className="cx-step-text">{t}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  )
+}
+
+/** What the processing beat settles into: one quiet line above the response. */
+function Trace({ res }: { res: Resolution }) {
+  return (
+    <p className="cx-trace">
+      <span className="cx-trace-dot" aria-hidden="true" />
+      <span>
+        {ROUTE_WORD[res.route]} · {res.rule}
+        {res.sources.length > 0 && ` · ${plural(res.sources.length, 'source')}`}
+      </span>
     </p>
+  )
+}
+
+/** Three dots in a wave, after the text while more is arriving. */
+function Typing() {
+  return (
+    <span className="cx-typing" aria-hidden="true">
+      <i />
+      <i />
+      <i />
+    </span>
   )
 }
 
@@ -986,7 +1033,7 @@ function Answer({ res }: { res: Resolution }) {
         }}
       >
         <Markdown src={s.shown} onAnchor={onAnchor} stream={s.animated} />
-        {s.live && <Spark className="cx-spark--tail" />}
+        {s.live && <Typing />}
       </div>
     </>
   )
@@ -1074,8 +1121,21 @@ function Next({ next }: { next: Action[] }) {
 /**
  * The view for a resolution (or the first screen), its provenance and where to go next. With
  * `animate`, it arrives the way a response does (see Stream above); `onPhase` reports each step.
+ * In the thread only the last turn offers "Next".
  */
-export function ViewPane({ res, actions, animate = false, onPhase }: { res: Resolution | null; actions: ViewActions; animate?: boolean; onPhase?: (p: Phase) => void }) {
+export function ViewPane({
+  res,
+  actions,
+  animate = false,
+  onPhase,
+  showNext = true,
+}: {
+  res: Resolution | null
+  actions: ViewActions
+  animate?: boolean
+  onPhase?: (p: Phase) => void
+  showNext?: boolean
+}) {
   const [animated] = useState(() => animate && Boolean(res))
   const [phase, setPhase] = useState<Phase>(animated ? 'thinking' : 'done')
   const finish = useRef(() => setPhase('done')).current
@@ -1091,17 +1151,18 @@ export function ViewPane({ res, actions, animate = false, onPhase }: { res: Reso
     <Actions.Provider value={actions}>
       <Stream.Provider value={{ animated, phase, finish }}>
         <article className="cx-view" data-kind={res?.view?.kind ?? 'home'} data-reveal={animated || undefined}>
-          {phase === 'thinking' ? (
-            <Thinking />
+          {phase === 'thinking' && res ? (
+            <Thinking res={res} />
           ) : (
             <>
+              {res && <Trace res={res} />}
               {res ? <Body res={res} /> : <Home />}
               {phase === 'done' && res && res.sources.length > 0 && (
                 <p className="cx-prov">
                   <span>Read from</span> {res.sources.slice(0, 4).join(' · ')}
                 </p>
               )}
-              {phase === 'done' && res && <Next next={res.next} />}
+              {phase === 'done' && res && showNext && <Next next={res.next} />}
             </>
           )}
         </article>

@@ -166,10 +166,14 @@ test("questions the site can't answer get an honest refusal, not a guess", () =>
     assert.match(r.text, /won’t guess/, q)
     assert.ok(r.text.includes(contact.email), q)
   }
+  // General knowledge is steered back to his work, not answered.
   const off = answer('What is the weather in Paris?')
-  assert.equal(off.known, false)
-  assert.equal(off.topic, 'fallback')
-  assert.match(off.text, /rather not guess/)
+  assert.equal(off.topic, 'off-topic')
+  assert.ok(!/°|sunny|rain/i.test(off.text), 'says nothing about the weather')
+  const none = answer('qwertyuiop zxcvbnm')
+  assert.equal(none.known, false)
+  assert.equal(none.topic, 'fallback')
+  assert.match(none.text, /rather not guess/)
 })
 
 test('accuracy questions give the known metric, or say there is none instead of inventing one', () => {
@@ -322,7 +326,7 @@ test('markdown: only safe link targets become links', () => {
 })
 
 test('every answer carries a trace of what it did: classify first, compose last', () => {
-  for (const q of [...assistant.starters, 'Tell me about LazyHire', 'Does he know Python?', 'what is the weather', 'hello']) {
+  for (const q of [...assistant.starters, 'Tell me about LazyHire', 'Does he know Python?', 'qwertyuiop zxcvbnm', 'hello']) {
     const { trace } = answer(q)
     assert.equal(trace[0].tool, 'classify_intent', q)
     assert.equal(trace[trace.length - 1].tool, 'compose_answer', q)
@@ -334,7 +338,7 @@ test('every answer carries a trace of what it did: classify first, compose last'
   const py = answer('Does he know Python?').trace
   assert.ok(py.some((s) => s.tool === 'read_source' && /AMnova/.test(s.detail)), JSON.stringify(py))
 
-  const miss = answer('what is the weather').trace
+  const miss = answer('qwertyuiop zxcvbnm').trace
   assert.deepEqual(miss.find((s) => s.tool === 'search_knowledge'), { tool: 'search_knowledge', detail: 'nothing matched' })
   assert.ok(!miss.some((s) => s.tool === 'read_source'), 'reads nothing it did not find')
 

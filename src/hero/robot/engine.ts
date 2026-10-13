@@ -1196,6 +1196,15 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
         eyeTX = lerp(eyeTX, clamp((ray.yaw - head.yaw) * 0.09, -0.075, 0.075), onAgent)
         eyeTY = lerp(eyeTY, clamp(-(ray.pitch - head.pitch) * 0.09, -0.055, 0.055), onAgent)
       }
+
+      // Flying to the dock the head shrinks toward the corner, where the glide's pointer ray swings it side-on
+      // (its dark back to the viewer): it turns to face us instead, the pointer pulling it +-12 deg, as docked.
+      const fly = smoothstep(0, 0.3, bLin)
+      if (fly > 0) {
+        const toViewer = anglesTo(camera.position)
+        yawT = lerp(yawT, toViewer.yaw + clamp(yawRaw - toViewer.yaw, -POINTER_LIMIT, POINTER_LIMIT), fly)
+        pitchT = lerp(pitchT, toViewer.pitch + clamp(pitchRaw - toViewer.pitch, -POINTER_LIMIT, POINTER_LIMIT), fly)
+      }
     } else {
       // Docked: the eyes follow the pointer (fine pointers, within +-12 deg of the viewer, the eyes a cell or two
       // further), else a glance now and then; a scan while thinking, a droop while asleep or crying, held still

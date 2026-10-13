@@ -179,6 +179,10 @@ export const assistant = {
     site: ['🧩', 'This site'],
     more: ['🔍', 'Go deeper'],
     'off-topic': ['🧭', 'Off topic'],
+    ack: ['👍', 'Sure'],
+    capabilities: ['🧭', 'What I can answer'],
+    team: ['🤝', 'Working with others'],
+    writing: ['✍️', 'Write-ups'],
     'not-covered:': ['🔒', 'Ask him directly'],
     unknown: ['🤔', 'Not in my notes'],
   } as Record<string, readonly [emoji: string, label: string]>,
@@ -220,7 +224,7 @@ export const assistant = {
         'Containerized AI microservices with Docker and automated AWS EC2 deployments with GitHub Actions.',
       ],
     },
-    Amdox: {
+    'Amdox Technologies': {
       where: 'Bengaluru',
       headline: 'Retail demand forecasting and churn detection models, deployed as production FastAPI endpoints.',
       stack: ['Python', 'XGBoost', 'scikit-learn', 'FastAPI', 'MLflow', 'Streamlit'],
@@ -724,12 +728,16 @@ export const assistant = {
    */
   notCovered: [
     { label: 'salary', direct: true, keys: ['salary', 'ctc', 'compensation', 'expected pay', 'pay range', 'hourly rate', 'current pay', 'salary package'] },
-    { label: 'notice period', direct: true, keys: ['notice period', 'joining date', 'start date', 'when can he start', 'how soon can he', 'start immediately', 'immediate joiner'] },
+    { label: 'notice period', direct: true, keys: ['notice period', 'joining date', 'start date', 'when can he start', 'how soon can he', 'start immediately', 'immediate joiner', 'when can he join', 'can he join', 'joining', 'how soon', 'serve notice', 'last working day'] },
     { label: 'phone number', direct: true, keys: ['phone', 'phone number', 'mobile number', 'whatsapp', 'call him'] },
     { label: 'home address', direct: true, keys: ['address', 'home address', 'house address', 'street address'] },
+    { label: 'academic grades', keys: ['cgpa', 'gpa', 'sgpa', 'marks', 'grade', 'grades', 'percentage', 'class rank', 'backlogs', 'arrears'] },
+    { label: 'weaknesses', keys: ['weakness', 'weaknesses', 'weak point', 'weak points', 'flaw', 'flaws', 'areas to improve', 'area of improvement', 'shortcoming', 'shortcomings'] },
+    { label: 'spoken languages', keys: ['speak', 'spoken language', 'spoken languages', 'mother tongue', 'native language', 'hindi', 'malayalam', 'tamil', 'kannada', 'telugu', 'english fluency'] },
+    { label: 'fine-tuning work', keys: ['fine tuning', 'fine tune', 'fine tuned', 'finetuning', 'finetune', 'lora', 'qlora', 'peft', 'rlhf'] },
     { label: 'visa or work-authorisation status', keys: ['visa', 'work permit', 'authorization', 'authorisation', 'sponsorship'] },
     // Tastes too ("his favourite food" is not his favourite project). Not 'movie': a project recommends movies.
-    { label: 'personal details', keys: ['age', 'old is he', 'married', 'birthday', 'religion', 'hobby', 'hobbies', 'food', 'pizza', 'topping', 'cuisine', 'dish', 'drink', 'song', 'music', 'colour', 'color', 'sport', 'sports', 'cricket', 'football', 'girlfriend'] },
+    { label: 'personal details', keys: ['age', 'old is he', 'date of birth', 'dob', 'born', 'birth date', 'married', 'birthday', 'religion', 'hobby', 'hobbies', 'food', 'pizza', 'topping', 'cuisine', 'dish', 'drink', 'song', 'music', 'colour', 'color', 'sport', 'sports', 'cricket', 'football', 'girlfriend'] },
   ] as { label: string; direct?: boolean; keys: string[] }[],
 
   /* ------------------------------------------------------------------ console */
@@ -744,7 +752,6 @@ export const assistant = {
     kicker: 'Index 00 · Discovery',
     statement: ['Query', 'the work.'],
     lede: 'A queryable index of Vinayak’s engineering: projects, the technologies behind them, the capabilities they show and the roles that used them, all connected.',
-    honesty: 'No language model. Every answer resolves against curated data, and when nothing matches it says so instead of guessing.',
     /** Entry points (commands) and example questions. Each must resolve (scripts/console.test.mjs checks). */
     entry: ['/agents', '/projects', '/stack', '/contact'],
     examples: ['How does Loom.ai work?', 'Does he know Docker?', 'Why should I hire him?'],
@@ -887,7 +894,7 @@ export const assistant = {
         { id: 'ml-notebooks', why: 'A dozen end-to-end notebooks on classic datasets: classification, regression and clustering.' },
       ],
       roles: [
-        { company: 'Amdox', why: 'Retail demand forecasting and churn detection models with XGBoost and scikit-learn.' },
+        { company: 'Amdox Technologies', why: 'Retail demand forecasting and churn detection models with XGBoost and scikit-learn.' },
         { company: 'Cognifyz Technologies', why: '**95%** classification accuracy on credit-approval models over **280,000+** records.' },
       ],
     },
@@ -918,7 +925,7 @@ export const assistant = {
       ],
       roles: [
         { company: 'AMnova Technologies', why: 'Containerized AI microservices with Docker and automated AWS EC2 deployments with GitHub Actions.' },
-        { company: 'Amdox', why: 'Deployed ML pipelines as production FastAPI endpoints, with MLflow experiment tracking.' },
+        { company: 'Amdox Technologies', why: 'Deployed ML pipelines as production FastAPI endpoints, with MLflow experiment tracking.' },
       ],
     },
     {
