@@ -9,7 +9,6 @@ import type { Abyss } from '../contact/abyss'
 import { ContactForm } from '../contact/ContactForm'
 import { contact } from '../../content'
 import { useResumeUrl } from '../useResumeUrl'
-import '@fontsource-variable/inter/opsz.css'
 import './contact.css'
 
 const EMAIL = contact.email
@@ -47,7 +46,7 @@ export function Contact() {
   const resume = useResumeUrl()
   const links = resume ? [...contact.links, { label: 'Résumé (PDF)', href: resume }] : contact.links
 
-  // The font and the light load only once the section is within a couple of screens.
+  // The light loads only once the section is within a couple of screens.
   useEffect(() => {
     const io = new IntersectionObserver(([e]) => e.isIntersecting && setNear(true), { rootMargin: '200% 0px' })
     io.observe(root.current!)
@@ -203,7 +202,7 @@ export function Contact() {
     <Section id="contact" title="Contact" underlap={webgl}>
       <div
         ref={root}
-        className={`ct${near ? ' is-near' : ''}`}
+        className="ct"
         onFocus={(e) => e.target instanceof HTMLElement && e.target.matches(':focus-visible') && abyss.current?.focusOn(e.target)}
         onPointerDown={(e) => {
           if (e.pointerType === 'mouse') return

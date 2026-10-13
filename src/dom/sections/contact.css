@@ -1,6 +1,6 @@
 /*
- * Contact: the deepest point. Near-black with a faint violet tint, one grotesk,
- * and a single light. Type rests dim in the dark and rises to full brightness
+ * Contact: the deepest point. Near-black with a faint violet tint, one face
+ * (Helvetica, global.css --font-content), and a single light. Type rests dim in the dark and rises to full brightness
  * inside the lamp (a color-dodge layer), so nothing is ever hidden.
  *
  * Unlit contrast on --ct-bg: headline 3.6:1 (large text), email 5.4:1,
@@ -15,18 +15,14 @@
   --ct-line: rgb(236 234 242 / 0.1);
   --ct-violet: #9a82ff;
   --ct-ease: cubic-bezier(0.16, 1, 0.3, 1);
-  --ct-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   position: relative;
   isolation: isolate;
   overflow: clip;
   min-height: 100svh;
   color: var(--ct-dim);
-  font-family: var(--ct-sans);
+  /* A system face: nothing to download, so nothing competes with the hero. */
+  font-family: var(--font-content);
   font-synthesis: none;
-}
-/* The font is attached once the section is near, so it never competes with the hero. */
-.ct.is-near {
-  --ct-sans: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 .ct-backdrop {

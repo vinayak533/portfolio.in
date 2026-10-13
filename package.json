@@ -11,6 +11,7 @@
     "test:contact": "node --test scripts/contact.test.mjs",
     "test:content": "node --test scripts/content.test.mjs",
     "test:assistant": "node --test scripts/assistant.test.mjs",
+    "test:console": "node --test scripts/console.test.mjs",
     "social": "node scripts/prepare-social.mjs",
     "portrait": "node scripts/prepare-portrait.mjs",
     "about-photo": "node scripts/prepare-about.mjs",

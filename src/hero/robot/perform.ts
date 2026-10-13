@@ -471,8 +471,7 @@ export function createPerformance(robot: RobotModel) {
         else lift = 1 - smooth(b.phase / 0.1)
       }
       rig.legs.forEach((leg, i) => solveLeg(leg, i, i === 0 ? 0.1 * lift * o.amp * w : 0))
-      // Contact shadows under the soles.
-      robot.root.updateMatrixWorld()
+      // Contact shadows under the soles. (getWorldPosition brings each joint's chain up to date itself.)
       rig.legs.forEach((leg, i) => {
         leg.toe.getWorldPosition(toe)
         leg.foot.getWorldPosition(ankle)

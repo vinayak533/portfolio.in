@@ -87,8 +87,8 @@ while (sp > 0) {
 
 const near = new Uint8Array(N)
 // 2b. Backdrop showing through gaps in curly hair is enclosed, so the flood fill never reaches
-//     it. Near the silhouette (never deep inside, so eye whites are safe), treat any pixel that
-//     is close to the backdrop colour as backdrop too.
+//     it. Near the silhouette (never deep inside, and never amid skin, so eye whites are safe),
+//     treat any pixel that is close to the backdrop colour as backdrop too.
 {
   const NEAR = Math.round(Math.max(W, H) * 0.035)
   const rows = new Uint8Array(N)
@@ -103,6 +103,39 @@ const near = new Uint8Array(N)
     for (let y = 0; y < H; y++) { if (rows[y * W + x]) last = y; if (y - last <= NEAR) near[y * W + x] = 1 }
     last = 1e9
     for (let y = H - 1; y >= 0; y--) { if (rows[y * W + x]) last = y; if (last - y <= NEAR) near[y * W + x] = 1 }
+  }
+  // Where the backdrop reaches in between hair and ear, the band also covers the nearer eye, whose white is as
+  // pale and grey as the wall and was keyed out (a hole in the eye). Hair gaps are ringed by hair, eye whites by
+  // skin: leave out of the band anything with skin around it.
+  {
+    const R = Math.round(Math.max(W, H) * 0.012)
+    const skin = new Float32Array(N)
+    for (let i = 0; i < N; i++) {
+      const [r, g, b] = px(i)
+      const L = lum(r, g, b)
+      if (r > g && g > b && r - b > 0.12 && L > 0.22 && L < 0.85) skin[i] = 1
+    }
+    const tmp = new Float32Array(N)
+    const win = 2 * R + 1
+    for (let y = 0; y < H; y++) {
+      let acc = 0
+      for (let x = -R; x <= R; x++) acc += skin[y * W + Math.min(W - 1, Math.max(0, x))]
+      for (let x = 0; x < W; x++) {
+        tmp[y * W + x] = acc / win
+        acc += skin[y * W + Math.min(W - 1, x + R + 1)] - skin[y * W + Math.max(0, x - R)]
+      }
+    }
+    let kept = 0
+    for (let x = 0; x < W; x++) {
+      let acc = 0
+      for (let y = -R; y <= R; y++) acc += tmp[Math.min(H - 1, Math.max(0, y)) * W + x]
+      for (let y = 0; y < H; y++) {
+        const i = y * W + x
+        if (near[i] && acc / win > 0.2) { near[i] = 0; kept++ }
+        acc += tmp[Math.min(H - 1, y + R + 1) * W + x] - tmp[Math.max(0, y - R) * W + x]
+      }
+    }
+    console.log(`[portrait] kept ${kept} pixels with skin around them out of the hair-gap band`)
   }
   let holes = 0
   for (let i = 0; i < N; i++) {

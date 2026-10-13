@@ -168,6 +168,11 @@ export function PortraitScan() {
       g.scale.setScalar(wide ? 0.8 : 0.58)
     }
 
+    // The rig (CameraRig, which runs first) leaves the camera's matrices half-updated: its second lookAt refreshes
+    // them from the parallaxed position but the previous rotation, so the sharp photo's box landed ~30 px off the
+    // crystals (a double image). Rebuild them here from this frame's pose, the one the render will use.
+    camera.updateMatrixWorld()
+
     // Pointer onto the portrait plane, in local space, spring-damped.
     const pr = signals.pointer
     pointer.ndc.set(pr.nx, pr.ny, 0.5).unproject(camera)

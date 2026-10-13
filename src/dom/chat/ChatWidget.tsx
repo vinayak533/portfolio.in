@@ -52,8 +52,35 @@ function useCornerLift(enabled: boolean, rest: RefObject<HTMLElement | null>, si
       return
     }
     let raf = 0
+    // The corner controls live in Works and Contact. While none is within a screen of the viewport nothing can
+    // sit in the corner, so there is nothing to measure: measuring forced a layout on every scrolled frame (the
+    // hero's hand-off included). An observer says when one comes near (a screen ahead, so never late).
+    const near = new Set<Element>()
+    const watched = new Set<Element>()
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) near.add(e.target)
+          else near.delete(e.target)
+        }
+        schedule()
+      },
+      { rootMargin: '100% 0px' },
+    )
+    const watch = () => {
+      for (const el of document.querySelectorAll<HTMLElement>(CORNER_CONTROLS)) {
+        if (watched.has(el)) continue
+        watched.add(el)
+        io.observe(el)
+      }
+    }
+    watch()
     const check = () => {
       raf = 0
+      if (!near.size) {
+        setOffset((o) => (o.lift === 0 && o.shift === 0 ? o : NO_OFFSET))
+        return
+      }
       const anchor = rest.current?.getBoundingClientRect()
       if (!anchor) return
       const s = size()
@@ -89,9 +116,14 @@ function useCornerLift(enabled: boolean, rest: RefObject<HTMLElement | null>, si
     check()
     window.addEventListener('scroll', schedule, { passive: true })
     window.addEventListener('resize', schedule)
-    // Details fades in and out with GSAP after scrolling stops.
-    const poll = window.setInterval(() => !document.hidden && schedule(), 600)
+    // Details fades in and out with GSAP after scrolling stops. (Controls mounted later are picked up here.)
+    const poll = window.setInterval(() => {
+      if (document.hidden) return
+      watch()
+      schedule()
+    }, 600)
     return () => {
+      io.disconnect()
       cancelAnimationFrame(raf)
       window.removeEventListener('scroll', schedule)
       window.removeEventListener('resize', schedule)
@@ -279,6 +311,21 @@ export function ChatWidget() {
     }, 6000)
     return () => window.clearTimeout(t)
   }, [introDone, reducedMotion, away, gl])
+
+  // Ctrl+K / ⌘K opens and closes the console from anywhere on the page, once the robot has landed.
+  // Closing this way hands focus back to the launcher, as Escape does.
+  const toggleRef = useRef(toggle)
+  toggleRef.current = open ? async () => close(true) : toggle
+  useEffect(() => {
+    if (!introDone || caseStudyOpen || away) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== 'k' || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.repeat) return
+      e.preventDefault()
+      void toggleRef.current()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [introDone, caseStudyOpen, away])
 
   const { lift, shift } = useCornerLift(introDone && !caseStudyOpen, rest, launcherSize)
   const fieldFocused = useFieldFocus(root)

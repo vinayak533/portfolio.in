@@ -161,7 +161,7 @@ test("questions the site can't answer get an honest refusal, not a guess", () =>
     assert.match(r.text, /prefers to discuss/, q)
     assert.ok(r.text.includes(contact.email), q)
   }
-  for (const q of ['Does he need visa sponsorship?', 'Is he married?']) {
+  for (const q of ['Does he need visa sponsorship?', 'Is he married?', 'What is his favourite pizza topping?', 'favorite color?']) {
     const r = answer(q)
     assert.match(r.text, /won’t guess/, q)
     assert.ok(r.text.includes(contact.email), q)

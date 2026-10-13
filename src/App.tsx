@@ -35,7 +35,6 @@ export function App() {
           document.fonts.load('400 1em "Bricolage Grotesque"'),
           document.fonts.load('400 1em "JetBrains Mono"'),
           document.fonts.load('500 1em "Space Grotesk Variable"'),
-          document.fonts.load('400 1em "Instrument Serif"'),
           document.fonts.load('italic 400 1em "Instrument Serif"'),
         ]),
         timeout(4000),

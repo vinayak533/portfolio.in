@@ -78,7 +78,7 @@ No templates or 3D models are used. Two raster images are supplied by the owner:
 | Portrait (`public/about.jpg`, `public/portrait/*`) | Provided by the site owner | Owner's own image, all rights reserved |
 | Bricolage Grotesque (latin subset, WOFF2 via `@fontsource/bricolage-grotesque`; WOFF copy in `public/fonts` for the 3D exhibit numbers) | Mathieu Triay / Google Fonts | SIL Open Font License 1.1 (`public/fonts/OFL-BricolageGrotesque.txt`) |
 | JetBrains Mono (latin subset, via `@fontsource/jetbrains-mono`) | JetBrains | SIL Open Font License 1.1 (`public/fonts/OFL-JetBrainsMono.txt`) |
-| Inter (variable, optical sizes, via `@fontsource-variable/inter`; Contact only, loaded when the section is near) | Rasmus Andersson | SIL Open Font License 1.1 (`public/fonts/OFL-Inter.txt`) |
+| Inter (variable, optical sizes, via `@fontsource-variable/inter`; the hero and its header) | Rasmus Andersson | SIL Open Font License 1.1 (`public/fonts/OFL-Inter.txt`) |
 | Social-card photograph (`scripts/source/night.webp`, and `public/og.jpg` made from it) | Provided by the site owner | **Owner to record the source and licence here** |
 | The hero robot and its stage, noise texture, crystals, exhibit visuals, dust, favicon | Generated in this repo (procedural geometry and shaders) | Same as this repo |
 
