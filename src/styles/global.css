@@ -8,6 +8,11 @@
   --radius-*: initial;
   --font-display: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  /* Everything after the hero (see .content-type below). A system face: Helvetica on Apple devices, Arial
+     (its metric twin) on Windows. */
+  --font-content: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  /* Code keeps a true monospace inside .content-type, where --font-mono is remapped. */
+  --font-code: 'JetBrains Mono', ui-monospace, monospace;
   --breakpoint-xs: 30rem;
 }
 
@@ -79,6 +84,20 @@ body {
   color: var(--ink-2);
   font-weight: 400;
 }
+
+/*
+ * Works, the case study and the cursor's labels take Helvetica through the shared classes (.display, .mono,
+ * .chip, .body-copy). About, Experience, Contact and the assistant set it through their own tokens. The hero
+ * and its header keep their faces (src/hero/hero.css).
+ */
+.content-type {
+  --font-display: var(--font-content);
+  --font-mono: var(--font-content);
+  font-family: var(--font-content);
+}
+.content-type .display { font-weight: 700; letter-spacing: -0.035em; }
+.content-type .mono { letter-spacing: 0.1em; font-feature-settings: normal; }
+.content-type .chip { letter-spacing: 0.1em; }
 
 .dim { color: var(--ink-2); }
 .dimmer { color: var(--ink-3); }
@@ -186,6 +205,10 @@ a { color: inherit; text-decoration: none; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
 }
+
+/* A section off screen (Section.tsx): its endless loops hold still (each costs a style pass a frame, the hero's
+   included); they carry on as it comes near. Only the loops: entrances are never held. */
+[data-offscreen] .xp-meta-now::before, [data-offscreen] .xp-company-tail { animation-play-state: paused; }
 
 .scroll-cue { animation: cue 2.4s cubic-bezier(0.65, 0, 0.35, 1) infinite; }
 @keyframes cue {
@@ -317,8 +340,8 @@ a { color: inherit; text-decoration: none; }
   border: 1px solid rgb(255 255 255 / 0.1);
   background: rgb(7 7 9 / 0.82);
   color: #f4f3f7;
-  font-family: 'IBM Plex Mono', var(--font-mono);
-  font-size: 0.6rem;
+  font-family: var(--font-content);
+  font-size: 0.62rem;
   letter-spacing: 0.14em;
   line-height: 1.2;
   text-transform: uppercase;

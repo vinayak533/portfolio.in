@@ -63,8 +63,21 @@ function webglTransition(o: TransitionOptions): TransitionHandle {
   const setPin = () => section.style.setProperty('--hero-pin', `${transitionProfile().pinVh}vh`)
   setPin()
 
-  /** About's opening lines (kicker, heading): revealed by the shot, not by About's own scroll. */
-  const heads = () => Array.from(o.about()?.querySelectorAll<HTMLElement>('[data-a-head]') ?? [])
+  /**
+   * About's opening lines (kicker, heading): revealed by the shot, not by About's own scroll. Looked up once
+   * (and again after a refresh, or if one has left the page), not on every scroll update.
+   */
+  let headEls: HTMLElement[] = []
+  const heads = () => {
+    if (!headEls.length || headEls.some((el) => !el.isConnected)) headEls = Array.from(o.about()?.querySelectorAll<HTMLElement>('[data-a-head]') ?? [])
+    return headEls
+  }
+  /** The copy's intro blocks (the pre-rendered one and the app's), cached the same way. */
+  let introEls: HTMLElement[] = []
+  const intros = () => {
+    if (!introEls.length || introEls.some((el) => !el.isConnected)) introEls = Array.from(document.querySelectorAll<HTMLElement>('[data-hero-intro]'))
+    return introEls
+  }
 
   function apply(pv: number) {
     // The background's energy system (src/hero/motion.ts): scrolling inside the hero raises ENERGY.
@@ -87,7 +100,7 @@ function webglTransition(o: TransitionOptions): TransitionHandle {
     const intro = 1 - smoothstep(0, 0.07, Math.max(pv, raw))
     stage.style.setProperty('--hero-intro', String(intro))
     // The copy: its scrim in the stage, its text in a layer of its own over the robot (src/dom/HeroCopy.tsx).
-    for (const introEl of document.querySelectorAll<HTMLElement>('[data-hero-intro]')) {
+    for (const introEl of intros()) {
       introEl.style.setProperty('--hero-intro', String(intro))
       introEl.style.visibility = intro <= 0.001 ? 'hidden' : ''
     }
@@ -199,6 +212,8 @@ function webglTransition(o: TransitionOptions): TransitionHandle {
   }
   const relift = () => {
     measuring = false
+    headEls = []
+    introEls = []
     const about = o.about()
     // The lift that puts About's top at the top of the viewport: its own height, less one screen.
     about?.style.setProperty('--hero-hold-h', `${about.offsetHeight}px`)

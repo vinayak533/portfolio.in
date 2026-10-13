@@ -31,8 +31,12 @@ export interface Reply {
   suggestions: string[]
   /** False when nothing in the knowledge base matched (the honest fallback). */
   known: boolean
-  /** What the engine did to answer, as tool-call steps: shown as the "thinking" trace. */
+  /** What the engine did to answer, as steps: what it classified, read and checked. */
   trace: TraceStep[]
+  /** For a project reply, the aspect asked about ('how', 'stack', …). */
+  facet?: string
+  /** For a skill check, the technology asked about, as the reply names it. */
+  term?: string
 }
 
 /** One step of the reasoning trace, e.g. { tool: 'read_source', detail: 'Loom.ai case study' }. */
@@ -498,6 +502,7 @@ function techReply(term: string): Draft {
       suggestions: ['What’s his tech stack?', 'Show me his projects'],
       known: true,
       intent: `skill check · ${display}`,
+      term: display,
       missed: true,
     }
   }
@@ -510,6 +515,7 @@ function techReply(term: string): Draft {
     suggestions: [first ? `Tell me about ${first.title}` : 'Show me his projects', 'What’s his tech stack?'],
     known: true,
     intent: `skill check · ${display}`,
+    term: display,
     sources: found.map((e) => e.source),
   }
 }
@@ -955,7 +961,7 @@ function traceOf(d: Draft): TraceStep[] {
 /** Answers one question. `ctx` carries what the conversation was last about. */
 export function answer(input: string, ctx: AskContext = {}): Reply {
   const d = route(input, ctx)
-  return { text: d.text, topic: d.topic, project: d.project, suggestions: d.suggestions, known: d.known, trace: traceOf(d) }
+  return { text: d.text, topic: d.topic, project: d.project, suggestions: d.suggestions, known: d.known, trace: traceOf(d), facet: d.facet, term: d.term }
 }
 
 /** A project's reply, with what it read: the case study, plus the build notes when there are any. */
@@ -963,6 +969,7 @@ function aboutProject(p: Project, facet: Facet, q: Question): Draft {
   const x = extra(p)
   return {
     ...projectReply(p, facet, q),
+    facet,
     intent: `project · ${p.title}${facet === 'overview' ? '' : ` · ${facet}`}`,
     sources: [`${p.title} case study`, ...(x.details || x.metrics ? [`${p.title} build notes`] : []), ...(x.docs ? [`${p.title} docs`] : [])],
   }

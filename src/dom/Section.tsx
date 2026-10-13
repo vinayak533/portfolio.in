@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { useGSAP } from '@gsap/react'
 import { gsap, ScrollTrigger } from '../core/clock'
 import { sectionHeights } from '../theme'
@@ -79,6 +79,17 @@ export function Section({ id, title, children, className = '', choreography, und
     },
     { scope: ref, dependencies: [webgl, layoutKey, underlap], revertOnUpdate: true },
   )
+
+  // Off screen, the section's looping CSS animations (a shimmer, a pulse) hold still: animating colours and
+  // shadows nobody can see still costs a style pass every frame, the hero's included. They carry on as the
+  // section comes near (global.css [data-offscreen]).
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const io = new IntersectionObserver(([e]) => el.toggleAttribute('data-offscreen', !e.isIntersecting), { rootMargin: '50% 0px' })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [])
 
   if (webgl && underlap) {
     return (

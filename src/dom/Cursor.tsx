@@ -94,7 +94,7 @@ export function Cursor() {
   return (
     <div
       aria-hidden="true"
-      className="pointer-events-none fixed left-0 top-0 z-[300]"
+      className="content-type pointer-events-none fixed left-0 top-0 z-[300]"
       style={{ opacity: visible && state !== 'hidden' ? 1 : 0, transition: 'opacity .4s var(--ease-out)' }}
     >
       <div

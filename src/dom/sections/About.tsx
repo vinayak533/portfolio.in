@@ -4,9 +4,6 @@ import { about } from '../../content'
 import { signals, useStore } from '../../store/useStore'
 import { holdEnd } from '../../core/timeline'
 import { onTick } from '../../core/clock'
-import '@fontsource-variable/space-grotesk/index.css'
-import '@fontsource/instrument-serif/latin-400.css'
-import '@fontsource/instrument-serif/latin-400-italic.css'
 import './about.css'
 
 /**

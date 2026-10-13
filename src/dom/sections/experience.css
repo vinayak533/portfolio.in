@@ -1,18 +1,17 @@
 /*
- * Experience: each role is a crystal specimen. Editorial sans + serif italic,
- * an outlined serif numeral, and a faceted date readout. Everything inside a
- * card is real text, so the WebGL shatter rebuilds it glyph for glyph.
+ * Experience: each role is a crystal specimen. Helvetica throughout (global.css
+ * --font-content): bold names, light italic accents, an outlined numeral, and a
+ * faceted date readout. Everything inside a card is real text, so the WebGL
+ * shatter rebuilds it glyph for glyph.
  */
 .xp {
-  --xp-sans: 'Space Grotesk Variable', 'Bricolage Grotesque', sans-serif;
-  --xp-serif: 'Instrument Serif', Georgia, serif;
   --xp-hi: #f4f1ff;
   --xp-mid: #b9b3d6;
   --xp-low: #8c86a8;
   --xp-accent: #a78bfa;
   --xp-line: rgba(167, 139, 250, 0.25);
   --xp-grad: linear-gradient(100deg, #c4b5fd 0%, #8b5cf6 50%, #c4b5fd 100%);
-  font-family: var(--xp-sans);
+  font-family: var(--font-content);
   font-synthesis: none;
 }
 
@@ -29,10 +28,10 @@
   text-transform: uppercase;
 }
 .xp-kicker-index {
-  font-family: var(--xp-serif);
-  font-size: 1.3rem;
+  font-size: 1.15rem;
   font-style: italic;
-  letter-spacing: 0;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   line-height: 1;
   color: var(--xp-accent);
 }
@@ -42,7 +41,7 @@
   margin: 0;
   color: var(--xp-hi);
   font-size: clamp(1.4rem, 2.2vw, 2.1rem);
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1.08;
   letter-spacing: -0.025em;
 }
@@ -50,8 +49,7 @@
 .xp-company-tail {
   display: inline-block;
   /* Room for the italic overhang, which background-clip would otherwise crop. */
-  padding: 0 0.14em 0.08em 0.02em;
-  font-family: var(--xp-serif);
+  padding: 0 0.1em 0.08em 0;
   font-style: italic;
   font-weight: 400;
   letter-spacing: -0.01em;
@@ -62,7 +60,7 @@
   color: transparent;
   -webkit-text-fill-color: transparent;
 }
-.xp-title-accent { font-size: 1.14em; }
+.xp-title-accent { font-size: 1em; }
 
 /* -------------------------------------------------------------- role rail */
 .xp-rail {
@@ -82,7 +80,6 @@
   letter-spacing: -0.005em;
 }
 .xp-rail-year {
-  font-family: var(--font-mono);
   font-size: 0.6rem;
   letter-spacing: 0.08em;
   opacity: 0.7;
@@ -98,9 +95,9 @@
 }
 .xp-rail-n {
   min-width: 1.4em;
-  font-family: var(--xp-serif);
-  font-size: 1.05rem;
+  font-size: 0.95rem;
   font-style: italic;
+  font-weight: 700;
   line-height: 1;
   color: var(--xp-accent);
 }
@@ -115,7 +112,6 @@
   align-items: center;
   gap: 0.35rem 0.7rem;
   color: var(--xp-low);
-  font-family: var(--font-mono);
   font-size: 0.66rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -171,12 +167,11 @@
 .xp-num {
   display: block;
   padding-right: 0.08em;
-  font-family: var(--xp-serif);
-  font-size: clamp(4.6rem, 9.5vw, 9rem);
+  font-size: clamp(4rem, 8vw, 7.5rem);
   font-style: italic;
-  font-weight: 400;
-  line-height: 0.78;
-  letter-spacing: -0.04em;
+  font-weight: 700;
+  line-height: 0.8;
+  letter-spacing: -0.05em;
   color: transparent;
   -webkit-text-fill-color: transparent;
   -webkit-text-stroke: 1px rgba(167, 139, 250, 0.75);
@@ -185,13 +180,13 @@
 .xp-company {
   display: block;
   color: var(--xp-hi);
-  font-size: clamp(2rem, 4.3vw, 4.3rem);
-  font-weight: 600;
-  line-height: 0.98;
+  font-size: clamp(2rem, 3.8vw, 3.8rem);
+  font-weight: 700;
+  line-height: 1;
   letter-spacing: -0.04em;
 }
 .xp-company-tail {
-  font-size: 1.1em;
+  font-size: 1em;
   animation: xp-shimmer 9s linear infinite;
 }
 @keyframes xp-shimmer {
@@ -208,8 +203,7 @@
   letter-spacing: -0.015em;
 }
 .xp-role-as {
-  font-family: var(--xp-serif);
-  font-size: 1.2em;
+  font-size: 1em;
   font-style: italic;
   font-weight: 400;
   color: var(--xp-accent);

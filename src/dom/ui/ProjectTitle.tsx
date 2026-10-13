@@ -1,15 +1,9 @@
-import '@fontsource/instrument-serif/latin-400-italic.css'
-import '@fontsource-variable/inter/opsz.css'
-import '@fontsource/playfair-display/latin-500.css'
-import '@fontsource/playfair-display/latin-500-italic.css'
-import '@fontsource/orbitron/latin-700.css'
-import '@fontsource/unbounded/latin-700.css'
 import './projectTitle.css'
 import type { Project } from '../../content'
 
 /**
- * A project's name set in its own brand: the typeface and colours of the
- * product's UI in its reel. Unknown ids fall back to the site's display face.
+ * A project's name set in its own brand: Helvetica in the colours of the
+ * product's UI in its reel. Unknown ids fall back to plain ink.
  * Size comes from the caller's font-size; each brand scales itself to match
  * the others optically (see projectTitle.css).
  */

@@ -60,7 +60,7 @@ function boxBlur(src: Float32Array, w: number, h: number, r: number) {
 }
 
 /** Face centre and spread in normalised photo coordinates (public/portrait/about.cutout.png). */
-const FACE = { x: 0.46, y: 0.37, sx: 0.13, sy: 0.17, boost: 2.0 }
+const FACE = { x: 0.44, y: 0.35, sx: 0.13, sy: 0.17, boost: 2.0 }
 
 export async function samplePortrait(src: string, count: number, worldHeight = 6.6): Promise<PortraitSample> {
   const img = await loadImage(src)

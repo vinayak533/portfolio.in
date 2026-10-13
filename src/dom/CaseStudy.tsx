@@ -153,7 +153,7 @@ export function CaseStudy() {
   const next = (index + 1) % projects.length
 
   return (
-    <div ref={root} role="dialog" aria-modal="true" aria-labelledby="cs-title" className="fixed inset-0 z-[120]">
+    <div ref={root} role="dialog" aria-modal="true" aria-labelledby="cs-title" className="content-type fixed inset-0 z-[120]">
       <div ref={backdrop} className="absolute inset-0 bg-[var(--base)] opacity-0" />
       <div ref={scroller} data-lenis-prevent className="absolute inset-0 overflow-y-auto overscroll-contain">
         <div className="sticky top-0 z-10 flex items-center justify-between px-[var(--gutter)] py-5">

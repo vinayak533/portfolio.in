@@ -5,9 +5,6 @@ import { signals, useStore } from '../../store/useStore'
 import { shatter } from '../../core/registry'
 import { sampleGlyphs } from '../ui/sampleGlyphs'
 import { holdEnd, waypointU } from '../../core/timeline'
-import '@fontsource-variable/space-grotesk/index.css'
-import '@fontsource/instrument-serif/latin-400.css'
-import '@fontsource/instrument-serif/latin-400-italic.css'
 import './experience.css'
 
 /** Section progress at which the beam head reaches waypoint i (inverse of experienceHead). */
@@ -37,7 +34,7 @@ function tenure(r: Role) {
   return y ? `${y} ${y === 1 ? 'yr' : 'yrs'}${mo ? ` ${mo}` : ''}` : mo
 }
 
-/** 'AMnova Technologies' -> sans 'AMnova', serif italic 'Technologies'. */
+/** 'AMnova Technologies' -> bold 'AMnova', light italic 'Technologies'. */
 function CompanyName({ name }: { name: string }) {
   const words = name.split(' ')
   if (words.length < 2) return <>{name}</>

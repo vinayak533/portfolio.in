@@ -10,7 +10,7 @@ import { signals, useStore } from '../store/useStore'
 import { palette } from '../theme'
 import { CameraRig } from './CameraRig'
 import { Atmosphere } from './Atmosphere'
-import { Effects } from './Effects'
+import { Effects, warmPost } from './Effects'
 import { PortraitScan } from './about/PortraitScan'
 import { WorksGallery } from './works/WorksGallery'
 import { ExperiencePath } from './experience/ExperiencePath'
@@ -155,6 +155,13 @@ function Warmup({ post }: { post: boolean }) {
       }
       target?.dispose()
       if (first && !cancelled) complete('compile')
+      // Then the post passes (Effects.tsx), when the page is idle, while the hero still covers the stage.
+      if (post && !cancelled) {
+        const covered = () => !cancelled && signals.heroCovers && !document.hidden
+        // (Safari has no requestIdleCallback.)
+        if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(() => void warmPost(gl, covered), { timeout: 3000 })
+        else setTimeout(() => void warmPost(gl, covered), 200)
+      }
     }
     run(true)
     // Some meshes only exist once async data lands (portrait particles, glyph
@@ -239,6 +246,9 @@ export default function Stage() {
           outputColorSpace: SRGBColorSpace,
         }}
         onCreated={({ gl }) => {
+          // Shader diagnostics in development only: in production each program's first use would wait on
+          // synchronous GL queries (its info logs), as the hero's renderer already avoids (engine.ts).
+          gl.debug.checkShaderErrors = import.meta.env.DEV
           gl.setClearColor(palette.base)
         }}
       >

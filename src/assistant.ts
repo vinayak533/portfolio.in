@@ -86,6 +86,38 @@ export interface Certification {
   keys: string[]
 }
 
+/**
+ * A kind of engineering the work shows (the console's /capability). Every project and role listed
+ * earns its place with `why`, a fact taken from that project's or role's own text above or in
+ * src/content.ts; nothing is listed on inference.
+ */
+export interface Capability {
+  id: string
+  title: string
+  /** For the relation map. */
+  short: string
+  /** What it covers, in a sentence. */
+  summary: string
+  /** Other names a visitor might use ("rag", "multi agent"). The title, short name and id already match. */
+  aliases: string[]
+  /** Project ids, from src/content.ts or `moreProjects`. */
+  projects: { id: string; why: string }[]
+  /** Companies, as in src/content.ts experience. */
+  roles?: { company: string; why: string }[]
+}
+
+/** A project's documented flow, drawn by the console's /arch. Only from the project's own text. */
+export interface Architecture {
+  /** Project id. */
+  project: string
+  /** What the drawing shows. */
+  title: string
+  stages: { label: string; detail?: string }[]
+  notes?: string[]
+  /** Where it is documented. */
+  source: Doc
+}
+
 const images = {
   profile: { alt: 'Vinayak K V', src: 'https://avatars.githubusercontent.com/u/215311018?v=4' },
   loom: { alt: 'loom.ai code workspace with live tool trace', src: 'https://github.com/vinayak533/vinayak533/raw/main/assets/svg/screen-loom-dark.svg' },
@@ -95,7 +127,6 @@ const images = {
 
 export const assistant = {
   name: 'Ask Vinayak',
-  status: 'Online',
   launcherLabel: 'Ask Vinayak',
   greeting: {
     title: 'Hi, I’m Ask Vinayak',
@@ -112,6 +143,45 @@ export const assistant = {
   placeholder: 'Ask about Vinayak’s work…',
   /** Longest question accepted, in characters. */
   maxLength: 500,
+
+  /**
+   * The emoji tag over each answer, by reply topic (src/core/assistant.ts). A prefix ending in ':' covers a
+   * family ('project:loom'). Labels only name the topic; they add no facts. Unknown answers use `unknown`.
+   */
+  topicTags: {
+    greeting: ['👋', 'Hello'],
+    'how-are-you': ['😊', 'All good'],
+    thanks: ['🙏', 'Anytime'],
+    bye: ['👋', 'See you'],
+    self: ['🤖', 'About this assistant'],
+    about: ['👤', 'About Vinayak'],
+    'why-hire': ['✨', 'Why hire him'],
+    'ai-experience': ['🧠', 'LLM & agents'],
+    'current-role': ['💼', 'Current role'],
+    experience: ['💼', 'Experience'],
+    level: ['📈', 'Experience level'],
+    projects: ['🗂️', 'Projects'],
+    highlight: ['⭐', 'Best project'],
+    'project:': ['🚀', 'Project'],
+    'more:': ['🧪', 'Project'],
+    compare: ['⚖️', 'Comparison'],
+    tech: ['🛠️', 'Tech stack'],
+    skills: ['🛠️', 'Skills'],
+    links: ['🔗', 'Links'],
+    certifications: ['🏅', 'Certifications'],
+    'cert:': ['🏅', 'Certificate'],
+    achievements: ['🏆', 'Achievements'],
+    education: ['🎓', 'Education'],
+    contact: ['✉️', 'Contact'],
+    resume: ['📄', 'Résumé'],
+    availability: ['📅', 'Availability'],
+    location: ['📍', 'Location'],
+    site: ['🧩', 'This site'],
+    more: ['🔍', 'Go deeper'],
+    'off-topic': ['🧭', 'Off topic'],
+    'not-covered:': ['🔒', 'Ask him directly'],
+    unknown: ['🤔', 'Not in my notes'],
+  } as Record<string, readonly [emoji: string, label: string]>,
 
   /** What the assistant says about itself when asked whether it is an AI, or whether it is Vinayak. */
   self:
@@ -142,6 +212,7 @@ export const assistant = {
     'AMnova Technologies': {
       where: 'Kochi',
       headline: 'Owns the AI/LLM track on a four-person team; his multi-agent LLM pipeline cut manual store-audit turnaround by **80%**.',
+      stack: ['Python', 'LangChain', 'FastAPI', 'Supabase', 'Docker', 'AWS', 'GitHub Actions'],
       details: [
         'Owns the AI/LLM track on a four-person team.',
         'Architected and deployed a multi-agent LLM pipeline (Python, LangChain, FastAPI) that cut manual store-audit turnaround by **80%** during early merchant onboarding.',
@@ -152,6 +223,7 @@ export const assistant = {
     Amdox: {
       where: 'Bengaluru',
       headline: 'Retail demand forecasting and churn detection models, deployed as production FastAPI endpoints.',
+      stack: ['Python', 'XGBoost', 'scikit-learn', 'FastAPI', 'MLflow', 'Streamlit'],
       details: [
         'Retail demand forecasting and churn detection models with XGBoost and scikit-learn.',
         'Deployed ML pipelines as production FastAPI endpoints to cut inference latency for real-time streaming.',
@@ -167,13 +239,15 @@ export const assistant = {
         'Validated on F1, precision, recall and ROC-AUC.',
       ],
     },
-  } as Record<string, { where: string; headline: string; details: string[] }>,
+  } as Record<string, { where: string; headline: string; details: string[]; /** Technologies its details name. */ stack?: string[] }>,
 
   /** By project id in src/content.ts. */
   projectExtras: {
     loom: {
       flagship: true,
       image: images.loom,
+      // Named in its caption ("eight models from Groq, OpenRouter and OpenCode") and request path ("FastAPI WebSocket").
+      stack: ['Groq', 'OpenRouter', 'WebSockets'],
       metrics: [
         'Median time to first token cut from **8.9 s to 5.0 s** on an ~80K-token loop, by serving the transcript from the provider’s prompt cache',
         '**8 models** across Groq, OpenRouter and OpenCode',
@@ -226,7 +300,8 @@ export const assistant = {
         'Multi-LLM routing (Gemini, Llama 3.3 70B via Groq, OpenRouter models) matched to task type, and **every LLM call has a local fallback**: an outage degrades the prose, never the analysis.',
         'Live per-agent progress over WebSockets, with history replayed for late clients. Outputs: cleaned CSV, charts, models, a PDF report and Python code.',
       ],
-      stack: ['FastAPI', 'React', 'WebSockets', 'Docker', 'Hugging Face Spaces'],
+      // The last six are named in its details: the deterministic core and the multi-LLM routing.
+      stack: ['FastAPI', 'React', 'WebSockets', 'Docker', 'Hugging Face Spaces', 'pandas', 'scikit-learn', 'XGBoost', 'Gemini', 'Groq', 'OpenRouter'],
       year: 'May 2026',
       flagship: true,
     },
@@ -283,7 +358,7 @@ export const assistant = {
         'Ticker, risk tolerance and investment horizon shape both tasks; both agents call Groq through LiteLLM.',
         'Recommendations are text only: no orders are placed. The README is explicit about what the quote tool doesn’t supply (volume, fundamentals, news).',
       ],
-      stack: ['CrewAI', 'yfinance', 'Groq', 'Streamlit'],
+      stack: ['CrewAI', 'yfinance', 'Groq', 'LiteLLM', 'Streamlit'],
     },
     {
       id: 'gen-ai-chatbot',
@@ -653,8 +728,335 @@ export const assistant = {
     { label: 'phone number', direct: true, keys: ['phone', 'phone number', 'mobile number', 'whatsapp', 'call him'] },
     { label: 'home address', direct: true, keys: ['address', 'home address', 'house address', 'street address'] },
     { label: 'visa or work-authorisation status', keys: ['visa', 'work permit', 'authorization', 'authorisation', 'sponsorship'] },
-    { label: 'personal details', keys: ['age', 'old is he', 'married', 'birthday', 'religion', 'hobby', 'hobbies'] },
+    // Tastes too ("his favourite food" is not his favourite project). Not 'movie': a project recommends movies.
+    { label: 'personal details', keys: ['age', 'old is he', 'married', 'birthday', 'religion', 'hobby', 'hobbies', 'food', 'pizza', 'topping', 'cuisine', 'dish', 'drink', 'song', 'music', 'colour', 'color', 'sport', 'sports', 'cricket', 'football', 'girlfriend'] },
   ] as { label: string; direct?: boolean; keys: string[] }[],
+
+  /* ------------------------------------------------------------------ console */
+  /*
+   * The console (src/dom/chat, engine in src/core/console.ts and src/core/graph.ts) reads the
+   * knowledge above as a graph: projects, technologies, capabilities and roles. A technology node is
+   * every tag in content.ts, every `stack` entry above and every skill, under its canonical name.
+   */
+
+  /** Shown on the console's first screen. */
+  console: {
+    kicker: 'Index 00 · Discovery',
+    statement: ['Query', 'the work.'],
+    lede: 'A queryable index of Vinayak’s engineering: projects, the technologies behind them, the capabilities they show and the roles that used them, all connected.',
+    honesty: 'No language model. Every answer resolves against curated data, and when nothing matches it says so instead of guessing.',
+    /** Entry points (commands) and example questions. Each must resolve (scripts/console.test.mjs checks). */
+    entry: ['/agents', '/projects', '/stack', '/contact'],
+    examples: ['How does Loom.ai work?', 'Does he know Docker?', 'Why should I hire him?'],
+    placeholder: 'Ask a question, or type / for commands',
+  },
+
+  /** Short names for the relation map, by project id. Others use their title. */
+  mapNames: {
+    'bank-churn': 'Bank Churn',
+    health: 'Health Assistant',
+    inforge: 'InForge-AI',
+    nl2sql: 'NL2SQL',
+    'battle-arena': 'LLM Battle Arena',
+    stock: 'Stock Agents',
+    'gen-ai-chatbot': 'GenAI Chatbot',
+    'ollama-chatbot': 'Ollama Chatbot',
+    'house-price': 'House Price',
+    'insurance-cicd': 'Insurance CI/CD',
+    rainfall: 'Rainfall',
+  } as Record<string, string>,
+
+  /** A tag as a project writes it → the technologies it names. Tags not listed are their own name. */
+  techCanon: {
+    'Next.js 16': ['Next.js'],
+    'React 19': ['React'],
+    'SQLite + FTS5': ['SQLite'],
+    'SQLite + Drizzle': ['SQLite', 'Drizzle'],
+    'E2B sandbox': ['E2B'],
+    'Hugging Face Spaces': ['Hugging Face'],
+    'Llama 3.3 70B': ['Llama'],
+    'Llama 3.1': ['Llama'],
+    'Llama 4 Scout': ['Llama'],
+    'Whisper large-v3': ['Whisper'],
+    'Gemma 2': ['Gemma'],
+    'AWS (EC2, S3, SageMaker, Lambda)': ['AWS'],
+  } as Record<string, string[]>,
+
+  /** Skills that are capabilities rather than technologies: they open that capability. */
+  skillCapabilities: {
+    RAG: 'grounded',
+    'multi-agent orchestration': 'agents',
+    'model routing with fallback': 'routing',
+    'prompt caching': 'routing',
+  } as Record<string, string>,
+
+  /** Groups for technologies no skill group lists. */
+  techGroups: {
+    Llama: 'Models',
+    Whisper: 'Models',
+    Gemma: 'Models',
+    'MiniLM embeddings': 'Models',
+    ElevenLabs: 'Model APIs',
+    LiteLLM: 'LLMs and agents',
+    SMOTE: 'Machine learning',
+    SVM: 'Machine learning',
+    CNN: 'Machine learning',
+    'TF-IDF': 'Machine learning',
+    'Naive Bayes': 'Machine learning',
+    yfinance: 'Data',
+  } as Record<string, string>,
+
+  /** Other names for technologies, by canonical name. */
+  techAliases: {
+    'scikit-learn': ['sklearn', 'scikit'],
+    'Next.js': ['nextjs', 'next'],
+    'Hugging Face': ['huggingface', 'hf', 'hugging face spaces'],
+    'GitHub Actions': ['gh actions', 'github action', 'ci cd', 'cicd'],
+    WebSockets: ['websocket', 'ws'],
+    Llama: ['llama 3', 'llama 3.3', 'llama 3.1', 'llama 4', 'meta llama'],
+    PostgreSQL: ['postgres'],
+    TypeScript: ['ts'],
+    'OpenAI SDK': ['openai'],
+    ElevenLabs: ['eleven labs', 'text to speech', 'tts'],
+    Whisper: ['speech to text', 'stt'],
+    pandas: ['panda'],
+  } as Record<string, string[]>,
+
+  capabilities: [
+    {
+      id: 'agents',
+      title: 'Agent orchestration',
+      short: 'Agents',
+      summary: 'LLM systems where agents split a task, call real tools and hand work to one another.',
+      aliases: ['agent', 'multi agent', 'agentic', 'orchestration', 'agent systems', 'multi-agent orchestration', 'tool use', 'tool calling', 'autonomous agents'],
+      projects: [
+        { id: 'loom', why: 'Ten specialist agents with human approval, and a Code agent working in a real E2B Linux sandbox, on one FastAPI and LangGraph backend.' },
+        { id: 'inforge', why: 'Eight pipeline agents turn a CSV or Excel upload into a full analysis with zero manual steps.' },
+        { id: 'stock', why: 'Two CrewAI agents: a Market Analyst holding the quote tool, and a Trader that turns its analysis into a Buy, Sell or Hold rationale.' },
+        { id: 'nl2sql', why: 'A Vanna 2.0 agent, its memory seeded with 20 question-to-SQL pairs, answers plain-English questions over a clinic database.' },
+      ],
+      roles: [{ company: 'AMnova Technologies', why: 'Architected and deployed a multi-agent LLM pipeline (Python, LangChain, FastAPI) that cut manual store-audit turnaround by **80%**.' }],
+    },
+    {
+      id: 'grounded',
+      title: 'Grounded answers & guardrails',
+      short: 'Grounding',
+      summary: 'LLM output that must trace back to a source: cited answers, abstaining when the sources don’t cover it, and edits rejected when they can’t be traced.',
+      aliases: ['rag', 'retrieval', 'retrieval augmented generation', 'grounding', 'citations', 'cited answers', 'guardrails', 'hallucination', 'fabrication'],
+      projects: [
+        { id: 'loom', why: 'Learn notebooks answer only from uploaded sources with `[n]` citations, or say the sources don’t cover it.' },
+        { id: 'lazyhire', why: 'Zero-fabrication CV guardrails: a tailored CV is rejected if it adds numbers, requirements or changes that can’t be traced to the source CV.' },
+      ],
+    },
+    {
+      id: 'routing',
+      title: 'Model routing & fallback',
+      short: 'Routing',
+      summary: 'Sending each LLM call to the right model, surviving provider failures, and measuring the latency.',
+      aliases: ['model routing', 'model router', 'fallback', 'provider fallback', 'prompt caching', 'caching', 'latency', 'resilience', 'model routing with fallback'],
+      projects: [
+        { id: 'loom', why: 'Each turn routes across eight models from Groq, OpenRouter and OpenCode; rate limits, quota and 5xx errors retry on up to two alternate providers. Prompt caching cut median time to first token from **8.9 s to 5.0 s**.' },
+        { id: 'inforge', why: 'Multi-LLM routing (Gemini, Llama 3.3 70B via Groq, OpenRouter models) matched to task type, and every LLM call has a local fallback: an outage degrades the prose, never the analysis.' },
+      ],
+    },
+    {
+      id: 'explain',
+      title: 'ML with LLM explanations',
+      short: 'Explainable ML',
+      summary: 'A trained model makes the prediction; an LLM explains it in plain language.',
+      aliases: ['explainability', 'explainable ai', 'xai', 'explainable ml', 'llm explanations', 'interpretability'],
+      projects: [
+        { id: 'bank-churn', why: 'An XGBoost classifier scores churn risk; Llama 3.3 70B on Groq explains each result and ElevenLabs reads it aloud.' },
+        { id: 'predictlab', why: 'Three scikit-learn classifiers screen for diabetes, stroke and heart disease; Llama 3.1 on Groq explains each result.' },
+        { id: 'inforge', why: 'pandas, scikit-learn and XGBoost compute every result; LLMs only write explanations, chart strategy, code and chat answers.' },
+      ],
+    },
+    {
+      id: 'classic-ml',
+      title: 'Classical machine learning',
+      short: 'Classic ML',
+      summary: 'Supervised and unsupervised models with feature engineering, class-imbalance handling and cross-validation.',
+      aliases: ['machine learning', 'ml', 'classical ml', 'supervised learning', 'classification', 'regression', 'predictive modeling', 'predictive modelling', 'data science'],
+      projects: [
+        { id: 'bank-churn', why: 'XGBoost with SMOTE on 10,000 customers: **87%+ AUC-ROC** and **85%+ accuracy** under 5-fold cross-validation.' },
+        { id: 'predictlab', why: 'SVM for diabetes, Random Forest for stroke and Logistic Regression for heart disease.' },
+        { id: 'house-price', why: 'Model comparison with cross-validation and hyperparameter tuning, shipped as one serialized scikit-learn pipeline.' },
+        { id: 'calories', why: 'An XGBoost regressor reaching **R² 0.9987** (MAE 1.51) on its test data.' },
+        { id: 'spam', why: 'Multinomial Naive Bayes over TF-IDF features.' },
+        { id: 'movies', why: 'Content-based (TF-IDF and cosine similarity) and collaborative-filtering recommendations.' },
+        { id: 'ml-notebooks', why: 'A dozen end-to-end notebooks on classic datasets: classification, regression and clustering.' },
+      ],
+      roles: [
+        { company: 'Amdox', why: 'Retail demand forecasting and churn detection models with XGBoost and scikit-learn.' },
+        { company: 'Cognifyz Technologies', why: '**95%** classification accuracy on credit-approval models over **280,000+** records.' },
+      ],
+    },
+    {
+      id: 'voice-vision',
+      title: 'Speech, vision & deep learning',
+      short: 'Voice + vision',
+      summary: 'Models that hear, see and speak: speech-to-text, a vision LLM, text-to-speech and CNNs.',
+      aliases: ['speech', 'voice', 'vision', 'computer vision', 'deep learning', 'multimodal', 'neural network', 'neural networks'],
+      projects: [
+        { id: 'health', why: 'Whisper large-v3 transcribes a spoken question, Llama 4 Scout reads it with a medical image, and ElevenLabs speaks the reply. Extends an open-source project.' },
+        { id: 'bank-churn', why: 'ElevenLabs reads each churn explanation aloud.' },
+        { id: 'face-mask', why: 'A TensorFlow/Keras CNN classifies faces as mask or no mask.' },
+        { id: 'digits', why: 'A TensorFlow/Keras neural network classifies MNIST digits.' },
+      ],
+    },
+    {
+      id: 'mlops',
+      title: 'Shipping ML to production',
+      short: 'MLOps',
+      summary: 'Models behind APIs, in containers, with CI/CD and hosted demos.',
+      aliases: ['deployment', 'deploy', 'devops', 'production ml', 'model serving', 'serving', 'containers', 'containerization'],
+      projects: [
+        { id: 'predictlab', why: 'One FastAPI service serves the pages, the prediction endpoints and the assistant; Dockerized and on Hugging Face Spaces.' },
+        { id: 'insurance-cicd', why: 'On every push, GitHub Actions runs the unit tests, builds the Docker image and deploys it.' },
+        { id: 'rainfall', why: 'Containerized with Docker, built with GitHub Actions and deployed on Render.' },
+        { id: 'house-price', why: 'FastAPI serves predictions; GitHub Actions runs CI.' },
+      ],
+      roles: [
+        { company: 'AMnova Technologies', why: 'Containerized AI microservices with Docker and automated AWS EC2 deployments with GitHub Actions.' },
+        { company: 'Amdox', why: 'Deployed ML pipelines as production FastAPI endpoints, with MLflow experiment tracking.' },
+      ],
+    },
+    {
+      id: 'evaluation',
+      title: 'LLM evaluation & benchmarks',
+      short: 'Evaluation',
+      summary: 'Measuring LLM systems instead of trusting them: judges with rubrics, benchmarks and a documented latency method.',
+      aliases: ['evals', 'eval', 'llm evaluation', 'benchmark', 'llm as judge', 'llm judge', 'judge'],
+      projects: [
+        { id: 'battle-arena', why: 'Two models answer and a third judges against an explicit rubric; a malformed verdict is reported rather than hidden.' },
+        { id: 'nl2sql', why: 'Scored **18 of 20** on its own benchmark of 20 questions, with the results written up in the repository.' },
+        { id: 'loom', why: 'Median time to first token measured on an ~80K-token loop, with the method documented.' },
+      ],
+    },
+  ] as Capability[],
+
+  /** Documented flows, drawn by /arch. Each stage is in the project's own text above or in content.ts. */
+  architectures: [
+    {
+      project: 'loom',
+      title: 'Request path',
+      stages: [
+        { label: 'Next.js trace UI', detail: 'Streams every tool call into a live trace and preview.' },
+        { label: 'FastAPI WebSocket', detail: 'One typed WebSocket event contract.' },
+        { label: 'LangGraph', detail: 'Graph checkpoints let sessions survive cold starts.' },
+        { label: 'Model router with fallback', detail: 'Each iteration is classified and sent to its model; rate limits, quota and 5xx errors retry on up to two alternate providers.' },
+        { label: 'Tools', detail: 'Read-only tool batches run concurrently; writes run in order.' },
+        { label: 'E2B sandbox', detail: 'A real Linux sandbox: shell, files, web search, dev servers.' },
+      ],
+      notes: [
+        'Prompt caching cut median time to first token from **8.9 s to 5.0 s** on an ~80K-token loop.',
+        'Notebook retrieval uses lexical hashed vectors stored in pgvector, not semantic search.',
+      ],
+      source: { label: 'Architecture doc', href: 'https://github.com/vinayak533/loom.ai/blob/main/docs/architecture.md' },
+    },
+    {
+      project: 'inforge',
+      title: 'Agent pipeline',
+      stages: [
+        { label: 'Ingest', detail: 'A CSV or Excel upload.' },
+        { label: 'Clean' },
+        { label: 'EDA' },
+        { label: 'Visualize' },
+        { label: 'ML benchmark', detail: '8 algorithms across classification, regression and clustering, auto-selected by task type.' },
+        { label: 'Insights' },
+        { label: 'Code gen' },
+        { label: 'Chat' },
+      ],
+      notes: [
+        'Deterministic core: pandas, scikit-learn and XGBoost compute every result; LLMs only write explanations, chart strategy, code and chat answers.',
+        'Every LLM call has a local fallback. Live per-agent progress streams over WebSockets.',
+      ],
+      source: { label: 'Repository', href: 'https://github.com/vinayak533/InForge-AI' },
+    },
+    {
+      project: 'lazyhire',
+      title: 'Search and tailoring',
+      stages: [
+        { label: '9 job sources', detail: 'Technopark, Infopark, UL CyberPark and others.' },
+        { label: 'Validate apply links' },
+        { label: 'Dedupe', detail: 'On canonical URL plus company, title and location.' },
+        { label: 'Rank', detail: 'Freshness, source quality, location, role fit and skills; every score can be inspected.' },
+        { label: 'Guarded CV tailoring', detail: 'Rejected if it adds numbers, requirements or changes that can’t be traced to the source CV.' },
+      ],
+      source: { label: 'Repository', href: 'https://github.com/vinayak533/lazyhire' },
+    },
+    {
+      project: 'bank-churn',
+      title: 'Prediction to explanation',
+      stages: [
+        { label: 'Customer profile' },
+        { label: 'XGBoost classifier', detail: 'Trained on 10,000 records with SMOTE; one scaler shared by training and inference.' },
+        { label: 'FastAPI', detail: 'Returns the churn probability and a low / medium / high tier.' },
+        { label: 'Llama 3.3 70B on Groq', detail: 'Explains the result in plain language.' },
+        { label: 'ElevenLabs', detail: 'Reads it aloud.' },
+      ],
+      source: { label: 'Repository', href: 'https://github.com/vinayak533/bank-churn-intelligence-platform' },
+    },
+    {
+      project: 'health',
+      title: 'Voice and vision flow',
+      stages: [
+        { label: 'Browser recording', detail: 'Empty recordings are rejected before any API call.' },
+        { label: 'Whisper large-v3 on Groq', detail: 'Transcribes the question.' },
+        { label: 'Llama 4 Scout', detail: 'Reasons over the transcript and the uploaded image together.' },
+        { label: 'ElevenLabs', detail: 'Speaks the reply.' },
+      ],
+      notes: ['Extends the open-source AI Doctor 2.0 demo by AIwithHassan. A learning project, not a clinical tool.'],
+      source: { label: 'Repository', href: 'https://github.com/vinayak533/AI-Medical-Voice-Vision-Assistant' },
+    },
+    {
+      project: 'predictlab',
+      title: 'Prediction flow',
+      stages: [
+        { label: '30 health inputs' },
+        { label: 'Three scikit-learn models', detail: 'SVM for diabetes, Random Forest for stroke, Logistic Regression for heart disease.' },
+        { label: 'FastAPI service', detail: 'Serves the pages, the prediction endpoints and the assistant, with no frontend build step.' },
+        { label: 'Llama 3.1 on Groq', detail: 'A plain-language explanation and follow-up questions.' },
+      ],
+      source: { label: 'Repository', href: 'https://github.com/vinayak533/PredictLab-' },
+    },
+    {
+      project: 'nl2sql',
+      title: 'Question to SQL',
+      stages: [
+        { label: 'Plain-English question' },
+        { label: 'FastAPI POST /chat', detail: 'A per-minute rate limit and a query cache.' },
+        { label: 'Vanna 2.0 agent', detail: 'On Gemini; memory seeded with 20 question-to-SQL pairs.' },
+        { label: 'SQLite clinic database', detail: '200 patients, 15 doctors, 500 appointments, 350 treatments, 300 invoices.' },
+        { label: 'Structured results', detail: 'Including charts.' },
+      ],
+      source: { label: 'Repository', href: 'https://github.com/vinayak533/NL2SQL-AI-Assistant' },
+    },
+    {
+      project: 'battle-arena',
+      title: 'Judged comparison',
+      stages: [
+        { label: 'Prompt' },
+        { label: 'Two Groq-hosted models', detail: 'Each answers the same prompt.' },
+        { label: 'Judge model', detail: 'Rubric: correctness, then completeness, clarity, and safety and best practice.' },
+        { label: 'JSON verdict', detail: 'Parsed with documented fallbacks: a malformed judgment is reported, not hidden.' },
+        { label: 'CLI', detail: 'Both answers, the verdict and running win counts.' },
+      ],
+      source: { label: 'Repository', href: 'https://github.com/vinayak533/llm-battle-arena' },
+    },
+    {
+      project: 'stock',
+      title: 'Two-agent crew',
+      stages: [
+        { label: 'Ticker, risk tolerance, horizon' },
+        { label: 'Financial Market Analyst agent', detail: 'The only agent with the quote tool: price and daily change through yfinance.' },
+        { label: 'Strategic Stock Trader agent', detail: 'Turns the analysis into a recommendation.' },
+        { label: 'Buy, Sell or Hold rationale', detail: 'Text only: no orders are placed.' },
+      ],
+      notes: ['Both agents call Groq through LiteLLM.'],
+      source: { label: 'Repository', href: 'https://github.com/vinayak533/AI-Multi-Agent-Stock-Analysis-Trading-System' },
+    },
+  ] as Architecture[],
 
   /** Your own questions and answers. They take priority over everything above. */
   faq: [

@@ -55,6 +55,7 @@ import { blobGeometry, frontPanel, frontRect, seamGeometry, squircle, squircleR,
 import { buildBody, type BodyRig, type Kit } from './body'
 import { buildHeadphones, createCommitPulse, createEqualizer, createOrbitRing, KEYBOARD, type CommitPulse, type Headphones, type Keyboard, type PointRing } from './props'
 import { buildFurniture, KEYS_TOP, LAPTOP, LID_H, LID_TILT, TABLE, TABLE_TOP } from './furniture'
+import { heldObjects, mergeStatic } from './merge'
 
 export interface Seat {
   x: number
@@ -581,7 +582,7 @@ export function buildRobot(): RobotModel {
   const shadowOpacity = shadowFloor.opacity
   const footOpacity = footShade.opacity
 
-  return {
+  const model: RobotModel = {
     root,
     body,
     headPivot,
@@ -657,4 +658,18 @@ export function buildRobot(): RobotModel {
       textures.forEach((t) => t.dispose())
     },
   }
+
+  // ---- fewer draws (merge.ts): the static opaque parts baked into what moves them, the picture unchanged.
+  // Held: everything the handle reaches at run time (not its build-time lists), and the table's glow.
+  // (Development: ?nomerge keeps every mesh, for A/B checks.)
+  if (import.meta.env.DEV && new URLSearchParams(location.search).has('nomerge')) return model
+  const held = heldObjects(model, ['shadowCasters', 'solids', 'meshes', 'bodyMaterials', 'headMaterials', 'furnitureMaterials'])
+  held.add(furniture.tableGlowMesh)
+  const merged = mergeStatic(root, held)
+  geometries.push(...merged.created)
+  for (const g of merged.unused) {
+    geometries.splice(geometries.indexOf(g), 1)
+    g.dispose()
+  }
+  return model
 }

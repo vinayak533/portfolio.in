@@ -1,15 +1,18 @@
-import '@fontsource-variable/inter/opsz.css'
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
+import '@fontsource/orbitron/latin-500.css'
+import '@fontsource/orbitron/latin-700.css'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { assistant } from '../../assistant'
 import { projects } from '../../content'
-import type { TraceStep } from '../../core/assistant'
-import { toPlainText } from '../../core/markdown'
+import { describe, resolve, ROUTE_LABEL, type Resolution, type View } from '../../core/console'
+import { commandFor, graph } from '../../core/graph'
 import { lockScroll, scrollToSection } from '../../core/scroll'
 import { useStore } from '../../store/useStore'
 import { useResumeUrl } from '../useResumeUrl'
-import { Markdown } from './Markdown'
+import { CommandLine } from './CommandLine'
+import { KnowledgeMap } from './KnowledgeMap'
 import { Robot, type Mood } from './Robot'
-import { streamedText, useChat, type ChatMessage, type Thinking } from './useChat'
+import { useConsole, type Entry } from './useConsole'
+import { ViewPane, type Phase, type ViewActions } from './Views'
 
 export interface ChatPanelProps {
   id: string
@@ -17,21 +20,13 @@ export interface ChatPanelProps {
   onClose: (restoreFocus: boolean) => void
 }
 
-/** The face that goes with an answer. */
-function moodFor(m: Extract<ChatMessage, { role: 'assistant' }>): Mood {
-  if (!m.known) return 'sad'
-  if (m.topic === 'thanks') return 'angel'
-  if (m.topic === 'greeting' || m.topic === 'bye') return 'wink'
-  return 'happy'
-}
-
 /**
- * Phones (narrow, or short like a phone on its side) get a full-screen sheet
- * instead of the floating panel: modal, page scroll locked, focus kept inside.
- * Keep in step with the matching media queries in chat.css.
+ * Phones (narrow, or short like a phone on its side) get a full-screen sheet: modal, page scroll
+ * locked, focus kept inside. Wide screens get the two-pane console (map beside the view); between
+ * the two, one pane with the map as an overlay. Keep in step with the media queries in chat.css.
  */
 const SHEET_QUERY = '(max-width: 640px), (max-height: 500px)'
-const MAX_INPUT_HEIGHT = 140
+const WIDE_QUERY = '(min-width: 1024px) and (min-height: 560px)'
 
 function useMedia(query: string) {
   const [match, setMatch] = useState(() => window.matchMedia(query).matches)
@@ -45,61 +40,97 @@ function useMedia(query: string) {
   return match
 }
 
+/** Where the view sits in the index, as a path: "~/projects/loom/arch". */
+function pathOf(v?: View, focus?: string): string[] {
+  if (!v) return []
+  const id = focus ? graph.node(focus)?.id : undefined
+  switch (v.kind) {
+    case 'project':
+      return ['projects', v.id]
+    case 'arch':
+      return ['projects', v.id, 'arch']
+    case 'tech':
+      return ['stack', id ?? '']
+    case 'capability':
+      return ['capabilities', v.id]
+    case 'projects':
+      return id ? ['projects', `?${id}`] : ['projects']
+    case 'experience':
+      return id ? ['experience', id] : ['experience']
+    case 'profile':
+      return ['about']
+    case 'answer':
+      return ['answers', v.reply.topic.replace(/:/g, '/')]
+    case 'none':
+      return ['no-match']
+    default:
+      return [v.kind]
+  }
+}
+
 /**
- * The conversation panel: header, message log, composer. Answers come from the
- * local engine (src/core/assistant.ts) through useChat. A floating panel above
- * the launcher on larger screens; a full-screen sheet on phones that follows
- * the visual viewport, so the on-screen keyboard never covers the input.
+ * Ask Vinayak, as a console over the index of Vinayak's work. One command line (questions or
+ * /commands, with a palette and a preview), one view at a time (a project, a technology, a
+ * capability, an architecture, an answer…), a relation map that lights up what the view is about,
+ * and a trail of everything run, which Esc walks back through. Answers resolve locally and
+ * synchronously (src/core/console.ts); the status bar shows how, and how long it took.
  */
 export function ChatPanel({ id, open, onClose }: ChatPanelProps) {
   const resume = useResumeUrl()
   const isTouch = useStore((s) => s.isTouch)
-  const reducedMotion = useStore((s) => s.reducedMotion)
-  const { messages, thinking, stream, busy, announcement, send, stop, retry, reset } = useChat(resume, reducedMotion)
   const sheet = useMedia(SHEET_QUERY)
+  const wide = useMedia(WIDE_QUERY) && !sheet
   const root = useRef<HTMLDivElement>(null)
   const scroller = useRef<HTMLDivElement>(null)
-  const input = useRef<HTMLTextAreaElement>(null)
+  const input = useRef<HTMLInputElement>(null)
   const [draft, setDraft] = useState('')
-  const [atBottom, setAtBottom] = useState(true)
+  const [mapOpen, setMapOpen] = useState(false)
+  const [mapProbe, setMapProbe] = useState<string | null>(null)
+  const [palProbe, setPalProbe] = useState<string | null>(null)
   const titleId = `${id}-title`
-  const inputId = `${id}-input`
-  const hintId = `${id}-hint`
-  const lastIndex = messages.length - 1
-  const last = messages[lastIndex]
 
-  // The header robot reacts to each answer once it has fully arrived, then settles.
-  const streaming = Boolean(stream)
-  const [reaction, setReaction] = useState<Mood | null>(null)
+  // /map: show the map (an overlay on narrow screens) and move focus into it once it has rendered.
+  const [mapFocus, setMapFocus] = useState(0)
+  const focusMap = useCallback(() => {
+    setMapOpen(true)
+    setMapFocus((n) => n + 1)
+  }, [])
   useEffect(() => {
-    if (last?.role !== 'assistant' || streaming) return setReaction(null)
-    setReaction(moodFor(last))
-    const t = window.setTimeout(() => setReaction(null), 2400)
-    return () => window.clearTimeout(t)
-  }, [last, streaming])
-  const headerMood: Mood = thinking ? 'thinking' : streaming ? 'happy' : (reaction ?? (last?.role === 'user' && last.state === 'failed' ? 'sad' : 'neutral'))
-  const phase = thinking ? 'thinking' : streaming ? 'writing' : 'idle'
+    if (mapFocus) root.current?.querySelector<HTMLElement>('.cx-map [tabindex="0"]')?.focus({ preventScroll: true })
+  }, [mapFocus])
+  const session = useConsole(resume, focusMap)
+  const cur = session.current
+  const focus = cur?.res.focus
+  const probe = palProbe ?? mapProbe
 
-  // The empty state says hello with a wink.
-  const [greeted, setGreeted] = useState(false)
-  useEffect(() => {
-    if (!open || greeted) return
-    const t = window.setTimeout(() => setGreeted(true), 1400)
-    return () => window.clearTimeout(t)
-  }, [open, greeted])
-
-  /** Focus the input, except on touch screens where that would throw up the keyboard unasked. */
-  const focusComposer = useCallback(() => {
+  /** Focus the command line, except on touch screens where that would throw up the keyboard unasked. */
+  const focusLine = useCallback(() => {
     if (isTouch) root.current?.focus({ preventScroll: true })
     else input.current?.focus({ preventScroll: true })
   }, [isTouch])
 
-  // Opening moves focus in. Closing cancels an answer still thinking (it can be retried);
-  // one already streaming arrives in full, so it is there when the panel opens again.
+  const run = useCallback(
+    (text: string) => {
+      const ok = session.run(text)
+      if (ok && !/^\/map\b/i.test(text.trim())) {
+        setMapOpen(false)
+        setMapProbe(null)
+        focusLine()
+      }
+      return ok
+    },
+    [session, focusLine],
+  )
+
+  const fill = useCallback((text: string) => {
+    setDraft(text)
+    input.current?.focus({ preventScroll: true })
+  }, [])
+
+  // Opening moves focus in.
   useEffect(() => {
-    if (open) focusComposer()
-    else stop(true)
-  }, [open, focusComposer, stop])
+    if (open) focusLine()
+  }, [open, focusLine])
 
   // The sheet is modal: the page behind it must not scroll. Layout effect, so the lock is
   // released before anything that opens next (a case study) takes its own.
@@ -117,8 +148,6 @@ export function ChatPanel({ id, open, onClose }: ChatPanelProps) {
     const sync = () => {
       el.style.setProperty('--chat-vvh', `${vv.height}px`)
       el.style.setProperty('--chat-vvt', `${vv.offsetTop}px`)
-      const s = scroller.current
-      if (s && s.scrollHeight - s.scrollTop - s.clientHeight < 80) s.scrollTop = s.scrollHeight
     }
     sync()
     vv.addEventListener('resize', sync)
@@ -131,82 +160,60 @@ export function ChatPanel({ id, open, onClose }: ChatPanelProps) {
     }
   }, [open, sheet])
 
-  // Follow the conversation. A long answer is shown from its question down, not scrolled past.
-  const seen = useRef(0)
+  // Each view starts at its top.
   useLayoutEffect(() => {
-    const el = scroller.current
-    if (!el) return
-    const added = messages.length > seen.current
-    seen.current = messages.length
-    if (!added && !thinking) return
-    const behavior: ScrollBehavior = reducedMotion ? 'auto' : 'smooth'
-    const last = messages[messages.length - 1]
-    if (added && last?.role === 'assistant') {
-      const node = el.querySelector<HTMLElement>(`[data-id="${last.id}"]`)
-      const question = node?.previousElementSibling as HTMLElement | null
-      if (node && node.offsetHeight > el.clientHeight * 0.6) {
-        el.scrollTo({ top: (question ?? node).offsetTop - 12, behavior })
-        return
-      }
-    }
-    el.scrollTo({ top: el.scrollHeight, behavior })
-  }, [messages, thinking, reducedMotion])
+    scroller.current?.scrollTo({ top: 0 })
+  }, [cur?.id])
 
-  // While an answer streams, keep its newest words in view, until its question would scroll off
-  // the top. Scrolling away by hand stops the following, as in any chat app.
-  const follow = useRef(true)
-  useLayoutEffect(() => {
-    const el = scroller.current
-    if (!stream) {
-      follow.current = true
+  // A new response arrives animated (thinking, then streaming); one reopened from the trail, or any
+  // under reduced motion, is shown whole.
+  const reduced = useMedia('(prefers-reduced-motion: reduce)')
+  const seen = useRef(new Set<string>())
+  const animate = Boolean(cur) && !reduced && !seen.current.has(cur!.id)
+  useEffect(() => {
+    if (cur) seen.current.add(cur.id)
+  }, [cur])
+  const [phase, setPhase] = useState<Phase>('done')
+
+  // The robot thinks while a response is on its way, reacts once it is in, then settles: pleased by
+  // a match, sorry about a miss.
+  const [reaction, setReaction] = useState<Mood | null>(null)
+  useEffect(() => {
+    if (!cur || phase !== 'done') return setReaction(null)
+    setReaction(cur.res.route === 'fallback' ? 'sad' : 'happy')
+    const t = window.setTimeout(() => setReaction(null), 1600)
+    return () => window.clearTimeout(t)
+  }, [cur, phase])
+  const mood: Mood = phase !== 'done' ? 'thinking' : (reaction ?? 'neutral')
+
+  // What the line would resolve to if run now: plain questions are previewed in the status bar.
+  const live = useMemo<Resolution | null>(() => {
+    const t = draft.trim()
+    if (!t || t.startsWith('/')) return null
+    return resolve(t, session.context())
+    // `cur` is listed because the view on screen is the context the draft resolves in.
+  }, [draft, cur, session])
+
+  /** Escape, once the command line has nothing to close: the map overlay, then back a view, then close. */
+  const escape = useCallback(() => {
+    if (mapOpen && !wide) {
+      setMapOpen(false)
+      focusLine()
       return
     }
-    if (!el || !follow.current) return
-    const node = el.querySelector<HTMLElement>(`[data-id="${stream.id}"]`)
-    const question = node?.previousElementSibling as HTMLElement | null
-    const top = (question ?? node)?.offsetTop
-    el.scrollTop = Math.min(el.scrollHeight - el.clientHeight, top === undefined ? Infinity : top - 12)
-  }, [stream])
-  const stopFollowing = () => {
-    if (stream) follow.current = false
-  }
-
-  /** Each new trace step: keep the bottom in view if the reader is there. */
-  const onTraceStep = useCallback(() => {
-    const el = scroller.current
-    if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 140) el.scrollTop = el.scrollHeight
-  }, [])
-
-  // Grow the input with its text, up to a cap.
-  useLayoutEffect(() => {
-    const t = input.current
-    if (!t) return
-    t.style.height = 'auto'
-    t.style.height = `${Math.min(t.scrollHeight, MAX_INPUT_HEIGHT)}px`
-  }, [draft])
-
-  const submit = () => {
-    if (send(draft)) setDraft('')
-  }
-
-  const onInputKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    // Enter sends, Shift+Enter breaks the line; never mid-composition (IME).
-    if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing || e.keyCode === 229) return
-    e.preventDefault()
-    submit()
-  }
+    if (session.back()) return
+    onClose(true)
+  }, [mapOpen, wide, session, onClose, focusLine])
 
   const onPanelKey = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key === 'Escape') {
       e.stopPropagation()
-      onClose(true)
+      escape()
       return
     }
     // As a sheet the panel is modal: Tab cycles inside it.
     if (e.key !== 'Tab' || !sheet || !root.current) return
-    const f = [...root.current.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), textarea, [tabindex="0"]')].filter(
-      (n) => n.offsetParent !== null,
-    )
+    const f = [...root.current.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input, [tabindex="0"]')].filter((n) => n.offsetParent !== null)
     if (!f.length) return
     const first = f[0]
     const last = f[f.length - 1]
@@ -219,34 +226,33 @@ export function ChatPanel({ id, open, onClose }: ChatPanelProps) {
     }
   }
 
-  // Links inside answers: #work-<id> opens that case study, #<section> scrolls there.
-  const onAnchor = (target: string) => {
-    if (sheet) {
-      onClose(false)
-      lockScroll(false)
-    }
-    const work = target.match(/^work-(.+)$/)
-    if (work) {
-      const i = projects.findIndex((p) => p.id === work[1])
-      if (i >= 0) useStore.getState().set({ openWork: i })
-      return
-    }
-    scrollToSection(target)
-  }
+  // Links inside views: #work-<id> opens that case study, #<section> scrolls there.
+  const onAnchor = useCallback(
+    (target: string) => {
+      if (sheet) {
+        onClose(false)
+        lockScroll(false)
+      }
+      const work = target.match(/^work-(.+)$/)
+      if (work) {
+        const i = projects.findIndex((p) => p.id === work[1])
+        if (i >= 0) useStore.getState().set({ openWork: i })
+        return
+      }
+      scrollToSection(target)
+    },
+    [sheet, onClose],
+  )
 
-  const newChat = () => {
-    reset()
-    setDraft('')
-    focusComposer()
-  }
-
-  const nearLimit = draft.length > assistant.maxLength - 60
+  const actions = useMemo<ViewActions>(() => ({ run, fill, probe: setPalProbe, onAnchor, resume }), [run, fill, onAnchor, resume])
+  const path = pathOf(cur?.res.view, focus)
+  const showSide = wide || mapOpen
 
   return (
     <div
       ref={root}
       id={id}
-      className={`chat-panel${sheet ? ' is-sheet' : ''}`}
+      className={`chat-panel cx${sheet ? ' is-sheet' : ''}${wide ? ' is-wide' : ''}`}
       data-state={open ? 'open' : 'closed'}
       role="dialog"
       aria-modal={sheet || undefined}
@@ -254,335 +260,184 @@ export function ChatPanel({ id, open, onClose }: ChatPanelProps) {
       tabIndex={-1}
       inert={!open}
       onKeyDown={onPanelKey}
+      // The 3D scenes behind keep picking under the panel; over it, the cursor is the page's own.
+      data-cursor="default"
     >
-      <header className="chat-head">
-        <Avatar mood={headerMood} live={open} />
-        <div className="chat-head-text">
-          <h2 id={titleId} className="chat-title">
-            {assistant.name}
-          </h2>
-          <p className="chat-status" data-phase={phase}>
-            <span className="chat-status-dot" aria-hidden="true" />
-            {phase === 'thinking' ? 'Thinking…' : phase === 'writing' ? 'Writing…' : assistant.status}
-          </p>
-        </div>
-        {messages.length > 0 && (
-          <button type="button" className="chat-icon-btn" onClick={newChat} aria-label="Start a new chat" title="New chat">
-            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-              <path
-                d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v3.75h3.75"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.7"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
+      <header className="cx-head">
+        {/* The one robot in the panel: a system mark that reacts to each resolution. */}
+        <span className="cx-mark" aria-hidden="true">
+          <Robot mood={mood} live={open} />
+        </span>
+        <h2 id={titleId} className="cx-brand">
+          {assistant.name}
+        </h2>
+        <p className="cx-path" aria-label={`Location: ${path.length ? path.join(', ') : 'start'}`}>
+          <span aria-hidden="true">~</span>
+          {path.map((p, i) => (
+            <span key={i} aria-hidden="true">
+              /{p}
+            </span>
+          ))}
+        </p>
+        <div className="cx-head-acts">
+          {cur && (
+            <button type="button" className="cx-icon" onClick={() => session.back()} aria-label="Back to the previous view" title="Back (Esc)">
+              <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+                <path d="M9.5 3.5 5 8l4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          )}
+          {!wide && (
+            <button type="button" className="cx-icon cx-icon--text" aria-pressed={mapOpen} onClick={() => (mapOpen ? escape() : setMapOpen(true))} title="Relation map (/map)">
+              Map
+            </button>
+          )}
+          {session.entries.length > 0 && (
+            <button
+              type="button"
+              className="cx-icon"
+              onClick={() => {
+                session.home()
+                setDraft('')
+                focusLine()
+              }}
+              aria-label="Back to the start and clear the trail"
+              title="Clear the trail (/home)"
+            >
+              <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+                <path d="M3 8a5 5 0 1 0 1.5-3.55M3 3v2.5h2.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          )}
+          <button type="button" className="cx-icon" onClick={() => onClose(true)} aria-label="Close" title="Close">
+            <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+              <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" fill="none" />
             </svg>
           </button>
-        )}
-        <button type="button" className="chat-icon-btn" onClick={() => onClose(true)} aria-label="Close chat" title="Close">
-          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-            <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" fill="none" />
-          </svg>
-        </button>
+        </div>
+        {/* A hairline that sweeps once per resolution. */}
+        <span key={cur?.id ?? 'home'} className="cx-scan" aria-hidden="true" />
       </header>
 
-      <div
-        ref={scroller}
-        className="chat-scroll"
-        data-lenis-prevent
-        onWheel={stopFollowing}
-        onTouchMove={stopFollowing}
-        onScroll={(e) => {
-          const s = e.currentTarget
-          setAtBottom(s.scrollHeight - s.scrollTop - s.clientHeight < 48)
-        }}
-      >
-        {messages.length === 0 ? (
-          <div className="chat-intro">
-            <Avatar large mood={greeted ? 'happy' : 'wink'} live={open} />
-            <p className="chat-intro-title">{assistant.greeting.title}</p>
-            <p className="chat-intro-body">{assistant.greeting.body}</p>
-            <ul className="chat-starters" aria-label="Suggested questions">
-              {assistant.starters.map((s) => (
-                <li key={s}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (send(s)) focusComposer()
-                    }}
-                  >
-                    <span>{s}</span>
-                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-                      <path d="M3.5 8h9M8.5 4l4 4-4 4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : (
-          <ol className="chat-log" aria-label="Conversation">
-            {messages.map((m, i) =>
-              m.role === 'user' ? (
-                <li key={m.id} data-id={m.id} className="chat-msg chat-msg--user">
-                  <span className="sr-only">You said: </span>
-                  <p className="chat-bubble">{m.text}</p>
-                  {m.state && (
-                    <p className="chat-note">
-                      {m.state === 'stopped' ? 'Stopped.' : 'Something went wrong.'}
-                      {i === lastIndex && !busy && (
-                        <button type="button" className="chat-note-btn" onClick={() => retry(m.id)}>
-                          Retry
-                        </button>
-                      )}
-                    </p>
-                  )}
-                </li>
-              ) : (
-                <li key={m.id} data-id={m.id} className="chat-msg chat-msg--bot">
-                  <div className="chat-msg-body">
-                    {m.trace.length > 0 && <ThoughtFor trace={m.trace} ms={m.thoughtMs} />}
-                    <span className="sr-only">{assistant.name} said: </span>
-                    <div className="chat-md" data-streaming={stream?.id === m.id || undefined}>
-                      <Markdown src={stream?.id === m.id ? streamedText(stream) : m.text} onAnchor={onAnchor} />
-                    </div>
-                    {stream?.id !== m.id && (
-                      <div className="chat-actions">
-                        <CopyButton text={m.text} />
-                        {m.stopped && <span className="chat-stopped">Stopped</span>}
-                      </div>
-                    )}
-                    {/* The mark rests under the latest answer, and works while it is written. */}
-                    {i === lastIndex && !thinking && (
-                      <span className="chat-mark" data-active={stream?.id === m.id || undefined} aria-hidden="true">
-                        <Spark />
-                      </span>
-                    )}
-                    {i === lastIndex && !busy && !m.stopped && m.suggestions.length > 0 && (
-                      <ul className="chat-suggest" aria-label="Suggested follow-ups">
-                        {m.suggestions.map((s) => (
-                          <li key={s}>
-                            <button type="button" onClick={() => send(s)}>
-                              {s}
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                </li>
-              ),
-            )}
-            {thinking && (
-              <li className="chat-msg chat-msg--bot chat-thinking">
-                <LiveTrace thinking={thinking} onStep={onTraceStep} />
-              </li>
-            )}
-          </ol>
+      <div className="cx-body">
+        {showSide && (
+          <aside className="cx-side" aria-label="Relation map and trail" data-lenis-prevent>
+            <KnowledgeMap focus={focus} probe={probe} onProbe={setMapProbe} onSelect={(n) => run(commandFor(n))} />
+            <Trail entries={session.entries} cursor={session.cursor} goto={session.goto} />
+          </aside>
         )}
+        <div ref={scroller} className="cx-main" data-lenis-prevent hidden={!wide && mapOpen}>
+          {cur && (
+            <p className="cx-query">
+              <span className="cx-prompt" aria-hidden="true">
+                ›
+              </span>
+              <span className="cx-query-text">{cur.input}</span>
+              <span className="cx-route" data-route={cur.res.route}>
+                {ROUTE_LABEL[cur.res.route]}
+              </span>
+            </p>
+          )}
+          <ViewPane key={cur?.id ?? 'home'} res={cur?.res ?? null} actions={actions} animate={animate} onPhase={setPhase} />
+        </div>
       </div>
 
-      {!atBottom && messages.length > 0 && (
-        <button
-          type="button"
-          className="chat-jump"
-          aria-label="Scroll to the latest message"
-          onClick={() => scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: reducedMotion ? 'auto' : 'smooth' })}
-        >
-          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-            <path d="M8 3.5v9M4 8.5l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-      )}
+      <CommandLine
+        inputRef={input}
+        value={draft}
+        onChange={setDraft}
+        onRun={run}
+        context={session.context}
+        onHover={setPalProbe}
+        recall={session.recall}
+        onEscape={escape}
+      />
 
-      <form
-        className="chat-composer"
-        onSubmit={(e) => {
-          e.preventDefault()
-          submit()
-        }}
-      >
-        <label htmlFor={inputId} className="sr-only">
-          Your question
-        </label>
-        <textarea
-          ref={input}
-          id={inputId}
-          className="chat-input"
-          rows={1}
-          value={draft}
-          maxLength={assistant.maxLength}
-          placeholder={assistant.placeholder}
-          enterKeyHint="send"
-          autoComplete="off"
-          aria-describedby={hintId}
-          data-lenis-prevent
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={onInputKey}
-        />
-        {busy ? (
-          <button type="button" className="chat-send chat-send--stop" onClick={() => stop()} aria-label="Stop answering">
-            <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-              <rect x="3" y="3" width="10" height="10" rx="2" fill="currentColor" />
-            </svg>
-          </button>
-        ) : (
-          <button type="submit" className="chat-send" disabled={!draft.trim()} aria-label="Send">
-            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-              <path d="M8 13V3.5M3.75 7.5 8 3.25l4.25 4.25" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-        )}
-      </form>
-      <p className="chat-foot" id={hintId}>
-        {nearLimit ? (
-          <span aria-live="polite">
-            {draft.length} / {assistant.maxLength} characters
-          </span>
-        ) : (
-          <>
-            Answers come only from Vinayak’s work.
-            {!isTouch && <span className="chat-foot-keys"> Enter to send.</span>}
-          </>
-        )}
-      </p>
+      <footer className="cx-status">
+        <Status live={live} cur={cur} draft={draft} />
+        <span className="cx-status-keys" aria-hidden="true">
+          <kbd>/</kbd> commands <kbd>↑</kbd> history <kbd>Esc</kbd> back
+        </span>
+      </footer>
 
       <div className="sr-only" aria-live="polite" aria-atomic="true">
-        {announcement}
+        {session.announcement}
       </div>
     </div>
   )
 }
 
-/** "→ detail" for most steps; a read shows what it read, as the tool's argument. */
-function StepArg({ step }: { step: TraceStep }) {
-  return step.tool === 'read_source' ? <span className="trace-arg">“{step.detail}”</span> : <span className="trace-arg">→ {step.detail}</span>
-}
-
-/** The trace as a pipeline: one node per tool call, joined by a rail. `active` is the one still running. */
-function TraceSteps({ steps, active, id }: { steps: TraceStep[]; active: number; id?: string }) {
-  return (
-    <ol className="trace" id={id}>
-      {steps.map((s, i) => (
-        <li key={i} className="trace-step" data-state={i === active ? 'run' : 'done'}>
-          <span className="trace-node" aria-hidden="true" />
-          <code className="trace-tool">{s.tool}</code>
-          <StepArg step={s} />
-        </li>
-      ))}
-    </ol>
-  )
-}
-
-function Spark() {
-  return (
-    <svg className="trace-spark" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-      <path d="M8 1.5c.4 3.2 1.9 5.6 6.5 6.5-4.6.9-6.1 3.3-6.5 6.5-.4-3.2-1.9-5.6-6.5-6.5 4.6-.9 6.1-3.3 6.5-6.5z" fill="currentColor" />
-    </svg>
-  )
-}
-
-/** While an answer is worked out: its steps arrive one at a time, with a running clock. */
-function LiveTrace({ thinking, onStep }: { thinking: Thinking; onStep: () => void }) {
-  const [now, setNow] = useState(() => performance.now())
-  useEffect(() => {
-    const t = window.setInterval(() => setNow(performance.now()), 100)
-    return () => window.clearInterval(t)
-  }, [])
-  const elapsed = Math.max(0, now - thinking.started)
-  const n = thinking.trace.length
-  const visible = thinking.stepMs ? Math.min(n, Math.floor(elapsed / thinking.stepMs) + 1) : n
-  const active = thinking.stepMs && elapsed < n * thinking.stepMs ? visible - 1 : -1
-  useEffect(() => onStep(), [visible, onStep])
-  return (
-    <div className="trace-live">
-      <p className="trace-head">
-        <Spark />
-        <span className="trace-shimmer">Thinking</span>
-        <span className="trace-time">{(elapsed / 1000).toFixed(1)}s</span>
-      </p>
-      <TraceSteps steps={thinking.trace.slice(0, visible)} active={active} />
-    </div>
-  )
-}
-
-/** After the answer: "Thought for 1.6s · read 3 sources", which opens the trace again. */
-function ThoughtFor({ trace, ms }: { trace: TraceStep[]; ms: number }) {
-  const [open, setOpen] = useState(false)
-  const id = useId()
-  const reads = trace.filter((s) => s.tool === 'read_source').length
-  return (
-    <div className="trace-done" data-open={open || undefined}>
-      <button type="button" className="trace-toggle" aria-expanded={open} aria-controls={id} onClick={() => setOpen((o) => !o)}>
-        <Spark />
-        <span>
-          Thought for {(ms / 1000).toFixed(1)}s{reads ? ` · read ${reads} source${reads === 1 ? '' : 's'}` : ''}
+/** The status bar's left side: what the line would do, or how the view on screen was resolved. */
+function Status({ live, cur, draft }: { live: Resolution | null; cur: Entry | null; draft: string }) {
+  if (live) {
+    return (
+      <p className="cx-status-main" aria-live="off">
+        <span className="cx-route" data-route={live.route}>
+          {ROUTE_LABEL[live.route]}
         </span>
-        <svg className="trace-chevron" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-          <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </button>
-      {open && <TraceSteps steps={trace} active={-1} id={id} />}
-    </div>
-  )
-}
-
-function Avatar({ large, mood, live }: { large?: boolean; mood?: Mood; live?: boolean }) {
-  return (
-    <span className={`chat-avatar${large ? ' chat-avatar--lg' : ''}`} aria-hidden="true">
-      <Robot mood={mood} live={live} />
-    </span>
-  )
-}
-
-function CopyButton({ text }: { text: string }) {
-  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle')
-
-  useEffect(() => {
-    if (state === 'idle') return
-    const t = window.setTimeout(() => setState('idle'), 1800)
-    return () => window.clearTimeout(t)
-  }, [state])
-
-  const copy = async () => {
-    const plain = toPlainText(text)
-    try {
-      await navigator.clipboard.writeText(plain)
-      setState('copied')
-    } catch {
-      // No async clipboard (insecure context, permissions): the selection fallback.
-      const area = document.createElement('textarea')
-      area.value = plain
-      area.setAttribute('readonly', '')
-      area.style.cssText = 'position:fixed;opacity:0;pointer-events:none'
-      document.body.appendChild(area)
-      area.select()
-      let ok = false
-      try {
-        ok = document.execCommand('copy')
-      } catch {
-        ok = false
-      }
-      area.remove()
-      setState(ok ? 'copied' : 'failed')
-    }
+        <span className="cx-status-text">↵ {describe(live)}</span>
+      </p>
+    )
   }
-
-  const label = state === 'copied' ? 'Copied' : state === 'failed' ? 'Copy failed' : 'Copy'
+  if (draft.trim().startsWith('/')) {
+    return (
+      <p className="cx-status-main">
+        <span className="cx-route" data-route="command">
+          CMD
+        </span>
+        <span className="cx-status-text">palette · Tab completes, ↵ runs</span>
+      </p>
+    )
+  }
+  if (cur) {
+    return (
+      <p className="cx-status-main">
+        <span className="cx-status-text">
+          {cur.res.rule} · <span className="cx-num">{cur.ms < 0.1 ? '<0.1' : cur.ms.toFixed(1)} ms</span>
+          {cur.res.focus ? ` · ${cur.res.focus}` : ''}
+        </span>
+      </p>
+    )
+  }
   return (
-    <button type="button" className="chat-action" onClick={copy} data-state={state} aria-label={state === 'idle' ? 'Copy answer' : label}>
-      {state === 'copied' ? (
-        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-          <path d="M3.5 8.5l3 3 6-6.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+    <p className="cx-status-main">
+      <span className="cx-status-text">
+        ready · {graph.nodes.length} nodes · {graph.edges.length} edges · local
+      </span>
+    </p>
+  )
+}
+
+/** Everything run this session, oldest first; the view on screen is marked. Any entry can be reopened. */
+function Trail({ entries, cursor, goto }: { entries: Entry[]; cursor: number; goto: (i: number) => void }) {
+  const list = useRef<HTMLOListElement>(null)
+  // Keep the current entry in view, scrolling only the list (never the map above it).
+  useEffect(() => {
+    const ol = list.current
+    const li = ol?.querySelector<HTMLElement>('[aria-current="true"]')?.parentElement
+    if (!ol || !li) return
+    if (li.offsetTop < ol.scrollTop) ol.scrollTop = li.offsetTop
+    else if (li.offsetTop + li.offsetHeight > ol.scrollTop + ol.clientHeight) ol.scrollTop = li.offsetTop + li.offsetHeight - ol.clientHeight
+  }, [cursor, entries.length])
+  return (
+    <section className="cx-trail" aria-label="Trail">
+      <p className="cx-map-head">
+        Trail <span>{String(entries.length).padStart(2, '0')}</span>
+      </p>
+      {entries.length ? (
+        <ol ref={list}>
+          {entries.map((e, i) => (
+            <li key={e.id}>
+              <button type="button" aria-current={i === cursor ? 'true' : undefined} onClick={() => goto(i)}>
+                <span className="cx-trail-in">{e.input}</span>
+                <span className="cx-trail-out">{describe(e.res)}</span>
+              </button>
+            </li>
+          ))}
+        </ol>
       ) : (
-        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-          <rect x="5.25" y="5.25" width="8" height="8" rx="1.75" fill="none" stroke="currentColor" strokeWidth="1.3" />
-          <path d="M10.75 3.25v-.5a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h.5" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-        </svg>
+        <p className="cx-trail-empty">Everything you run is listed here. Esc walks back through it.</p>
       )}
-      <span aria-hidden="true">{label}</span>
-    </button>
+    </section>
   )
 }

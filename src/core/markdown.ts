@@ -125,7 +125,7 @@ export function toPlainText(src: string): string {
 }
 
 /*
- * Streaming: an answer is revealed a chunk at a time (src/dom/chat/useChat.ts), the way a model's
+ * Streaming: an answer is revealed a chunk at a time (the console shows answers whole; kept for its tests), the way a model's
  * tokens arrive. A chunk is a word with its trailing space, except that an image line, a code fence,
  * a [link](…), **bold**, *italic* or `code` span arrives whole, so half a link never flashes as text.
  */

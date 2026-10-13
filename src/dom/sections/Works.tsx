@@ -38,7 +38,7 @@ export function Works() {
 
   if (!webgl) {
     return (
-      <Section id="works" title="Works">
+      <Section id="works" title="Works" className="content-type">
         <div className="mx-auto max-w-[80rem] px-[var(--gutter)] py-[16vh]">
           <h2 className="mono dim">(03) Works</h2>
           <ol className="mt-14 flex flex-col gap-14">
@@ -78,6 +78,7 @@ export function Works() {
     <Section
       id="works"
       title="Works"
+      className="content-type"
       choreography={(tl, root) => {
         tl.fromTo(root.querySelectorAll('[data-w-in]'), { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.05, stagger: 0.01, ease: 'power3.out' }, 0)
         tl.to(root.querySelectorAll('[data-w-in]'), { opacity: 0, y: -30, duration: 0.04, ease: 'power2.in' }, holdEnd('works') - 0.02)

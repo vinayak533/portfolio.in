@@ -57,6 +57,7 @@ import {
   DoubleSide,
   Matrix4,
   Mesh,
+  Object3D,
   MeshBasicMaterial,
   OrthographicCamera,
   PCFShadowMap,
@@ -70,13 +71,15 @@ import {
   Vector3,
   WebGLRenderer,
   WebGLRenderTarget,
+  type Light,
   type Material,
 } from 'three'
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js'
-import { clamp, damp, easeInOutCubic, onTick, remap, smoothstep } from '../../core/clock'
+import { clamp, damp, easeInOutCubic, gsap, onTick, remap, smoothstep } from '../../core/clock'
 import { heroConfig, MOBILE_QUERY } from '../config'
 import { shotAt } from '../shot'
 import { buildRobot } from './model'
+import { boundsOf } from './merge'
 import { createLayer, stageCues, stageFrame, type RobotHandle, type RobotOptions } from './dom'
 import { robotLink, setDock } from './bridge'
 import { animatedFace } from './face'
@@ -127,6 +130,8 @@ const DOCKED = { bob: 3, period: 4, pitch: (1.5 * Math.PI) / 180, hello: 400, ga
 /** The dissolve's heights: from below the stage to past the collar (the head is never cut). */
 const CUT_FROM = -0.15
 const CUT_OVER = 0.14
+/** How far the dissolve's noise lifts a surviving fragment over the cut (dissolvable(): (n - 0.5) * 0.22), with a margin. */
+const DISSOLVE_NOISE = 0.12
 
 /**
  * The opening composition (shares of the hero's height): the head's centre at about 24% (25% on
@@ -419,9 +424,20 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
   /** The dock's size (px) at this width. */
   const dockSize = () => (VW > 1024 ? DOCK_BOX.desktop : VW >= 768 ? DOCK_BOX.tablet : DOCK_BOX.phone)
 
+  /**
+   * The launcher's box while the head flies to it, read at the top of each frame (a prioritised ticker
+   * listener, before this frame's tweens write any style), so the read never forces a layout. It is the box
+   * the frame would have measured later on: nothing in between moves the launcher.
+   */
+  let anchorRect: DOMRect | null = null
+  const sampleAnchor = () => {
+    anchorRect = robotLink.anchor && !docked && progress >= DOCK - 0.05 ? robotLink.anchor.getBoundingClientRect() : null
+  }
+  gsap.ticker.add(sampleAnchor, false, true)
+
   /** The launcher button's box (px, viewport). Before the chat widget mounts: where its CSS will put it (chat.css). */
   function anchorBox() {
-    const a = robotLink.anchor?.getBoundingClientRect()
+    const a = anchorRect ?? robotLink.anchor?.getBoundingClientRect()
     if (a && a.width) return { x: a.left, y: a.top, w: a.width, h: a.height }
     const size = VW > 1024 ? 64 : VW >= 768 ? 56 : 52
     const side = clamp(VW * 0.044, 24, 64) - 0.17 * dockSize() + (dockSize() - size) / 2
@@ -465,7 +481,8 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     placeHead(0)
     headPivot.rotation.set(0, 0, 0)
     robot.root.updateMatrixWorld(true)
-    box.setFromObject(body)
+    // (The bounds of the original meshes, merged or not: merge.ts.)
+    boundsOf(body, box)
     top = box.max.y
     L.target0.set(0, AIM_Y, 0)
     placeCamera(L.target0, DIST0, ELEV0)
@@ -586,6 +603,8 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     // The head's actual share at that distance (the width rule may have pushed the camera back).
     L.headShare = 0.9 / (L.dist1 * 2 * TAN)
 
+    // (A new layout reads the launcher afresh.)
+    anchorRect = null
     measureDock()
   }
 
@@ -645,18 +664,68 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     head.react = 0
     // Docked, only the head is drawn: the body (all but the head's pivot), the furniture and the stage are hidden.
     for (const c of body.children) if (c !== headPivot) c.visible = !on
-    robot.chair.visible = robot.desk.group.visible = lap.group.visible = !on
+    robot.chair.visible = robot.desk.group.visible = !on
+    // The laptop's parts go but its two lights stay, dark: a light leaving the scene changes every lit
+    // material's program, and the head's would recompile on the spot as it lands (most of a second on a
+    // phone, both ways). A light at zero adds exactly nothing, so the docked head looks just the same.
+    for (const [o, shown] of laptopParts) o.visible = on ? false : shown
+    if (on) lap.screenLight.intensity = lap.keyLight.intensity = 0
     // (The neck, under the head's pivot but of the body, is dissolved by then: not drawn either.)
     for (const m of neckMeshes) m.visible = !on
     // ...and the renderer stops walking the whole scene's matrices each frame (syncWorld updates the head's).
     scene.matrixWorldAutoUpdate = !on
   }
 
+  /** The laptop's parts with no light inside (what docking hides), with their visibility as built. */
+  const laptopParts: [Object3D, boolean][] = []
+  const holdsLight = (o: Object3D): boolean => (o as Light).isLight === true || o.children.some(holdsLight)
+  const collectParts = (o: Object3D) => {
+    for (const c of o.children) {
+      if ((c as Light).isLight) continue
+      if (holdsLight(c)) collectParts(c)
+      else laptopParts.push([c, c.visible])
+    }
+  }
+  collectParts(lap.group)
+
   /** The body's meshes under the head's pivot (the neck). */
   const neckMeshes: Mesh[] = []
   headPivot.traverse((o) => {
     if (o instanceof Mesh && robot.bodyMaterials.includes(o.material as Material)) neckMeshes.push(o)
   })
+
+  /**
+   * Once the dissolve is complete, whatever lies wholly under the cut (its bounds' top, plus the noise's reach)
+   * has every fragment discarded, and the furniture's own glows and details are faded to nothing: such parts are
+   * not drawn at all for the rest of the flight (the same picture, without ~150 draws of nothing a frame).
+   * Docking hides them anyway (setDocked); back below a full dissolve, they come back.
+   */
+  const dissolveParts = (): Object3D[] => [...body.children.filter((c) => c !== headPivot), ...neckMeshes, robot.chair, robot.desk.group, ...laptopParts.map(([o]) => o)]
+  const putAwayParts: Object3D[] = []
+  let putAwayOn = false
+  const partBounds = new Box3()
+  function putAway(on: boolean) {
+    if (docked) {
+      // (setDocked owns their visibility while docked.)
+      putAwayParts.length = 0
+      putAwayOn = false
+      return
+    }
+    if (on === putAwayOn) return
+    putAwayOn = on
+    if (on) {
+      for (const o of dissolveParts()) {
+        if (!o.visible) continue
+        boundsOf(o, partBounds)
+        if (partBounds.isEmpty() || partBounds.max.y + DISSOLVE_NOISE >= cut.value) continue
+        o.visible = false
+        putAwayParts.push(o)
+      }
+    } else {
+      for (const o of putAwayParts) o.visible = true
+      putAwayParts.length = 0
+    }
+  }
 
   /** Docked: a quick ^ ^ as each new section comes into view (not in the hero, not when held still). */
   let helloUntil = -Infinity
@@ -883,13 +952,15 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     const isOff = p >= DETACH[0] && !docked
     if (isOff && !detached && !still) detachAt = now
     detached = p >= DETACH[0]
-    syncWorld()
+    // The camera and the gaze below read the body's frame only; the renderer refreshes the rest as it draws.
+    body.updateWorldMatrix(true, false)
 
     // The body comes apart from the ground up as the camera closes on the head (the furniture with it);
     // the laptop powers down first. The head and its headphones stay whole.
     const d = smoothstep(DISSOLVE[0], DISSOLVE[1], p)
     // (It rises with the head's lift, so the neck stays behind and is gone: nothing hangs under the head.)
     cut.value = d <= 0 ? CUT_FROM - 1 : lerp(CUT_FROM, neck.y + CUT_OVER, d) + DETACH_LIFT * lifted
+    putAway(d >= 1 && !docked)
     // (The headphones stay with the head: phonesCut never rises.)
     const props = 1 - smoothstep(POWER_OFF[0], POWER_OFF[1], p)
     robot.setStage(1 - smoothstep(0, 0.22, d))
@@ -1065,8 +1136,7 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
       painted = faceKey
     }
 
-    // ---- gaze
-    syncWorld()
+    // ---- gaze (the body's frame is current: nothing has moved it since the camera read it)
     let yawT: number
     let pitchT: number
     let yawRaw: number
@@ -1239,8 +1309,9 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     // The bezel catches the screen's light a little (+15% when the build passes); dimmed in sleep.
     robot.bezel.emissiveIntensity = bezelGlow * (1 - 0.45 * head.sleep) * (docked ? 1 : 1 + boost * props)
 
-    // Docked, the body, props and stage are gone: nothing of theirs is drawn or shadowed.
-    syncWorld()
+    // Docked, the body, props and stage are gone: nothing of theirs is drawn or shadowed. (In the hero the
+    // renderer walks the scene's matrices itself; docked it does not, and only the head's have moved.)
+    if (docked) syncWorld()
     // The shadow map is drawn every frame in the hero (once without shadows, where it is unused), never docked.
     renderer.shadowMap.needsUpdate = !docked && (shadows || !shadowReady)
     if (!docked && !lowPower && a < 0.05 && now - revealedAt > 1000) governor(dt)
@@ -1313,7 +1384,7 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     robot.stage.visible = stageWas
     cut.value = cutWas
     renderer.shadowMap.needsUpdate = shadowWas
-    robot.root.updateMatrixWorld(true)
+    // (The main pass, drawn next, walks the matrices again with the figure upright.)
   }
 
   // ---- lifecycle
@@ -1351,6 +1422,7 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
 
   function teardown() {
     stopTick()
+    gsap.ticker.remove(sampleAnchor)
     offSection()
     observer.disconnect()
     beat.stop()

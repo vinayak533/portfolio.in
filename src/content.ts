@@ -89,9 +89,9 @@ export const about = {
   photo: {
     cutout: '/portrait/about.cutout.webp',
     base: '/portrait/about',
-    widths: [800, 1201],
-    width: 1201,
-    height: 1214,
+    widths: [800, 1104],
+    width: 1104,
+    height: 1203,
     alt: 'Portrait of Vinayak K V',
   },
 }
