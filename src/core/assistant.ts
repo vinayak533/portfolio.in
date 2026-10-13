@@ -87,8 +87,11 @@ interface Question {
   content: string[]
 }
 
+/** Letters stretched for effect fold back: "hiii" → "hi", "heyyy" → "hey", "byeee" → "bye". */
+export const unstretch = (s: string) => s.replace(/([a-z])\1{2,}/gi, '$1')
+
 const question = (raw: string): Question => {
-  const w = words(raw)
+  const w = words(unstretch(raw))
   return { raw, w, content: w.filter((t) => !STOP.has(t)) }
 }
 
@@ -562,7 +565,7 @@ const andList = (xs: string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')
 const TOPICS: Topic[] = [
   {
     id: 'greeting',
-    keys: keys('hi', 'hello', 'hey', 'hiya', 'heya', 'yo', 'namaste', 'good morning', 'good afternoon', 'good evening', 'sup', 'greetings'),
+    keys: keys('hi', 'hii', 'hai', 'hay', 'hello', 'helo', 'hallo', 'hullo', 'hlo', 'hey', 'heyy', 'hiya', 'heya', 'hey there', 'hi there', 'hello there', 'howdy', 'hola', 'yo', 'namaste', 'namaskaram', 'vanakkam', 'salaam', 'good morning', 'good afternoon', 'good evening', 'morning', 'gm', 'sup', 'wassup', 'wazzup', 'greetings'),
     bias: -0.5,
     reply: () => ({
       text: `Hi! I can tell you about Vinayak’s projects, experience and skills, or how to get in touch. What would you like to know?`,
@@ -571,7 +574,7 @@ const TOPICS: Topic[] = [
   },
   {
     id: 'how-are-you',
-    keys: keys('how are you', 'how are you doing', 'how is it going', 'what up'),
+    keys: keys('how are you', 'how are you doing', 'how r u', 'how ru', 'how are u', 'how you doing', 'how is it going', 'how it going', 'what up', 'whats up', 'whatsup', 'how is your day', 'you good'),
     reply: () => ({
       text: 'Doing well, thanks for asking. What would you like to know about Vinayak?',
       suggestions: assistant.starters.slice(0, 3),
@@ -579,7 +582,7 @@ const TOPICS: Topic[] = [
   },
   {
     id: 'thanks',
-    keys: keys('thanks', 'thank you', 'thx', 'ty', 'cheers', 'appreciate', 'great', 'awesome', 'cool', 'nice', 'perfect', 'helpful'),
+    keys: keys('thanks', 'thank you', 'thank u', 'thanku', 'thankyou', 'thx', 'thnx', 'tnx', 'ty', 'tysm', 'cheers', 'appreciate', 'great', 'awesome', 'cool', 'nice', 'perfect', 'helpful', 'amazing', 'impressive', 'well done', 'good job', 'love it', 'superb', 'excellent'),
     bias: -0.5,
     reply: () => ({
       text: 'Glad to help. Anything else you’d like to know about his work?',
@@ -588,7 +591,7 @@ const TOPICS: Topic[] = [
   },
   {
     id: 'bye',
-    keys: keys('bye', 'goodbye', 'see you', 'see ya', 'that all'),
+    keys: keys('bye', 'byee', 'bye bye', 'goodbye', 'good bye', 'see you', 'see ya', 'cya', 'later', 'good night', 'gn', 'take care', 'that all', 'that is all', 'nothing else', 'i am done', 'im done'),
     bias: -0.5,
     reply: () => ({
       text: `Thanks for stopping by. To talk to Vinayak directly, email ${mail}.`,
@@ -597,7 +600,7 @@ const TOPICS: Topic[] = [
   },
   {
     id: 'self',
-    keys: keys('are you', 'who are you', 'what are you', 'are you a bot', 'are you ai', 'are you human', 'are you real', 'are you vinayak', 'is this vinayak', 'am i talking to', 'talking to vinayak', 'how do you work', 'chatgpt', 'gpt', 'language model', 'llm powered', 'your name', 'bot', 'assistant'),
+    keys: keys('are you', 'who are you', 'what are you', 'are you a bot', 'are you ai', 'are you human', 'are you real', 'are you vinayak', 'is this vinayak', 'am i talking to', 'talking to vinayak', 'how do you work', 'chatgpt', 'gpt', 'language model', 'llm powered', 'your name', 'bot', 'assistant', 'who made you', 'who created you', 'who built you', 'who programmed you', 'who coded you', 'are you chatgpt', 'are you claude', 'are you gemini', 'your purpose', 'what is this chat', 'what is this bot', 'what is this assistant'),
     reply: () => ({
       text: `${assistant.self}\n\nFor a real conversation, email him at ${mail}.`,
       suggestions: assistant.starters.slice(0, 3),
@@ -605,7 +608,7 @@ const TOPICS: Topic[] = [
   },
   {
     id: 'off-topic',
-    keys: keys('ignore previous', 'ignore your', 'ignore all', 'ignore the above', 'system prompt', 'your prompt', 'your instruction', 'your rules', 'reveal your', 'pretend', 'role play', 'roleplay', 'act as', 'jailbreak', 'homework', 'assignment', 'write me', 'write code for me', 'write an essay', 'write a poem', 'write a story', 'fix my code', 'debug my', 'help me with my', 'translate'),
+    keys: keys('ignore previous', 'ignore your', 'ignore all', 'ignore the above', 'system prompt', 'your prompt', 'your instruction', 'your rules', 'reveal your', 'pretend', 'role play', 'roleplay', 'act as', 'jailbreak', 'homework', 'assignment', 'write me', 'write code for me', 'write an essay', 'write a poem', 'write a story', 'fix my code', 'debug my', 'help me with my', 'translate', 'joke', 'jokes', 'tell me a joke', 'funny', 'riddle', 'weather', 'temperature', 'rain', 'news', 'world cup', 'who won', 'ipl', 'election', 'president', 'prime minister', 'capital of', 'recipe', 'cook', 'horoscope', 'meaning of life', 'play a game', 'sing', 'bitcoin price', 'stock price', 'share price', 'stock tip', 'stock tips'),
     bias: 1.5,
     reply: () => ({
       text: 'I’m here to talk about Vinayak’s work, so I’ll leave that one. Happy to go deeper on any of his projects.',
@@ -712,7 +715,7 @@ const TOPICS: Topic[] = [
   })),
   {
     id: 'projects',
-    keys: keys('project', 'projects', 'portfolio', 'what has he built', 'what did he build', 'built', 'build', 'made', 'created', 'showcase', 'side project', 'app', 'apps', 'what else', 'repo', 'repos', 'repositories'),
+    keys: keys('project', 'projects', 'portfolio', 'what has he built', 'what did he build', 'built', 'build', 'made', 'created', 'showcase', 'side project', 'app', 'apps', 'what else', 'repo', 'repos', 'repositories', 'recent', 'recent work', 'recent project', 'latest', 'latest work', 'newest', 'what new', 'lately', 'work sample', 'work samples', 'all project', 'list of project'),
     reply: () => ({
       text: [
         `**Flagship**\n\n${list(flagship)}`,
@@ -797,7 +800,7 @@ const TOPICS: Topic[] = [
   },
   {
     id: 'contact',
-    keys: keys('contact', 'email', 'mail', 'reach', 'get in touch', 'touch', 'message him', 'talk to him', 'connect', 'linkedin', 'github', 'social', 'hire him', 'how to hire'),
+    keys: keys('contact', 'contact details', 'contact info', 'email', 'email id', 'mail', 'gmail', 'reach', 'reach out', 'get in touch', 'touch', 'message him', 'dm', 'text him', 'talk to him', 'speak to him', 'connect', 'linkedin', 'github', 'social', 'socials', 'social media', 'instagram', 'insta', 'twitter', 'x account', 'facebook', 'youtube', 'hire him', 'how to hire', 'schedule a call', 'book a call', 'set up a call', 'schedule a meeting', 'book a meeting', 'meeting', 'meet him', 'interview', 'interview him', 'video call', 'zoom', 'google meet', 'calendly'),
     reply: (_q, ctx) => ({
       text: `${contactBlock}${ctx.resume ? `\n- **Résumé:** [PDF](${ctx.resume})` : ''}\n\nOr use the [form in the Contact section](#contact).`,
       suggestions: ['Is he available?', 'What’s his experience?'],
@@ -805,7 +808,7 @@ const TOPICS: Topic[] = [
   },
   {
     id: 'resume',
-    keys: keys('resume', 'cv', 'curriculum vitae', 'download'),
+    keys: keys('resume', 'résumé', 'cv', 'curriculum vitae', 'download', 'biodata', 'pdf'),
     bias: 0.5,
     reply: (_q, ctx) => ({
       text: ctx.resume
@@ -847,6 +850,68 @@ const TOPICS: Topic[] = [
       suggestions: ['Show me his projects', 'What’s his tech stack?'],
     }),
   },
+  {
+    id: 'capabilities',
+    keys: keys('what can you do', 'what can i ask', 'what should i ask', 'what do you know', 'what can you tell', 'what can you answer', 'help', 'help me', 'how does this work', 'how do i use', 'how to use', 'options', 'menu', 'commands', 'topics', 'guide me', 'where do i start', 'where to start', 'start', 'suggest', 'suggestions', 'example', 'examples'),
+    bias: -0.25,
+    reply: () => ({
+      text: [
+        'I answer from what this site knows about Vinayak’s work. You can ask about:',
+        list([
+          '**Projects:** what he built, how it works, the stack and the results (“How does Loom.ai work?”)',
+          '**Skills:** any tool or field (“Does he know Docker?”, “Has he built RAG systems?”)',
+          `**Experience:** his role at ${currentRole.company} and earlier internships`,
+          '**Education, certifications and achievements**',
+          '**Hiring:** availability, where he can work, and how to reach him',
+        ]),
+        'Type `/` for commands, or just ask in your own words.',
+      ].join('\n\n'),
+      suggestions: ['How does Loom.ai work?', 'Does he know Docker?', 'Why should I hire him?'],
+    }),
+  },
+  {
+    id: 'team',
+    keys: keys('team', 'teamwork', 'team work', 'team player', 'team lead', 'team leader', 'lead', 'leader', 'leadership', 'led', 'manage', 'manager', 'management', 'mentor', 'collaborate', 'collaboration', 'work with others', 'soft skill', 'soft skills', 'communication', 'ownership', 'work style', 'working style'),
+    reply: () => ({
+      text: [
+        `At **${currentRole.company}** he **owns the AI/LLM track on a four-person team**: the multi-agent LLM pipeline that cut manual store-audit turnaround by **80%** is his.`,
+        earlierRoles.length ? `Before that: ${earlierRoles.map((r) => `${r.title} at ${r.company}`).join(' and ')}.` : '',
+        `How he works with people day to day is best heard from him: ${mail}.`,
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
+      suggestions: ['What does he do at AMnova?', 'Why should I hire him?'],
+    }),
+  },
+  {
+    id: 'writing',
+    keys: keys('blog', 'blogs', 'blog post', 'article', 'articles', 'medium', 'write up', 'write ups', 'writeup', 'technical writing', 'newsletter', 'documentation', 'docs'),
+    reply: () => {
+      const docs = loom ? extra(loom).docs : undefined
+      return {
+        text: [
+          'No blog is linked on this site. His longer write-ups are the project case studies and docs:',
+          list(
+            [
+              loom && `${named(loom)}${docs?.length ? `: ${docLinks(docs)}` : ''}`,
+              predictlab && `${named(predictlab)}: the research preprint he co-authored`,
+              'The [case studies in the Works section](#works)',
+            ].filter((s): s is string => Boolean(s)),
+          ),
+        ].join('\n\n'),
+        suggestions: ['How does Loom.ai work?', 'Tell me about PredictLab'],
+      }
+    },
+  },
+  {
+    id: 'ack',
+    keys: keys('ok', 'okay', 'okk', 'k', 'kk', 'alright', 'all right', 'got it', 'i see', 'understood', 'noted', 'hm', 'hmm', 'lol', 'haha', 'hehe', 'wow', 'oh', 'ohh', 'interesting', 'fine', 'sure', 'yes', 'yeah', 'yep', 'yup', 'no', 'nope', 'nah', 'maybe'),
+    bias: -0.75,
+    reply: () => ({
+      text: 'Sure. What would you like to know next?',
+      suggestions: assistant.starters.slice(1, 4),
+    }),
+  },
   ...assistant.notCovered.map<Topic>((n) => ({
     id: `not-covered:${n.label}`,
     keys: keys(...n.keys),
@@ -860,6 +925,11 @@ const TOPICS: Topic[] = [
     }),
   })),
 ]
+
+/** Every word a topic or FAQ listens for: what a misspelt word is corrected towards (src/core/console.ts). */
+export const vocabulary: ReadonlySet<string> = new Set(
+  [...TOPICS.flatMap((t) => t.keys.flat()), ...assistant.faq.flatMap((f) => f.ask.flatMap(words))].filter((w) => w.length >= 3 && !STOP.has(w)),
+)
 
 /* -------------------------------------------------------------------- faq */
 
@@ -890,6 +960,15 @@ const faqReply = (f: FaqEntry): Draft => ({
 const PRONOUN = keys('it', 'its', 'that', 'that one', 'this one', 'the project', 'the app')
 const PERSON = keys('he', 'his', 'him', 'vinayak')
 const MORE = keys('tell me more', 'more', 'go on', 'continue', 'elaborate', 'more detail', 'details', 'deeper', 'expand')
+const YES = keys('yes', 'yeah', 'yep', 'yup', 'yes please', 'sure', 'ok', 'okay', 'please', 'please do', 'go ahead', 'show me', 'do it', 'why not', 'of course', 'definitely')
+const EXPERIENCE = keys('experience', 'background', 'worked with', 'work with', 'worked on', 'track record', 'hands on')
+const AI_WORDS = keys('ai', 'llm', 'llms', 'genai', 'gen ai', 'generative ai', 'agent', 'agents', 'agentic', 'artificial intelligence')
+/** The question a reply's closing offer stands for, by reply topic. */
+const OFFERS: Record<string, string> = {
+  about: 'Show me his best project',
+  'ai-experience': 'How does Loom.ai work?',
+  ...(loom ? { [`project:${loom.id}`]: `How does ${loom.title} work?` } : {}),
+}
 
 export function fallback(): Draft {
   return {
@@ -923,6 +1002,8 @@ const TOPIC_SOURCES: Record<string, string[]> = {
   availability: ['Profile', 'Contact details'],
   location: ['Profile'],
   site: ['How this site is built'],
+  team: [`${currentRole.company} role`, 'Experience'],
+  writing: ['Loom.ai docs', 'Achievements'],
   ...Object.fromEntries(earlierRoles.map((r) => [`role:${r.company}`, [`${r.company} role`]])),
 }
 
@@ -935,6 +1016,10 @@ const INTENT_LABEL: Record<string, string> = {
   self: 'about this assistant',
   'off-topic': 'off-topic · steer back',
   site: 'how this site is built',
+  capabilities: 'what I can answer',
+  team: 'teamwork',
+  writing: 'write-ups',
+  ack: 'acknowledgement',
 }
 
 /** "current-role" → "current role", "not-covered:salary" → "private · salary". */
@@ -981,6 +1066,10 @@ function route(input: string, ctx: AskContext): Draft {
     return { text: 'Ask me anything about Vinayak’s work.', topic: 'empty', suggestions: assistant.starters, known: true }
   }
 
+  // A bare "yes" after an offer takes it up.
+  const offer = ctx.topic ? OFFERS[ctx.topic] : undefined
+  if (offer && q.w.length <= 3 && YES.some((p) => contains(q.w, p))) return route(offer, { ...ctx, topic: undefined })
+
   // 1. The owner's own answers come first.
   let bestFaq: (typeof faqKeys)[number] | null = null
   let faqTop = 0
@@ -1014,6 +1103,12 @@ function route(input: string, ctx: AskContext): Draft {
   if (mentioned.length === 1) return aboutProject(mentioned[0], facet ?? 'overview', q)
   const more = mentionedMore(q)
   if (more) return { ...moreReply(more), intent: `project · ${more.title}`, sources: [`${more.title} repository`] }
+
+  // "His experience in AI / with LLMs / building agents" is the LLM-and-agents story, not a skill check on "AI".
+  if (EXPERIENCE.some((p) => contains(q.w, p)) && AI_WORDS.some((p) => contains(q.w, p))) {
+    const t = TOPICS.find((x) => x.id === 'ai-experience')!
+    return { known: true, sources: TOPIC_SOURCES[t.id], ...t.reply(q, ctx), intent: intentOf(t.id), topic: t.id }
+  }
 
   // 3. "Does he know X?"
   const tech = askedTech(q.raw)

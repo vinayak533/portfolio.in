@@ -1,22 +1,23 @@
 /*
  * Portfolio assistant (ChatWidget / ChatPanel). The launcher is the robot
  * itself (the hero robot's 3D head, or Robot.tsx without WebGL), floating and
- * changing mood; open, it becomes a clay orb with ×.
+ * changing mood; open, it becomes a violet-to-blue orb with ×.
  *
  * Open, Ask Vinayak is a console over the index of his work (the .cx-* rules below): dark always,
- * near-black and charcoal surfaces with fine warm-white rules, one orange accent (the clay), Orbitron
+ * ink-navy surfaces with fine cool-white rules, one violet accent fading into deep blue, Orbitron
  * for short display type (titles, the statement, numbers), JetBrains Mono for commands, ids and
  * status, and Helvetica (global.css --font-content) for everything read. The header robot is the
  * only robot inside the panel: a system mark.
  *
- * Contrast (on --cx-bg #0a0a0b): --cx-ink 16:1, --cx-ink-2 9.9:1, --cx-ink-3 5.8:1, --cx-accent 6.8:1,
- * --cx-accent-ink 9.6:1; dark text on the accent 6.7:1. Dimmed map labels use --cx-ink-3, not opacity.
+ * Contrast (on --cx-bg #0a0a16): --cx-ink 16:1, --cx-ink-2 9.6:1, --cx-ink-3 5.6:1, --cx-accent 5.6:1,
+ * --cx-accent-ink 10:1, --cx-blue-ink 7.4:1; dark text on the accent 5.3:1. Dimmed map labels use
+ * --cx-ink-3, not opacity.
  */
 .chat {
-  --chat-clay: #d97757;
-  --chat-clay-strong: #c6613f;
-  --chat-clay-soft: rgb(217 119 87 / 0.14);
-  --chat-orb: radial-gradient(120% 120% at 30% 20%, #e3916f 0%, #d97757 45%, #b5532f 100%);
+  --chat-clay: #8b6cff;
+  --chat-clay-strong: #6a4cf0;
+  --chat-clay-soft: rgb(139 108 255 / 0.14);
+  --chat-orb: radial-gradient(120% 120% at 30% 20%, #b3a0ff 0%, #7b5cf6 42%, #3550d8 78%, #1d2a8a 100%);
   /* Speech tags (the launcher's tooltip) sit on the dark site, whatever the system theme. */
   --chat-tag-bg: rgb(48 48 46 / 0.96);
   --chat-tag-edge: rgb(250 249 245 / 0.14);
@@ -25,7 +26,7 @@
   --chat-surface: #0c0c0e;
   --chat-surface-2: #151518;
   --chat-surface-3: #1c1c20;
-  --chat-user: #1f1a18;
+  --chat-user: #1a1834;
   --chat-code: #121215;
   --chat-raised: rgb(255 255 255 / 0.05);
   --chat-border: rgb(255 255 255 / 0.08);
@@ -33,8 +34,8 @@
   --chat-ink: #f4f2ee;
   --chat-ink-2: #c6c3bc;
   --chat-ink-3: #94918a;
-  --chat-link: #ec9e7f;
-  --chat-shadow: 0 40px 90px -30px rgb(0 0 0 / 0.9), 0 0 0 1px rgb(0 0 0 / 0.6), 0 0 60px -30px rgb(217 119 87 / 0.35);
+  --chat-link: #c4b5fd;
+  --chat-shadow: 0 40px 90px -30px rgb(0 0 0 / 0.9), 0 0 0 1px rgb(0 0 0 / 0.6), 0 0 60px -30px rgb(139 108 255 / 0.35);
   --chat-composer-shadow: 0 6px 24px -10px rgb(0 0 0 / 0.7);
   --chat-scheme: dark;
   --chat-display: 'Orbitron', var(--font-display), ui-sans-serif, system-ui, sans-serif;
@@ -124,7 +125,7 @@
   border-radius: 50%;
 }
 
-/* Under the head: a soft warm glow pool and three faint dotted rings (at most 20%), the "hover" it floats
+/* Under the head: a soft violet glow pool and three faint dotted rings (at most 20%), the "hover" it floats
    on. Static: only the shadow at its centre eases with the head's 4 s float (engine.ts DOCKED). */
 .chat-launcher::before {
   content: '';
@@ -137,7 +138,7 @@
   pointer-events: none;
   background:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 30' preserveAspectRatio='none'%3E%3Cg fill='none' stroke='%23e3916f' stroke-linecap='round' vector-effect='non-scaling-stroke'%3E%3Cellipse cx='50' cy='15' rx='22' ry='5.5' stroke-opacity='.2' stroke-width='1.6' stroke-dasharray='0 4'/%3E%3Cellipse cx='50' cy='15' rx='35' ry='8.8' stroke-opacity='.14' stroke-width='1.6' stroke-dasharray='0 5'/%3E%3Cellipse cx='50' cy='15' rx='48' ry='12' stroke-opacity='.08' stroke-width='1.6' stroke-dasharray='0 6'/%3E%3C/g%3E%3C/svg%3E") center / 100% 100% no-repeat,
-    radial-gradient(closest-side, rgb(217 119 87 / 0.18), rgb(217 119 87 / 0.05) 55%, transparent);
+    radial-gradient(closest-side, rgb(139 108 255 / 0.18), rgb(139 108 255 / 0.05) 55%, transparent);
   transition: opacity 0.3s;
 }
 .chat-launcher::after {
@@ -148,7 +149,7 @@
   bottom: -5px;
   height: 7px;
   border-radius: 50%;
-  background: radial-gradient(closest-side, rgb(0 0 0 / 0.55), rgb(217 119 87 / 0.2) 60%, transparent);
+  background: radial-gradient(closest-side, rgb(0 0 0 / 0.55), rgb(139 108 255 / 0.2) 60%, transparent);
   z-index: -1;
   pointer-events: none;
   animation: robot-shadow 4s ease-in-out infinite;
@@ -164,7 +165,7 @@
   inset: 0;
   border-radius: 50%;
   background: var(--chat-orb);
-  box-shadow: 0 14px 32px -12px rgb(181 83 47 / 0.75), 0 0 24px -8px rgb(217 119 87 / 0.6), inset 0 1px 0 rgb(255 255 255 / 0.25);
+  box-shadow: 0 14px 32px -12px rgb(43 70 201 / 0.75), 0 0 24px -8px rgb(139 108 255 / 0.6), inset 0 1px 0 rgb(255 255 255 / 0.25);
   opacity: 0;
   transform: scale(0.6);
   transition: opacity 0.3s var(--chat-ease), transform 0.5s var(--chat-spring);
@@ -346,17 +347,22 @@
 
 /* ================================================================= console */
 .cx {
-  --cx-bg: #0a0a0b;
-  --cx-bg-2: #111113;
-  --cx-bg-3: #18181b;
-  --cx-line: rgb(239 233 223 / 0.08);
-  --cx-line-2: rgb(239 233 223 / 0.15);
-  --cx-ink: #efe9df;
-  --cx-ink-2: #bdb7ad;
-  --cx-ink-3: #8f8a81;
-  --cx-accent: #e8794a;
-  --cx-accent-ink: #f3a17c;
-  --cx-accent-dim: rgb(232 121 74 / 0.13);
+  --cx-bg: #0a0a16;
+  --cx-bg-2: #10112a;
+  --cx-bg-3: #171936;
+  --cx-line: rgb(205 205 255 / 0.08);
+  --cx-line-2: rgb(205 205 255 / 0.15);
+  --cx-ink: #ecebf8;
+  --cx-ink-2: #b8b7d2;
+  --cx-ink-3: #8b8aa8;
+  --cx-accent: #8b6cff;
+  --cx-accent-ink: #c4b5fd;
+  --cx-accent-dim: rgb(139 108 255 / 0.14);
+  --cx-blue: #3557e6;
+  --cx-blue-ink: #8fa8ff;
+  /* The signature: violet into deep blue. */
+  --cx-grad: linear-gradient(120deg, #9d80ff 0%, #6d5cf6 45%, #3557e6 80%, #2340b8 100%);
+  --cx-grad-soft: linear-gradient(120deg, rgb(139 108 255 / 0.2), rgb(53 87 230 / 0.16));
   --cx-display: 'Orbitron', var(--font-display), ui-sans-serif, system-ui, sans-serif;
   --cx-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   --cx-text: var(--font-content);
@@ -516,7 +522,7 @@
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, transparent, var(--cx-accent) 45%, var(--cx-accent-ink) 50%, transparent 60%);
+  background: linear-gradient(90deg, transparent, var(--cx-blue) 35%, var(--cx-accent) 48%, var(--cx-accent-ink) 52%, transparent 65%);
   transform: translateX(-100%);
   animation: cx-scan 0.7s var(--chat-ease) forwards;
 }
@@ -531,14 +537,14 @@
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
-  scrollbar-color: rgb(239 233 223 / 0.14) transparent;
+  scrollbar-color: rgb(205 205 255 / 0.14) transparent;
 }
 .cx-main[hidden] { display: none; }
 .cx-side {
   padding: 0.9rem 0.85rem 1rem;
   border-right: 1px solid var(--cx-line);
   /* A plotter's dot grid: the map is drawn on it. */
-  background: radial-gradient(circle at 1px 1px, rgb(239 233 223 / 0.06) 1px, transparent 1.2px) 0 0 / 18px 18px, var(--cx-bg);
+  background: radial-gradient(circle at 1px 1px, rgb(205 205 255 / 0.06) 1px, transparent 1.2px) 0 0 / 18px 18px, var(--cx-bg);
 }
 .cx-main { padding: 1rem 1.5rem 1.4rem; }
 .is-sheet .cx-main { padding-inline: 1.1rem; }
@@ -621,17 +627,30 @@
 .cx-trail-empty { font-size: 0.72rem; line-height: 1.5; color: var(--cx-ink-3); }
 
 /* ---------------------------------------------------------------- query echo */
-.cx-query {
-  display: flex;
-  align-items: baseline;
-  gap: 0.55rem;
-  margin-bottom: 1.1rem;
-  padding-bottom: 0.6rem;
-  border-bottom: 1px dashed var(--cx-line-2);
-  font: 0.76rem/1.45 var(--cx-mono);
-}
 .cx-prompt { color: var(--cx-accent); font-family: var(--cx-mono); }
-.cx-query-text { flex: 1; min-width: 0; color: var(--cx-ink-2); overflow-wrap: anywhere; }
+
+/* ---------------------------------------------------------------- thread (like a chat) */
+.cx-thread { display: flex; flex-direction: column; gap: 2.2rem; }
+/* The last turn is at least a pane tall, so a new question can scroll up to the top. */
+.cx-turn[data-last] { min-height: calc(var(--cx-main-h, 0px) - 3rem); }
+.cx-turn:not([data-last]) { padding-bottom: 2.2rem; border-bottom: 1px solid var(--cx-line); margin-bottom: -2.2rem; }
+.cx-ask { display: flex; justify-content: flex-end; margin-bottom: 1rem; }
+.cx-bubble {
+  position: relative;
+  max-width: min(80%, 34rem);
+  padding: 0.62rem 0.95rem;
+  border-radius: 16px 16px 4px 16px;
+  background: var(--cx-grad-soft), var(--cx-bg-2);
+  border: 1px solid rgb(139 108 255 / 0.32);
+  box-shadow: 0 8px 24px -14px rgb(53 87 230 / 0.6);
+  color: var(--cx-ink);
+  font: 0.9375rem/1.5 var(--cx-text);
+  overflow-wrap: anywhere;
+  animation: cx-bubble 0.42s var(--chat-spring) both;
+  transform-origin: 100% 100%;
+}
+@keyframes cx-bubble { from { opacity: 0; transform: translateY(8px) scale(0.96); } }
+.cx-turn[aria-current='true'] .cx-bubble { border-color: rgb(139 108 255 / 0.55); }
 
 /* Route badges: how an input was resolved. */
 .cx-route {
@@ -644,7 +663,7 @@
   text-transform: uppercase;
   color: var(--cx-ink-2);
 }
-.cx-route[data-route='command'] { color: #140b06; background: var(--cx-accent); border-color: var(--cx-accent); }
+.cx-route[data-route='command'] { color: #fff; background: var(--cx-grad); border-color: transparent; }
 .cx-route[data-route='entity'] { color: var(--cx-ink); }
 .cx-route[data-route='context'] { color: var(--cx-accent-ink); }
 .cx-route[data-route='fallback'] { color: var(--cx-ink-3); border-style: dashed; }
@@ -659,47 +678,148 @@
 @keyframes cx-in { from { opacity: 0; transform: translateY(6px); } }
 
 /* ---------------------------------------------------------------- response arrival (Views.tsx, Stream) */
-/* A new response: a beat of "thinking", then its sections unfold at a reading pace, not all at once. */
+/* A new response: a processing beat, then its sections unfold at a reading pace, not all at once. */
 .cx-view[data-reveal] > * { animation-duration: 0.5s; }
-.cx-view[data-reveal] > :nth-child(2) { animation-delay: 110ms; }
-.cx-view[data-reveal] > :nth-child(3) { animation-delay: 220ms; }
-.cx-view[data-reveal] > :nth-child(4) { animation-delay: 330ms; }
-.cx-view[data-reveal] > :nth-child(5) { animation-delay: 440ms; }
-.cx-view[data-reveal] > :nth-child(n + 6) { animation-delay: 550ms; }
+.cx-view[data-reveal] > :nth-child(2) { animation-delay: 90ms; }
+.cx-view[data-reveal] > :nth-child(3) { animation-delay: 190ms; }
+.cx-view[data-reveal] > :nth-child(4) { animation-delay: 290ms; }
+.cx-view[data-reveal] > :nth-child(5) { animation-delay: 390ms; }
+.cx-view[data-reveal] > :nth-child(n + 6) { animation-delay: 490ms; }
 .cx-view[data-reveal] .cx-rows > li { animation-duration: 0.45s; animation-delay: calc(var(--i, 0) * 45ms + 160ms); }
 
-.cx-thinking {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  margin: 0.35rem 0 0;
-  color: var(--cx-accent);
+/* The orb: a turning violet-to-blue ring, a breathing core, two satellites. */
+.cx-orb { position: relative; flex: none; display: inline-block; width: var(--s, 22px); height: var(--s, 22px); }
+.cx-orb-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0deg, #3557e6 120deg, #8b6cff 260deg, #c4b5fd 330deg, transparent 360deg);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px));
+  animation: cx-turn 1.1s linear infinite;
 }
-.cx-spark { flex: none; fill: currentColor; animation: cx-spark 2.4s cubic-bezier(0.45, 0, 0.55, 1) infinite; transform-origin: 50% 50%; }
-.cx-spark rect { animation: cx-ray 1.2s ease-in-out infinite; transform-box: view-box; }
-.cx-spark rect:nth-child(even) { animation-delay: -0.6s; }
-@keyframes cx-spark {
-  0% { transform: rotate(0deg) scale(0.86); }
-  50% { transform: rotate(180deg) scale(1.06); }
-  100% { transform: rotate(360deg) scale(0.86); }
+.cx-orb-core {
+  position: absolute;
+  inset: 30%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #d9ceff, #8b6cff 45%, #3557e6 100%);
+  box-shadow: 0 0 10px 1px rgb(139 108 255 / 0.65);
+  animation: cx-breathe 1.4s ease-in-out infinite;
 }
-@keyframes cx-ray { 50% { opacity: 0.45; } }
-/* The label shimmers, a light passing over the word. */
+.cx-orb-sat {
+  position: absolute;
+  inset: -3px;
+  animation: cx-turn 2.2s linear infinite reverse;
+}
+.cx-orb-sat::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: var(--cx-blue-ink);
+  box-shadow: 0 0 6px var(--cx-blue);
+}
+.cx-orb-sat--b { animation-duration: 3.1s; animation-direction: normal; }
+.cx-orb-sat--b::before { top: auto; bottom: 0; background: var(--cx-accent-ink); box-shadow: 0 0 6px var(--cx-accent); }
+@keyframes cx-turn { to { transform: rotate(1turn); } }
+@keyframes cx-breathe { 50% { transform: scale(0.72); opacity: 0.75; } }
+
+.cx-thinking { --cx-step: 230ms; margin: 0.1rem 0 0; animation: cx-in 0.3s var(--chat-ease) both; }
+.cx-thinking-head { display: flex; align-items: center; gap: 0.65rem; margin: 0; }
+/* The label shimmers, a violet-blue light passing over the word. */
 .cx-thinking-text {
-  font: 500 0.875rem/1.2 var(--cx-text);
-  background: linear-gradient(90deg, var(--cx-ink-3) 0%, var(--cx-ink-3) 35%, var(--cx-ink) 50%, var(--cx-ink-3) 65%, var(--cx-ink-3) 100%) 0 0 / 250% 100%;
+  font: 600 0.8rem/1.2 var(--cx-display);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  background: linear-gradient(90deg, var(--cx-ink-3) 0%, var(--cx-ink-3) 30%, var(--cx-accent-ink) 45%, #fff 50%, var(--cx-blue-ink) 55%, var(--cx-ink-3) 70%, var(--cx-ink-3) 100%) 0 0 / 260% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  animation: cx-shimmer 1.8s linear infinite;
+  animation: cx-shimmer 1.6s linear infinite;
 }
-@keyframes cx-shimmer { from { background-position: 100% 0; } to { background-position: -150% 0; } }
+@keyframes cx-shimmer { from { background-position: 100% 0; } to { background-position: -160% 0; } }
 
-/* A streamed answer: blocks appear as their first words do, and each new word fades in. */
+/* The steps the resolver took, each landing in turn: a spinner, then a tick. */
+.cx-steps { position: relative; margin: 0.7rem 0 0 0.62rem; padding: 0 0 0 1.05rem; border-left: 1px solid var(--cx-line-2); list-style: none; }
+.cx-steps > li {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.18rem 0;
+  font: 0.72rem/1.45 var(--cx-mono);
+  color: var(--cx-ink-3);
+  animation: cx-step-in 0.32s var(--chat-ease) both;
+  animation-delay: calc(var(--n) * var(--cx-step));
+}
+.cx-steps > li::before {
+  /* The rail lights up as the steps land. */
+  content: '';
+  position: absolute;
+  left: calc(-1.05rem - 1px);
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--cx-grad);
+  transform-origin: top;
+  animation: cx-rail 0.3s var(--chat-ease) both;
+  animation-delay: calc(var(--n) * var(--cx-step));
+}
+@keyframes cx-step-in { from { opacity: 0; transform: translateX(-6px); } }
+.cx-step-mark { position: relative; flex: none; width: 11px; height: 11px; }
+.cx-step-mark::before,
+.cx-step-mark::after { content: ''; position: absolute; inset: 0; border-radius: 50%; }
+/* Working: a small turning arc. */
+.cx-step-mark::before {
+  border: 1.5px solid rgb(139 108 255 / 0.25);
+  border-top-color: var(--cx-accent);
+  animation: cx-turn 0.7s linear infinite, cx-hide 0s linear forwards;
+  animation-delay: 0s, calc((var(--n) + 1) * var(--cx-step));
+}
+/* Done: a filled violet-blue dot with a tick. */
+.cx-step-mark::after {
+  background: var(--cx-grad);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Ccircle cx='6' cy='6' r='6'/%3E%3C/svg%3E") center / contain no-repeat;
+  opacity: 0;
+  transform: scale(0.4);
+  animation: cx-tick 0.28s var(--chat-spring) forwards;
+  animation-delay: calc((var(--n) + 1) * var(--cx-step));
+}
+.cx-step-text { transition: color 0.2s; }
+.cx-steps > li .cx-step-text { animation: cx-step-done 0s linear forwards; animation-delay: calc((var(--n) + 1) * var(--cx-step)); }
+@keyframes cx-hide { to { opacity: 0; } }
+@keyframes cx-tick { to { opacity: 1; transform: scale(1); } }
+@keyframes cx-step-done { to { color: var(--cx-ink-2); } }
+
+/* What the processing beat settles into: one quiet line above the response. */
+.cx-trace {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.9rem;
+  font: 0.66rem/1.4 var(--cx-mono);
+  letter-spacing: 0.02em;
+  color: var(--cx-ink-3);
+}
+.cx-trace-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--cx-grad); box-shadow: 0 0 8px rgb(139 108 255 / 0.6); }
+
+/* A streamed answer: blocks appear as their first words do; each new word glows in from violet. */
 .chat-md[data-streamed] > * { animation-delay: 0s; animation-duration: 0.3s; }
-.chat-tok { animation: chat-tok 0.45s ease-out both; }
-@keyframes chat-tok { from { opacity: 0; } }
-.cx-spark--tail { display: block; width: 15px; height: 15px; margin-top: 0.15rem; color: var(--cx-accent); }
+.chat-tok { animation: chat-tok 0.6s ease-out both; }
+@keyframes chat-tok {
+  from { opacity: 0; color: var(--cx-accent-ink); filter: blur(3px); text-shadow: 0 0 12px rgb(139 108 255 / 0.9); }
+  45% { opacity: 1; filter: blur(0); }
+}
+/* More is on its way: three dots in a violet-to-blue wave. */
+.cx-typing { display: inline-flex; gap: 5px; align-items: center; height: 1rem; margin-top: 0.1rem; }
+.cx-typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--cx-accent); animation: cx-wave 1s ease-in-out infinite; }
+.cx-typing i:nth-child(2) { background: #6d5cf6; animation-delay: 0.15s; }
+.cx-typing i:nth-child(3) { background: var(--cx-blue); animation-delay: 0.3s; }
+@keyframes cx-wave { 0%, 60%, 100% { transform: translateY(0); opacity: 0.45; } 30% { transform: translateY(-5px); opacity: 1; } }
 
 .cx-kicker {
   display: flex;
@@ -877,7 +997,7 @@ button.cx-row:hover .cx-row-code,
   top: 1.9rem;
   bottom: -0.55rem;
   width: 1px;
-  background: linear-gradient(var(--cx-accent), rgb(232 121 74 / 0.35));
+  background: linear-gradient(var(--cx-accent), rgb(139 108 255 / 0.35));
   transform-origin: top;
   animation: cx-rail 0.4s var(--chat-ease) both;
   animation-delay: calc(var(--i, 0) * 60ms + 120ms);
@@ -890,7 +1010,7 @@ button.cx-row:hover .cx-row-code,
   bottom: -0.6rem;
   border: 4px solid transparent;
   border-bottom: 0;
-  border-top: 5px solid rgb(232 121 74 / 0.6);
+  border-top: 5px solid rgb(139 108 255 / 0.6);
 }
 .cx-arch-n {
   position: relative;
@@ -938,7 +1058,7 @@ button.cx-row:hover .cx-row-code,
 .cx-bars button:hover { background: rgb(255 255 255 / 0.04); }
 .cx-bar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.82rem; color: var(--cx-ink); }
 .cx-bar { height: 3px; background: var(--cx-line); }
-.cx-bar > span { display: block; height: 100%; background: var(--cx-accent); }
+.cx-bar > span { display: block; height: 100%; background: var(--cx-grad); }
 .cx-bar-n { font: 0.66rem/1 var(--cx-mono); color: var(--cx-ink-3); text-align: right; }
 .cx-bars button[data-zero] .cx-bar-label { color: var(--cx-ink-3); }
 .cx-bars button:hover .cx-bar-label { color: var(--cx-accent-ink); }
@@ -1079,7 +1199,7 @@ button.cx-row:hover .cx-row-code,
   background: var(--cx-bg-2);
   transition: border-color 0.15s;
 }
-.cx-line:focus-within { border-color: rgb(232 121 74 / 0.65); }
+.cx-line:focus-within { border-color: rgb(139 108 255 / 0.65); box-shadow: 0 0 0 3px rgb(139 108 255 / 0.12), 0 0 22px -8px rgb(53 87 230 / 0.7); }
 .cx-line .cx-prompt { font-size: 1.05rem; line-height: 1; }
 .cx-input {
   flex: 1;
@@ -1102,8 +1222,9 @@ button.cx-row:hover .cx-row-code,
   width: 32px;
   height: 32px;
   border-radius: 4px;
-  background: var(--cx-accent);
-  color: #140b06;
+  background: var(--cx-grad);
+  color: #fff;
+  box-shadow: 0 4px 14px -6px rgb(53 87 230 / 0.8);
   transition: opacity 0.15s, filter 0.15s;
 }
 .cx-run:not(:disabled):hover { filter: brightness(1.1); }

@@ -6,7 +6,7 @@ export interface Entry {
   id: string
   input: string
   res: Resolution
-  /** Measured time to resolve, in milliseconds. Nothing is delayed to look busy. */
+  /** Measured time to resolve, in milliseconds (kept for debugging; not shown). */
   ms: number
 }
 

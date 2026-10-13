@@ -205,7 +205,6 @@ export const projects: Project[] = [
     ],
     links: [
       { label: 'GitHub', href: 'https://github.com/vinayak533/AI-Medical-Voice-Vision-Assistant' },
-      { label: 'Original project', href: 'https://github.com/AIwithhassan/ai-doctor-2.0-voice-and-vision' },
     ],
   },
   {
@@ -250,7 +249,7 @@ export const experience: Role[] = [
     highlights: ['production AI systems', 'multi-agent workflows', 'LLM pipelines'],
   },
   {
-    company: 'Amdox',
+    company: 'Amdox Technologies',
     title: 'Data Science Intern',
     start: 'Apr 2026',
     end: 'May 2026',
