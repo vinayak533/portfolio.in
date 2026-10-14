@@ -625,20 +625,43 @@ export const assistant = {
     '**Advanced Data Science & AI** (7 months), Avodha Centre for IT Education, NSDC and Skill India accredited (Sep 2025 – Mar 2026)',
   ],
 
-  /** Skills, grouped. "Does he know X?" also searches these. */
+  /**
+   * Skills, grouped. Each group starts with his résumé's own list (Technical Skills, as he gave it on
+   * 2026-10-14), followed by what his projects and roles also use. "Does he know X?" also searches these.
+   */
   skillGroups: [
-    { label: 'Languages', items: ['Python', 'TypeScript', 'Java', 'C', 'C++'] },
+    { label: 'Programming', items: ['Python', 'Java', 'C', 'C++', 'TypeScript'] },
     {
-      label: 'LLMs and agents',
-      items: ['LangGraph', 'LangChain', 'CrewAI', 'LlamaIndex', 'Vanna 2.0', 'OpenAI SDK', 'RAG', 'multi-agent orchestration', 'model routing with fallback', 'prompt caching', 'Hugging Face', 'Ollama'],
+      label: 'Machine Learning',
+      items: ['PyTorch', 'TensorFlow', 'scikit-learn', 'XGBoost', 'Neural Networks', 'NLP', 'Feature Engineering', 'EDA', 'Statistical Analysis', 'Keras', 'OpenCV', 'recommender systems', 'statsmodels'],
     },
-    { label: 'Model APIs', items: ['Groq', 'Gemini', 'OpenRouter'] },
-    { label: 'Machine learning', items: ['PyTorch', 'TensorFlow', 'Keras', 'scikit-learn', 'XGBoost', 'NLP', 'OpenCV', 'recommender systems', 'feature engineering', 'EDA', 'statistics', 'statsmodels'] },
-    { label: 'Backend', items: ['FastAPI', 'WebSockets', 'Pydantic', 'REST APIs'] },
+    {
+      label: 'Generative AI & LLMs',
+      items: [
+        'LLMs',
+        'RAG',
+        'AI Agents',
+        'Multi-Agent Systems',
+        'LangChain',
+        'Hugging Face',
+        'Vector Search (pgvector)',
+        'LangGraph',
+        'CrewAI',
+        'LlamaIndex',
+        'Vanna 2.0',
+        'OpenAI SDK',
+        'model routing with fallback',
+        'prompt caching',
+        'Ollama',
+        'Groq',
+        'Gemini',
+        'OpenRouter',
+      ],
+    },
+    { label: 'Backend & Data', items: ['FastAPI', 'REST APIs', 'PostgreSQL', 'MongoDB', 'Supabase', 'SQL', 'WebSockets', 'Pydantic', 'SQLite', 'Drizzle'] },
+    { label: 'Cloud & MLOps', items: ['AWS (EC2, S3, SageMaker, Lambda)', 'Docker', 'MLflow', 'GitHub Actions', 'Git', 'E2B', 'Vercel', 'Render', 'Playwright'] },
+    { label: 'Data & Visualization', items: ['pandas', 'NumPy', 'Matplotlib', 'Seaborn', 'Streamlit', 'Power BI', 'Plotly', 'Gradio'] },
     { label: 'Frontend', items: ['Next.js', 'React', 'Tailwind CSS'] },
-    { label: 'Data', items: ['SQL', 'PostgreSQL', 'Supabase', 'pgvector', 'MongoDB', 'SQLite', 'Drizzle'] },
-    { label: 'Cloud and MLOps', items: ['AWS (EC2, S3, SageMaker, Lambda)', 'Docker', 'MLflow', 'GitHub Actions', 'E2B', 'Vercel', 'Render', 'Playwright'] },
-    { label: 'Data viz and apps', items: ['pandas', 'NumPy', 'Matplotlib', 'Seaborn', 'Plotly', 'Streamlit', 'Gradio', 'Power BI'] },
   ],
 
   /**
@@ -688,6 +711,16 @@ export const assistant = {
     'data visualisation': ['visualisation', 'plotly', 'power bi'],
     'recommendation system': ['recommendation', 'recommender'],
     'local llm': ['ollama'],
+    'neural networks': ['neural', 'pytorch', 'tensorflow'],
+    'neural network': ['neural', 'pytorch', 'tensorflow'],
+    'vector search': ['pgvector', 'vector'],
+    'ai agents': ['agent', 'agents'],
+    'multi-agent systems': ['multi-agent', 'agents'],
+    'multi agent systems': ['multi-agent', 'agents'],
+    'statistical analysis': ['statistical', 'statsmodels'],
+    'feature engineering': ['feature engineering', 'features'],
+    eda: ['eda', 'exploratory'],
+    'rest apis': ['rest', 'api', 'fastapi'],
   } as Record<string, string[]>,
 
   /**
@@ -749,13 +782,26 @@ export const assistant = {
 
   /** Shown on the console's first screen. */
   console: {
-    kicker: 'Index 00 · Discovery',
-    statement: ['Query', 'the work.'],
-    lede: 'A queryable index of Vinayak’s engineering: projects, the technologies behind them, the capabilities they show and the roles that used them, all connected.',
+    headline: 'Explore my work, the way you think.',
+    lede: 'Every project, the technologies behind it and the skills it shows, all connected. Click anything or just ask.',
+    /** The pills on the first screen. A `plus` number shows as "40+"; without `value`, the index's own count is used. */
+    pills: [
+      { label: 'Projects', value: 40, plus: true },
+      { label: 'Technologies', value: 35, plus: true },
+      { label: 'Capabilities' },
+      { label: 'Roles' },
+    ] as { label: 'Projects' | 'Technologies' | 'Capabilities' | 'Roles'; value?: number; plus?: boolean }[],
+    /** The four cards on the first screen. Each must resolve (scripts/console.test.mjs checks). */
+    suggestions: [
+      { icon: 'grid', q: 'What projects has Vinayak built?' },
+      { icon: 'spark', q: 'What’s his AI/agents experience?' },
+      { icon: 'star', q: 'Show me the best case studies' },
+      { icon: 'mail', q: 'How can I contact him?' },
+    ] as { icon: 'grid' | 'spark' | 'star' | 'mail'; q: string }[],
     /** Entry points (commands) and example questions. Each must resolve (scripts/console.test.mjs checks). */
     entry: ['/agents', '/projects', '/stack', '/contact'],
     examples: ['How does Loom.ai work?', 'Does he know Docker?', 'Why should I hire him?'],
-    placeholder: 'Ask a question, or type / for commands',
+    placeholder: 'Ask me anything about Vinayak’s work…',
   },
 
   /** Short names for the relation map, by project id. Others use their title. */
@@ -787,11 +833,15 @@ export const assistant = {
     'Whisper large-v3': ['Whisper'],
     'Gemma 2': ['Gemma'],
     'AWS (EC2, S3, SageMaker, Lambda)': ['AWS'],
+    'Vector Search (pgvector)': ['pgvector'],
   } as Record<string, string[]>,
 
   /** Skills that are capabilities rather than technologies: they open that capability. */
   skillCapabilities: {
     RAG: 'grounded',
+    'Neural Networks': 'voice-vision',
+    'AI Agents': 'agents',
+    'Multi-Agent Systems': 'agents',
     'multi-agent orchestration': 'agents',
     'model routing with fallback': 'routing',
     'prompt caching': 'routing',
@@ -803,14 +853,14 @@ export const assistant = {
     Whisper: 'Models',
     Gemma: 'Models',
     'MiniLM embeddings': 'Models',
-    ElevenLabs: 'Model APIs',
-    LiteLLM: 'LLMs and agents',
-    SMOTE: 'Machine learning',
-    SVM: 'Machine learning',
-    CNN: 'Machine learning',
-    'TF-IDF': 'Machine learning',
-    'Naive Bayes': 'Machine learning',
-    yfinance: 'Data',
+    ElevenLabs: 'Generative AI & LLMs',
+    LiteLLM: 'Generative AI & LLMs',
+    SMOTE: 'Machine Learning',
+    SVM: 'Machine Learning',
+    CNN: 'Machine Learning',
+    'TF-IDF': 'Machine Learning',
+    'Naive Bayes': 'Machine Learning',
+    yfinance: 'Backend & Data',
   } as Record<string, string>,
 
   /** Other names for technologies, by canonical name. */
@@ -827,6 +877,14 @@ export const assistant = {
     ElevenLabs: ['eleven labs', 'text to speech', 'tts'],
     Whisper: ['speech to text', 'stt'],
     pandas: ['panda'],
+    LLMs: ['llm', 'large language models', 'large language model'],
+    'Statistical Analysis': ['statistics', 'stats', 'statistical modelling', 'statistical modeling'],
+    'Feature Engineering': ['feature extraction', 'feature selection'],
+    EDA: ['exploratory data analysis'],
+    'REST APIs': ['rest', 'rest api', 'restful', 'restful apis'],
+    pgvector: ['vector search', 'vector store'],
+    Git: ['version control'],
+    'Power BI': ['powerbi'],
   } as Record<string, string[]>,
 
   capabilities: [
@@ -903,7 +961,7 @@ export const assistant = {
       title: 'Speech, vision & deep learning',
       short: 'Voice + vision',
       summary: 'Models that hear, see and speak: speech-to-text, a vision LLM, text-to-speech and CNNs.',
-      aliases: ['speech', 'voice', 'vision', 'computer vision', 'deep learning', 'multimodal', 'neural network', 'neural networks'],
+      aliases: ['speech', 'voice', 'vision', 'computer vision', 'deep learning', 'multimodal', 'neural network', 'neural networks', 'neural nets', 'deep neural networks'],
       projects: [
         { id: 'health', why: 'Whisper large-v3 transcribes a spoken question, Llama 4 Scout reads it with a medical image, and ElevenLabs speaks the reply. Extends an open-source project.' },
         { id: 'bank-churn', why: 'ElevenLabs reads each churn explanation aloud.' },

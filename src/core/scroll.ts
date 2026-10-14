@@ -2,6 +2,7 @@ import Lenis from 'lenis'
 import { onTick, ScrollTrigger, damp } from './clock'
 import { signals, useStore } from '../store/useStore'
 import { sections } from '../content'
+import { PERF_LAB } from './perfLab'
 
 let lenis: Lenis | null = null
 let lastY = 0
@@ -24,12 +25,14 @@ export function initScroll(smooth: boolean) {
     })
     lenis.on('scroll', ScrollTrigger.update)
     // Development only: scripted scroll for checks (window.__lenis.scrollTo(y, { immediate: true })).
-    if (import.meta.env.DEV) Object.assign(window, { __lenis: lenis })
+    if (PERF_LAB) Object.assign(window, { __lenis: lenis })
   }
 
   const stopTick = onTick((time, dt) => {
     lenis?.raf(time * 1000)
-    const y = window.scrollY
+    // (Lenis's own position: reading the window's here, after this frame's scroll and style writes, forced a
+    // layout on every frame.)
+    const y = lenis ? lenis.scroll : window.scrollY
     const vh = window.innerHeight || 1
     const raw = dt > 0 ? (y - lastY) / vh / dt : 0
     lastY = y

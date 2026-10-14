@@ -14,6 +14,7 @@ import { clamp, gsap, onTick } from './clock'
 import { worksTrack } from './timeline'
 import { visibility } from '../theme'
 import { exhibitRects } from './registry'
+import { labOff } from './perfLab'
 
 export interface Reel {
   video: HTMLVideoElement
@@ -78,7 +79,7 @@ export const hiResExhibits = () => {
 }
 
 /** Dev-only: ?noreels keeps exhibits on their posters, for profiling. */
-const noReels = import.meta.env.DEV && new URLSearchParams(location.search).has('noreels')
+const noReels = (import.meta.env.DEV && new URLSearchParams(location.search).has('noreels')) || labOff('videos')
 
 function reelSrc(i: number) {
   const m = projects[i]?.media

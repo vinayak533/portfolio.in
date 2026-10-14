@@ -5,6 +5,8 @@ import { describe, resolve, type Resolution } from '../../core/console'
 export interface Entry {
   id: string
   input: string
+  /** What the thread shows as the question, when it differs from the input (a click on the graph runs a command but reads as a question). */
+  display?: string
   res: Resolution
   /** Measured time to resolve, in milliseconds (kept for debugging; not shown). */
   ms: number
@@ -55,17 +57,18 @@ export function useConsole(resume: string | null, onAct: (act: 'map') => void) {
     setAnnouncement('Back to the start. Trail cleared.')
   }, [])
 
-  /** Resolves and shows one input. Returns false for empty input. */
+  /** Resolves and shows one input (shown in the thread as `display`, if given). Returns false for empty input. */
   const run = useCallback(
-    (raw: string) => {
+    (raw: string, display?: string) => {
       const input = raw.trim()
       if (!input) return false
       const t0 = performance.now()
       const res = resolve(input, context())
       const ms = performance.now() - t0
       if (!res) return false
+      // Only what was typed is recalled with ↑; clicks are not.
       const h = history.current
-      if (h[h.length - 1] !== input) h.push(input)
+      if (!display && h[h.length - 1] !== input) h.push(input)
       if (h.length > MAX_ENTRIES) h.shift()
 
       if (res.act) {
@@ -75,7 +78,7 @@ export function useConsole(resume: string | null, onAct: (act: 'map') => void) {
         return true
       }
 
-      const entry: Entry = { id: uid(), input, res, ms }
+      const entry: Entry = { id: uid(), input, display, res, ms }
       const next = [...state.current.entries, entry].slice(-MAX_ENTRIES)
       setEntries(next)
       setCursor(next.length - 1)

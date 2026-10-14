@@ -1,5 +1,16 @@
 import type { Quality } from '../store/useStore'
 
+/**
+ * The GPU's name, read once (each throwaway context costs start-up time). Not from hasWebGL2's probe: a
+ * synchronous query on a context made with failIfMajorPerformanceCaveat stalled Chrome for many seconds.
+ */
+let gpu: string | undefined
+
+const rendererName = (g: WebGL2RenderingContext) => {
+  const ext = g.getExtension('WEBGL_debug_renderer_info')
+  return String(ext ? g.getParameter(ext.UNMASKED_RENDERER_WEBGL) : g.getParameter(g.RENDERER))
+}
+
 export function hasWebGL2(): boolean {
   try {
     const c = document.createElement('canvas')
@@ -22,16 +33,16 @@ export function isTouchDevice(): boolean {
 
 /** Unmasked GPU name, when the browser exposes it. */
 export function gpuName(): string {
+  if (gpu !== undefined) return gpu
   try {
     const c = document.createElement('canvas')
     const g = c.getContext('webgl2')
-    if (!g) return ''
-    const ext = g.getExtension('WEBGL_debug_renderer_info')
-    const name = String(ext ? g.getParameter(ext.UNMASKED_RENDERER_WEBGL) : g.getParameter(g.RENDERER))
+    if (!g) return (gpu = '')
+    gpu = rendererName(g)
     g.getExtension('WEBGL_lose_context')?.loseContext()
-    return name
+    return gpu
   } catch {
-    return ''
+    return (gpu = '')
   }
 }
 

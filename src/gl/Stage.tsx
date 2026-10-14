@@ -2,9 +2,10 @@ import { Suspense, useEffect, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { PerformanceMonitor } from '@react-three/drei'
 import { HalfFloatType, NoToneMapping, SRGBColorSpace, WebGLRenderTarget } from 'three'
-import { onTick } from '../core/clock'
+import { createPacer, onTick } from '../core/clock'
 import { scrollToY } from '../core/scroll'
 import { complete } from '../core/loading'
+import { labOff } from '../core/perfLab'
 import { tier } from '../core/quality'
 import { signals, useStore } from '../store/useStore'
 import { palette } from '../theme'
@@ -20,14 +21,14 @@ function Driver() {
   const advance = useThree((s) => s.advance)
   const gl = useThree((s) => s.gl)
   const scene = useThree((s) => s.scene)
-  useEffect(
-    () =>
-      onTick((time) => {
-        if (signals.paused || signals.heroCovers || signals.contactCovers || document.hidden) return
-        advance(time)
-      }, 100),
-    [advance],
-  )
+  useEffect(() => {
+    // Paced with the hero (clock.ts): about 60 frames a second on any display, ~30 once locked.
+    const pace = createPacer()
+    return onTick((time) => {
+      if (signals.paused || signals.heroCovers || signals.contactCovers || document.hidden || labOff('sections')) return
+      if (pace(performance.now())) advance(time)
+    }, 100)
+  }, [advance])
   useEffect(() => {
     if (!import.meta.env.DEV) return
     // Dev-only probe: true per-frame cost, independent of rAF throttling.
@@ -106,6 +107,9 @@ function Warmup({ post }: { post: boolean }) {
       // Let late materials (glyph text, shards) attach first.
       await new Promise((r) => setTimeout(r, 0))
       if (cancelled) return
+      // A synchronous query (it waits for the GPU to catch up): asked once here, while this context has nothing
+      // queued, three keeps the answer. Asked first by the works' textures, it held a hand-off frame 40 ms+.
+      if (first) gl.capabilities.getMaxAnisotropy()
       const revealAll = () => {
         const hidden: { visible: boolean }[] = []
         scene.traverse((o) => {
@@ -177,7 +181,7 @@ function Warmup({ post }: { post: boolean }) {
 }
 
 /** Dev-only switches for profiling: ?nosky, ?nopost. */
-const debug = new URLSearchParams(import.meta.env.DEV ? location.search : '')
+const debug = new URLSearchParams(import.meta.env.DEV ? location.search : labOff('post') ? '?nopost' : '')
 const deviceDpr = () => window.devicePixelRatio || 1
 
 type TierConfig = (typeof tier)[keyof typeof tier]

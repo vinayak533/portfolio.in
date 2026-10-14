@@ -49,21 +49,21 @@ export interface Command {
 }
 
 export const COMMANDS: Command[] = [
-  { name: 'about', summary: 'Profile: role, proof points, education, achievements', group: 'Explore' },
-  { name: 'projects', arg: { kind: 'filter', required: false, hint: 'technology or capability' }, summary: 'Every project, or those using a technology or showing a capability', group: 'Explore' },
-  { name: 'agents', summary: 'Agent-orchestration work across projects and roles', group: 'Explore' },
-  { name: 'stack', summary: 'Every technology, grouped, with how many projects use it', group: 'Explore' },
-  { name: 'experience', aliases: ['roles', 'work'], arg: { kind: 'role', required: false, hint: 'company' }, summary: 'Roles, newest first, and what each involved', group: 'Explore' },
-  { name: 'certs', aliases: ['certifications'], summary: 'Certifications, with verify links', group: 'Explore' },
+  { name: 'about', summary: 'Who he is, what he has shipped, education and awards', group: 'Explore' },
+  { name: 'projects', arg: { kind: 'filter', required: false, hint: 'technology or capability' }, summary: 'All his projects, or only those using one technology or skill', group: 'Explore' },
+  { name: 'agents', summary: 'His work with AI agents, across projects and jobs', group: 'Explore' },
+  { name: 'stack', summary: 'Every technology he uses, and how often', group: 'Explore' },
+  { name: 'experience', aliases: ['roles', 'work'], arg: { kind: 'role', required: false, hint: 'company' }, summary: 'His jobs, newest first, and what he did in each', group: 'Explore' },
+  { name: 'certs', aliases: ['certifications'], summary: 'His certificates, with links to verify them', group: 'Explore' },
   { name: 'contact', summary: 'Email, GitHub, LinkedIn and the contact form', group: 'Explore' },
-  { name: 'project', aliases: ['p'], arg: { kind: 'project', required: true, hint: 'name' }, summary: 'Inspect a project: problem, approach, stack, links', group: 'Inspect' },
-  { name: 'arch', aliases: ['architecture'], arg: { kind: 'arch', required: true, hint: 'project' }, summary: 'Draw a project’s documented architecture', group: 'Inspect' },
-  { name: 'tech', aliases: ['t'], arg: { kind: 'tech', required: true, hint: 'name' }, summary: 'Where a technology is used, and what with', group: 'Inspect' },
-  { name: 'capability', aliases: ['cap'], arg: { kind: 'capability', required: true, hint: 'name' }, summary: 'What a capability covers and the work that shows it', group: 'Inspect' },
-  { name: 'map', summary: 'Move to the relation map', group: 'Session' },
-  { name: 'back', summary: 'The previous view (Esc)', group: 'Session' },
-  { name: 'home', aliases: ['clear'], summary: 'Back to the start, clearing the trail', group: 'Session' },
-  { name: 'help', aliases: ['?'], summary: 'Commands, shortcuts and how input is matched', group: 'Session' },
+  { name: 'project', aliases: ['p'], arg: { kind: 'project', required: true, hint: 'name' }, summary: 'One project in depth: the problem, how it works, links', group: 'Inspect' },
+  { name: 'arch', aliases: ['architecture'], arg: { kind: 'arch', required: true, hint: 'project' }, summary: 'How a project is built, step by step', group: 'Inspect' },
+  { name: 'tech', aliases: ['t'], arg: { kind: 'tech', required: true, hint: 'name' }, summary: 'Where he has used a technology', group: 'Inspect' },
+  { name: 'capability', aliases: ['cap'], arg: { kind: 'capability', required: true, hint: 'name' }, summary: 'A skill, and the work that proves it', group: 'Inspect' },
+  { name: 'map', summary: 'Jump to the graph', group: 'Session' },
+  { name: 'back', summary: 'Go back to the previous answer', group: 'Session' },
+  { name: 'home', aliases: ['clear'], summary: 'Start a new conversation', group: 'Session' },
+  { name: 'help', aliases: ['?'], summary: 'Everything you can ask or type here', group: 'Session' },
 ]
 
 const commandByName = new Map(COMMANDS.flatMap((c) => [c.name, ...(c.aliases ?? [])].map((n) => [n, c] as const)))
@@ -607,7 +607,7 @@ function argDetail(v: GraphNode) {
 /** What running an input would show, in a few words: shown before Enter. Null for nothing. */
 export function describe(r: Resolution | null): string {
   if (!r) return ''
-  if (r.act) return { map: 'focus the relation map', back: 'go back one view', home: 'return to the start' }[r.act]
+  if (r.act) return { map: 'focus the graph', back: 'go back one view', home: 'return to the start' }[r.act]
   const v = r.view!
   const f = node(r.focus)
   switch (v.kind) {

@@ -11,7 +11,7 @@
  * or per-object render hooks. `boundsOf` reproduces Box3.setFromObject over the original meshes exactly,
  * so the layout's measurements (engine.ts) do not move by a pixel.
  */
-import { Box3, Group, Matrix4, Mesh, Object3D, type BufferGeometry, type Material } from 'three'
+import { AttachedBindMode, Bone, Box3, Float32BufferAttribute, Group, Matrix4, Mesh, MeshBasicMaterial, Object3D, ShaderChunk, Skeleton, SkinnedMesh, Uint16BufferAttribute, type BufferGeometry, type Material } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
 /** One original mesh inside a merged one: its transform in the merged mesh's frame and its geometry's bounds. */
@@ -21,6 +21,11 @@ interface Part {
 }
 
 const PARTS = new WeakMap<Object3D, Part[]>()
+/** The layer the skinned parts' bones are moved to: no camera renders it. */
+const BONE_LAYER = 31
+const BONE_MATERIAL = new MeshBasicMaterial()
+/** A skinned mesh's parts (its bones, undrawn): its bounds are theirs. */
+const SKINNED = new WeakMap<Object3D, Object3D[]>()
 const plainRender = Object3D.prototype.onBeforeRender
 
 /** Every Object3D reachable from `handle` (deep, through plain objects and arrays; skipping `skip`'s keys). */
@@ -158,6 +163,12 @@ export function boundsOf(object: Object3D, target: Box3) {
 function expand(object: Object3D, target: Box3) {
   object.updateWorldMatrix(false, false)
   const parts = PARTS.get(object)
+  const bones = SKINNED.get(object)
+  if (bones) {
+    // (Each part is also met where it hangs in the scene: a box's union with itself is the same box.)
+    for (const b of bones) expand(b, target)
+    return
+  }
   if (parts) {
     for (const p of parts) {
       partMatrix.multiplyMatrices(object.matrixWorld, p.matrix)
@@ -171,4 +182,175 @@ function expand(object: Object3D, target: Box3) {
     }
   }
   for (const c of object.children) expand(c, target)
+}
+
+/**
+ * Fewer draws still, for what moves. The opaque parts left after mergeStatic ride on held groups (the limbs'
+ * segments, the fingers, the head's pieces), one draw each: here those within one visibility domain (anything
+ * the engine shows or hides on its own: a domain's parts are always shown and hidden together) are drawn as
+ * one skinned mesh per material and shadow role. Each part keeps its place in the scene, undrawn, as the bone
+ * its own vertices are bound to (weight 1): every vertex lands where the part would have drawn it, and its
+ * normal is transformed by the inverse transpose, as three does per object (some segments are scaled along
+ * their length). The skinned mesh is a child of its domain, so hiding the domain hides it.
+ *
+ * Kept as they are: held meshes, `skip`, custom shaders, multi-material, mirrored or hooked meshes (and the
+ * other blending kind: opaque and transparent parts are merged in separate passes). Returns the geometries and skeletons it created (the caller owns them).
+ */
+export function skinParts(root: Object3D, held: Set<Object3D>, domainOf: (o: Object3D) => Object3D | null, skip: Set<Object3D>, transparent = true) {
+  root.updateMatrixWorld(true)
+  const groups = new Map<string, { domain: Object3D; material: Material; meshes: Mesh[]; proto: Mesh }>()
+  const all: Mesh[] = []
+  root.traverse((o) => {
+    if ((o as Mesh).isMesh) all.push(o as Mesh)
+  })
+  const why: Record<string, number> = {}
+  const no = (r: string) => ((why[r] = (why[r] ?? 0) + 1), true)
+  for (const o of all) {
+    if (Array.isArray(o.material)) continue
+    const m = o.material
+    // (A custom shader would have to read the bones itself: its parts stay as they are.)
+    if ((m.transparent && !transparent) || (m as Material & { isShaderMaterial?: boolean }).isShaderMaterial) continue
+    if ((held.has(o) && no('held')) || (skip.has(o) && no('skip'))) continue
+    if ((o as Mesh & { isInstancedMesh?: boolean }).isInstancedMesh || (o as Mesh & { isSkinnedMesh?: boolean }).isSkinnedMesh) continue
+    if (o.onBeforeRender !== plainRender || o.customDepthMaterial || o.customDistanceMaterial) continue
+    const g = o.geometry
+    if (Object.keys(g.morphAttributes).length || !g.attributes.position || !g.attributes.normal) continue
+    const domain = domainOf(o)
+    let visible = true
+    for (let x: Object3D | null = o; x && x !== root; x = x.parent) visible &&= x.visible
+    if ((!domain && no('nodomain')) || (!visible && no('hidden')) || (o.matrixWorld.determinant() <= 0 && no('mirrored'))) continue
+    const key = [domain!.id, m.uuid, +o.castShadow, +o.receiveShadow, o.renderOrder, o.layers.mask, skinSignature(g, m)].join('|')
+    let entry = groups.get(key)
+    if (!entry) groups.set(key, (entry = { domain: domain!, material: m, meshes: [], proto: o }))
+    entry.meshes.push(o)
+  }
+  for (const e of groups.values()) if (e.meshes.length < 2) no('alone')
+
+  // One skeleton per domain: its bones are the parts (one bone texture upload a frame per domain).
+  const skeletons = new Map<Object3D, { bones: Object3D[]; index: Map<Object3D, number>; skeleton?: Skeleton }>()
+  // A lone part whose material is skinned elsewhere is skinned too (alone in its group): three re-resolves the
+  // program on every switch between a skinned and a plain mesh of one material.
+  const skinnedMats = new Set([...groups.values()].filter((e) => e.meshes.length >= 2).map((e) => e.material))
+  const used = [...groups.values()].filter((e) => e.meshes.length >= 2 || skinnedMats.has(e.material))
+  for (const e of used) {
+    let s = skeletons.get(e.domain)
+    if (!s) skeletons.set(e.domain, (s = { bones: [], index: new Map() }))
+    for (const o of e.meshes) if (!s.index.has(o)) s.index.set(o, s.bones.push(o) - 1)
+  }
+  for (const s of skeletons.values()) s.skeleton = stillSkeleton(new Skeleton(s.bones as Bone[], s.bones.map(() => new Matrix4())))
+
+  const created: BufferGeometry[] = []
+  const patched = new Set<Material>()
+  let parts = 0
+  for (const { domain, material, meshes, proto } of used) {
+    const s = skeletons.get(domain)!
+    const keep = skinAttributes(material)
+    const pieces = meshes.map((o) => {
+      const g = o.geometry.clone()
+      // Only what the material reads, each indexed (the parts differ in both; the drawn result does not).
+      for (const name of Object.keys(g.attributes)) if (!keep.includes(name)) g.deleteAttribute(name)
+      g.clearGroups()
+      const n = g.attributes.position.count
+      if (!g.index) g.setIndex(Array.from({ length: n }, (_, i) => i))
+      const index = new Uint16Array(n * 4)
+      const weight = new Float32Array(n * 4)
+      const bone = s.index.get(o)!
+      for (let i = 0; i < n; i++) {
+        index[i * 4] = bone
+        weight[i * 4] = 1
+      }
+      g.setAttribute('skinIndex', new Uint16BufferAttribute(index, 4))
+      g.setAttribute('skinWeight', new Float32BufferAttribute(weight, 4))
+      return g
+    })
+    const g = mergeGeometries(pieces, false)
+    pieces.forEach((p) => p.dispose())
+    if (!g) continue
+    const out = new SkinnedMesh(g, material)
+    out.name = 'skinned'
+    out.bindMode = AttachedBindMode
+    out.castShadow = proto.castShadow
+    out.receiveShadow = proto.receiveShadow
+    out.renderOrder = proto.renderOrder
+    out.layers.mask = proto.layers.mask
+    // (The robot is always in frame; the parts' own bounds still serve the layout, below.)
+    out.frustumCulled = false
+    domain.add(out)
+    out.updateMatrixWorld(true)
+    out.bind(s.skeleton!, new Matrix4())
+    // Its bounds are its parts' wherever they are now (boundsOf: the layout, and what the dissolve puts away).
+    SKINNED.set(out, meshes)
+    created.push(g)
+    for (const o of meshes) {
+      // Undrawn, by a layer no camera sees (not by `visible`: a part's children, if it has any, still draw), and
+      // with one shared stand-in material: three's compile() walks every mesh, drawn or not, and would build
+      // each part's own program a second time (unskinned) for nothing.
+      o.layers.set(BONE_LAYER)
+      o.material = BONE_MATERIAL
+      // (Marked: code that shows or hides meshes by their material must leave the bones alone.)
+      o.userData.skinBone = true
+    }
+    parts += meshes.length
+    if (!patched.has(material)) {
+      patched.add(material)
+      skinNormals(material)
+    }
+  }
+  return { created, skeletons: [...skeletons.values()].map((s) => s.skeleton!), parts, meshes: created.length, why }
+}
+
+/**
+ * The bones' matrices are their parts' world matrices (each bone's inverse is the identity); the bone texture is
+ * uploaded only when one has moved (three re-uploads it on every render otherwise: the chair, the table and a
+ * resting head never move).
+ */
+function stillSkeleton(skeleton: Skeleton) {
+  skeleton.update = () => {
+    const { bones, boneMatrices } = skeleton
+    if (!boneMatrices) return
+    let moved = false
+    for (let i = 0; i < bones.length; i++) {
+      const e = bones[i].matrixWorld.elements
+      const o = i * 16
+      for (let j = 0; j < 16; j++) {
+        // (The texture holds 32-bit floats: compare what it would hold.)
+        const v = Math.fround(e[j])
+        if (boneMatrices[o + j] !== v) {
+          boneMatrices[o + j] = v
+          moved = true
+        }
+      }
+    }
+    if (moved && skeleton.boneTexture) skeleton.boneTexture.needsUpdate = true
+  }
+  return skeleton
+}
+
+/** The attributes a skinned part keeps: its position and normal, and its uv when the material samples a map. */
+function skinAttributes(m: Material) {
+  const maps = Object.entries(m).some(([k, v]) => k.endsWith('Map') && k !== 'envMap' && !!v)
+  return maps ? ['position', 'normal', 'uv'] : ['position', 'normal']
+}
+function skinSignature(g: BufferGeometry, m: Material) {
+  return skinAttributes(m)
+    .map((n) => {
+      const a = g.attributes[n] as { itemSize: number; normalized: boolean; array: ArrayLike<number> } | undefined
+      return a ? `${n}:${a.itemSize}:${+a.normalized}:${a.array.constructor.name}` : `${n}:-`
+    })
+    .join(',')
+}
+
+/** A part's normal through its bone as three transforms an object's: by the inverse transpose (exact under any scale). */
+const SKIN_NORMAL = ShaderChunk.skinnormal_vertex.replace(
+  'objectNormal = vec4( skinMatrix * vec4( objectNormal, 0.0 ) ).xyz;',
+  'objectNormal = transpose( inverse( mat3( skinMatrix ) ) ) * objectNormal;',
+)
+function skinNormals(m: Material) {
+  const own = m.onBeforeCompile.bind(m)
+  const ownKey = m.customProgramCacheKey.bind(m)
+  m.onBeforeCompile = (shader, r) => {
+    own(shader, r)
+    shader.vertexShader = shader.vertexShader.replace('#include <skinnormal_vertex>', SKIN_NORMAL)
+  }
+  m.customProgramCacheKey = () => `${ownKey()}|skinnormal`
 }

@@ -90,7 +90,7 @@ export async function capture(browser, base, shot) {
   page.on('pageerror', (e) => errors.push(String(e)))
   // (One reload if the scene is not live in 20 s: a local preview server can stall a fresh context's requests.)
   for (let attempt = 0; ; attempt++) {
-    await page.goto(`${base}/?freeze=1`, { waitUntil: 'load' })
+    await page.goto(`${base}/?freeze=1`, { waitUntil: 'load', timeout: 120000 })
     try {
       await page.waitForSelector('.hero-cinematic[data-live]', { timeout: 20000 })
       break
@@ -100,6 +100,13 @@ export async function capture(browser, base, shot) {
     }
   }
   await page.evaluate(() => document.fonts.ready)
+  if (shot.progress !== undefined) {
+    // Mid hand-off (scripts/hero-compare.mjs): the pin scrolled to this share of its length, the scrub settled.
+    await page.evaluate((p) => {
+      const hero = document.getElementById('hero')
+      window.scrollTo(0, (hero.offsetHeight - innerHeight) * p)
+    }, shot.progress)
+  }
   if (shot.docked) {
     // Past the pin: the hero hands over and the head docks in the launcher.
     await page.evaluate(() => {

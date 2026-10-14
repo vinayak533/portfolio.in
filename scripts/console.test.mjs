@@ -221,6 +221,26 @@ test('plain questions resolve to the right view, through synonyms', () => {
   assert.match(c.resolve('Does he know Kubernetes?').view.reply.text, /won’t claim it/)
 })
 
+test('every skill on his résumé is answered as one he has', () => {
+  // His résumé's Technical Skills, as he gave them (2026-10-14).
+  const resume = [
+    'Python', 'Java', 'C', 'C++',
+    'PyTorch', 'TensorFlow', 'Scikit-learn', 'XGBoost', 'Neural Networks', 'NLP', 'Feature Engineering', 'EDA', 'Statistical Analysis',
+    'LLMs', 'RAG', 'AI Agents', 'Multi-Agent Systems', 'LangChain', 'Hugging Face', 'Vector Search',
+    'FastAPI', 'REST APIs', 'PostgreSQL', 'MongoDB', 'Supabase', 'SQL',
+    'AWS', 'EC2', 'S3', 'SageMaker', 'Lambda', 'Docker', 'MLflow', 'GitHub Actions', 'Git',
+    'Pandas', 'NumPy', 'Matplotlib', 'Seaborn', 'Streamlit', 'Power BI',
+  ]
+  for (const skill of resume) {
+    const r = c.resolve(`Does he know ${skill}?`, { now: NOW })
+    assert.notEqual(r.route, 'fallback', `${skill}: resolved`)
+    const v = r.view
+    assert.ok(['tech', 'capability'].includes(v.kind) || (v.kind === 'answer' && /^Yes/.test(v.reply.text)), `${skill}: ${v.kind} ${v.reply?.text?.slice(0, 80) ?? ''}`)
+  }
+  // C++ is its own skill, not C.
+  assert.equal(c.resolve('Does he know C++?', { now: NOW }).focus, 'tech:cpp')
+})
+
 test('follow-ups resolve against the view on screen', () => {
   const [, tech] = session('/tech fastapi', 'which projects use it?')
   assert.equal(tech.route, 'context')
@@ -286,7 +306,7 @@ test('the palette lists commands, then arguments, with a preview of each', () =>
 })
 
 test('the first screen, the certificate list and every “next” step lead somewhere real', () => {
-  for (const i of [...assistant.console.entry, ...assistant.console.examples]) assert.ok(isAnswered(c.resolve(i)), i)
+  for (const i of [...assistant.console.entry, ...assistant.console.examples, ...assistant.console.suggestions.map((s) => s.q)]) assert.ok(isAnswered(c.resolve(i)), i)
   for (const cert of assistant.certifications) {
     const r = c.resolve(`Show the ${cert.title} certificate`)
     assert.equal(r.view.reply?.topic, `cert:${cert.id}`, cert.title)

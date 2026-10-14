@@ -7,6 +7,9 @@ import { transitionProfile } from '../../hero/config'
 import { createHeroTransition, type TransitionHandle } from '../../hero/transition'
 import { watchHeroTier } from '../../hero/tier'
 import { heroScroll } from '../../hero/motion'
+import { startLoop, type LoopHandle } from '../../hero/loop'
+import { stageCues } from '../../hero/robot/dom'
+import { labNumber } from '../../core/perfLab'
 import '../../hero/hero.css'
 import '../../hero/robot/robot.css'
 import '@fontsource-variable/space-grotesk/index.css'
@@ -74,6 +77,7 @@ export function Hero() {
   useEffect(() => {
     let cancelled = false
     let backdrop: { dispose(): void } | null = null
+    let loop: LoopHandle | null = null
     const isWebgl = useStore.getState().mode === 'webgl'
     // The live stage (the landscape, the beam's pulse): WebGL only. Without it the poster is the whole hero.
     if (isWebgl) {
@@ -82,24 +86,36 @@ export function Hero() {
       })
     }
     const engine = isWebgl ? import('../../hero/robot/engine') : import('../../hero/robot/still')
-    engine.then(({ mountRobot }) => {
+    engine.then(async (m) => {
       if (cancelled || !host.current) return
-      const { lite, heroTier, quality, loaded } = useStore.getState()
+      const { lite, heroTier, quality } = useStore.getState()
       const el = host.current
-      handle.current = mountRobot(el, {
-        isPaused: () => signals.paused,
-        tier: lite ? 'low' : heroTier,
+      const opts = {
+        // (Asleep, too, while the last-resort loop covers it: src/hero/loop.ts.)
+        isPaused: () => signals.paused || stageCues.loop,
+        tier: lite ? ('low' as const) : heroTier,
         integratedGpu: quality === 'mid',
         // The live scene takes over from the poster with its first frame.
         onReady: () => el.setAttribute('data-live', ''),
         onLost: () => el.removeAttribute('data-live'),
-      })
+        // Even LOW cannot hold a steady 30: the hero rests as its pre-rendered loop.
+        onStruggling: () => void (loop ??= startLoop(el, true)),
+      }
+      // WebGL: the robot is built in slices (engine.ts), the poster showing meanwhile.
+      const h = 'mountRobotAsync' in m ? await m.mountRobotAsync(el, opts, () => cancelled) : m.mountRobot(el, opts)
+      if (!h || cancelled) return h?.dispose()
+      handle.current = h
+      // The tier may have moved while it was being built.
+      h.setTier(useStore.getState().lite ? 'low' : useStore.getState().heroTier)
       // WebGL: live at once, under the poster (no curtain to wait for). Static: as the curtain lifts.
-      if (isWebgl || loaded) handle.current.reveal()
+      if (isWebgl || useStore.getState().loaded) h.reveal()
       transition.current?.sync()
+      // Without WebGL (or with a software renderer: main.tsx) the loop is the hero; the lab can force it (?loop=1).
+      if (!isWebgl || labNumber('loop') === 1) loop ??= startLoop(el, isWebgl)
     })
     return () => {
       cancelled = true
+      loop?.dispose()
       backdrop?.dispose()
       handle.current?.dispose()
       handle.current = null

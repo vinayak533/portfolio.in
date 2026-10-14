@@ -18,6 +18,8 @@ export interface RobotOptions {
   onLost?: () => void
   /** Integrated / mobile-class GPU (the site's mid tier). */
   integratedGpu?: boolean
+  /** Even LOW cannot hold a steady 30 at rest (engine.ts): the hero's last-resort loop may take over (src/hero/loop.ts). */
+  onStruggling?: () => void
 }
 
 /** Same surface as the photo engine's handle, so src/hero/transition.ts drives either. */
@@ -92,6 +94,10 @@ export const stageCues = {
   degrade: 0,
   /** The engine's governor is watching the frame rate (HIGH / MEDIUM): the landscape's own watchdog stands down. */
   governed: false,
+  /** The landscape's programs are built (terrain.ts): the robot's first frame waits for them (a moment at most). */
+  backdropReady: true,
+  /** The hero's loop covers the scene (src/hero/loop.ts): the landscape and the beam's pulse sleep under it. */
+  loop: false,
 }
 
 export interface Layer {

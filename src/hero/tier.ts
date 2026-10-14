@@ -13,12 +13,14 @@
  *
  * Start-up picks from what the device says about itself (cores, memory, connection, pointer, width, GPU
  * name); a 1.5 s frame-time probe once the hero is live can step it down one tier. After that only the
- * per-layer ladders adapt (terrain.ts, engine.ts: shed one feature at a time when frames run over 24 ms
- * for 3 s), so the tier is only ever stepped down, never up. Never the robot's head or eyes.
+ * per-layer ladders adapt (terrain.ts, engine.ts: shed one feature at a time when frames run over budget
+ * for 2 s, overBudget; far over, an even 30 first, clock.ts), so the tier is only ever stepped down, never up. Never the robot's head or eyes.
  */
 import { gpuName, isTouchDevice } from '../core/quality'
+import { pacing, refreshesPerFrame } from '../core/clock'
 import { isLowEndDevice } from '../core/autoLite'
 import { FROZEN } from './freeze'
+import { PERF_LAB, labOff } from '../core/perfLab'
 
 export type HeroTier = 'high' | 'medium' | 'low'
 
@@ -31,8 +33,23 @@ export const TIERS = {
   low: { budget: 80 * 48, terrainDpr: 1, robotDpr: 1.25, waves: 0, flank: false, comets: false, wake: 'none', fps: 30, dof: false },
 } as const
 
-/** The live ladder's threshold: frames averaging over this (ms) for this long (ms) shed one feature. */
-export const SLOW_FRAME = { ms: 24, span: 3000 }
+/** The start-up probe's threshold (ms per frame), and the live ladder's window (ms). */
+export const SLOW_FRAME = { ms: 24, span: 2000 }
+
+/**
+ * The live ladder's budget: frames averaging more than 12% over the paced interval (clock.ts) for a window
+ * shed one feature. At 60 Hz that is under ~54 frames a second (under ~27 once locked to 30): a device that
+ * cannot hold 60 sheds the least visible features, then locks to an even 30, never hovering in between.
+ */
+export const overBudget = (avgMs: number, locked = pacing.locked) => avgMs > ((refreshesPerFrame(locked) * 1000) / pacing.hz) * 1.12
+
+/**
+ * A drawn frame that missed its paced slot (a refresh late or more). More than JITTER of a window's frames late
+ * counts as over budget too, whatever the average: a device whose frames average just inside the interval but
+ * keep missing it hovers between cadences, and sheds a step (or locks) like one that is slow.
+ */
+export const lateFrame = (ms: number, locked = pacing.locked) => ms > ((refreshesPerFrame(locked) * 1000) / pacing.hz) * 1.4
+export const JITTER = 0.1
 
 /** The start-up probe: how long it measures (ms), after how long the scene has been live (ms). */
 const PROBE = { ms: 1500, after: 3200 }
@@ -46,7 +63,7 @@ function connection(): Connection {
 /** The tier the device's own signals point to (before any frame has been measured). */
 export function initialHeroTier(reducedMotion: boolean): HeroTier {
   // ?tier= forces one in development, and with ?freeze (the baselines), where it defaults to HIGH.
-  if (import.meta.env.DEV || FROZEN) {
+  if (PERF_LAB || FROZEN) {
     const forced = new URLSearchParams(location.search).get('tier')
     if (forced === 'high' || forced === 'medium' || forced === 'low') return forced
     if (FROZEN) return 'high'
@@ -70,7 +87,7 @@ export function lower(t: HeroTier): HeroTier {
  * `live` says whether the hero is being drawn (the probe waits for it).
  */
 export function watchHeroTier(get: () => HeroTier, set: (t: HeroTier) => void, live: () => boolean) {
-  if (FROZEN) return () => {}
+  if (FROZEN || labOff('adapt')) return () => {}
   let stopped = false
   const nav = navigator as Navigator & { getBattery?: () => Promise<{ charging: boolean; level: number }> }
   nav
@@ -104,7 +121,10 @@ export function watchHeroTier(get: () => HeroTier, set: (t: HeroTier) => void, l
       return
     }
     const avg = (last - start) / Math.max(1, frames)
-    if (avg > SLOW_FRAME.ms) set(lower(get()))
+    // Under ~28 frames a second even the even 30 will not hold: a tier down. Far over the budget short of that
+    // (under ~40): the even 30 (clock.ts), every feature of the tier kept. A little over is the live ladder's.
+    if (avg > SLOW_FRAME.ms * 1.5) set(lower(get()))
+    else if (overBudget(avg / 1.35, false)) pacing.locked = true
   }
   timer = window.setTimeout(() => (raf = requestAnimationFrame(tick)), PROBE.after)
   return () => {

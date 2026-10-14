@@ -50,15 +50,20 @@
 import {
   ACESFilmicToneMapping,
   BackSide,
+  BasicDepthPacking,
   Box3,
   BoxGeometry,
+  BufferGeometry,
   Color,
   DirectionalLight,
   DoubleSide,
   Matrix4,
+  InstancedMesh,
   Mesh,
   Object3D,
   MeshBasicMaterial,
+  MeshDepthMaterial,
+  NoToneMapping,
   OrthographicCamera,
   PCFShadowMap,
   PerspectiveCamera,
@@ -66,6 +71,7 @@ import {
   PMREMGenerator,
   Scene,
   ShaderMaterial,
+  SkinnedMesh,
   SRGBColorSpace,
   Vector2,
   Vector3,
@@ -73,12 +79,13 @@ import {
   WebGLRenderTarget,
   type Light,
   type Material,
+  type Texture,
 } from 'three'
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js'
-import { clamp, damp, easeInOutCubic, gsap, onTick, remap, smoothstep } from '../../core/clock'
+import { clamp, createPacer, damp, easeInOutCubic, gsap, onTick, pacing, remap, smoothstep } from '../../core/clock'
 import { heroConfig, MOBILE_QUERY } from '../config'
 import { shotAt } from '../shot'
-import { buildRobot } from './model'
+import { buildRobot, buildRobotSteps, type RobotModel } from './model'
 import { boundsOf } from './merge'
 import { createLayer, stageCues, stageFrame, type RobotHandle, type RobotOptions } from './dom'
 import { robotLink, setDock } from './bridge'
@@ -88,9 +95,10 @@ import { mountRobot as mountStill } from './still'
 import { beat, emptySample } from './beat'
 import { createPerformance } from './perform'
 import { PULSE, SCREEN } from './props'
-import { SLOW_FRAME, TIERS, type HeroTier } from '../tier'
+import { JITTER, lateFrame, overBudget, SLOW_FRAME, TIERS, type HeroTier } from '../tier'
 import { signals, useStore } from '../../store/useStore'
 import { FROZEN } from '../freeze'
+import { PERF_LAB, labNumber, labOff } from '../../core/perfLab'
 
 const FOV = 28
 const TAN = Math.tan(((FOV / 2) * Math.PI) / 180)
@@ -191,7 +199,42 @@ const KEY_LIGHT = 0.12
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t
 const lerpLog = (a: number, b: number, t: number) => Math.exp(lerp(Math.log(a), Math.log(b), t))
 
-export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHandle {
+/**
+ * The robot built in slices of a few milliseconds, the main thread handed back between them (the build is most
+ * of a second on a phone: in one piece it held up input and the copy's entrance), then mounted.
+ */
+export async function mountRobotAsync(host: HTMLElement, opts: RobotOptions = {}, cancelled: () => boolean = () => false): Promise<RobotHandle | null> {
+  const steps = buildRobotSteps()
+  for (;;) {
+    const end = performance.now() + SLICE_MS
+    let r = steps.next()
+    while (!r.done && performance.now() < end) r = steps.next()
+    if (r.done) {
+      if (cancelled()) {
+        r.value.dispose()
+        return null
+      }
+      return mountRobot(host, { ...opts, robot: r.value })
+    }
+    await yieldToMain()
+    if (cancelled()) return null
+  }
+}
+
+/** How long each slice of the build may run (ms). */
+const SLICE_MS = 8
+/** Back to the main thread for a moment: scheduler.yield where there is one (it keeps this task's place), else a message. */
+const yieldToMain = () => {
+  const s = (globalThis as { scheduler?: { yield?: () => Promise<void> } }).scheduler
+  if (s?.yield) return s.yield()
+  return new Promise<void>((resolve) => {
+    const ch = new MessageChannel()
+    ch.port1.onmessage = () => resolve()
+    ch.port2.postMessage(0)
+  })
+}
+
+export function mountRobot(host: HTMLElement, opts: RobotOptions & { robot?: RobotModel } = {}): RobotHandle {
   const layer = createLayer()
   const canvas = document.createElement('canvas')
   canvas.className = 'robot-canvas'
@@ -212,7 +255,7 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
   renderer.toneMapping = ACESFilmicToneMapping
   renderer.toneMappingExposure = 1.05
   renderer.setClearColor(0x000000, 0)
-  renderer.shadowMap.enabled = true
+  renderer.shadowMap.enabled = !labOff('shadows')
   renderer.shadowMap.type = PCFShadowMap
   renderer.shadowMap.autoUpdate = false
   RectAreaLightUniformsLib.init()
@@ -220,13 +263,17 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
   // ---- scene
 
   const scene = new Scene()
-  const pmrem = new PMREMGenerator(renderer)
-  const studio = studioEnvironment()
-  // 128 px faces: the studio is a few soft boxes in the dark, and a 256 cube's prefilter costs the load ~0.5 s on a phone.
-  const env = pmrem.fromScene(studio.scene, 0.04, 0.1, 100, { size: 128 }).texture
-  pmrem.dispose()
-  studio.dispose()
-  scene.environment = env
+  // The studio's reflections (prefilteredStudio): made in the background before the first frame, which waits for
+  // them (the scene's programs depend on them: they compile once it is in place, below).
+  let env: Texture | null = null
+  let tornDown = false
+  const envReady = labOff('env')
+    ? Promise.resolve()
+    : prefilteredStudio(renderer).then((t) => {
+        if (tornDown) return t.dispose()
+        env = t
+        scene.environment = t
+      })
   scene.environmentIntensity = 0.5
 
   // Lit in the hero's one hue: a warm key from above, front-left (the stage's beam, hero.css), violet rims
@@ -236,7 +283,7 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
   const key = new DirectionalLight(KEY_COLOR, 2.1)
   key.position.set(-1.4, 7, 2.6)
   key.castShadow = true
-  key.shadow.mapSize.set(2048, 2048)
+  key.shadow.mapSize.setScalar(labNumber('smap') ?? 2048)
   key.shadow.radius = 5
   key.shadow.bias = -0.0004
   key.shadow.normalBias = 0.012
@@ -250,11 +297,12 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
   fill.position.set(3.5, 1.2, 3.5)
   scene.add(key, rimL, rimR, fill)
 
-  const robot = buildRobot()
+  const robot = opts.robot ?? buildRobot()
   scene.add(robot.root)
   const { headPivot, body, rig } = robot
   headPivot.rotation.order = 'YXZ'
   const lap = robot.laptop
+  if (labOff('screenlight')) lap.screenLight.visible = false
   /** The neck (the head's pivot) and the head's centre, in the body's frame; updated as it moves. */
   const neck = new Vector3()
   const headLocal = new Vector3()
@@ -287,8 +335,10 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
   // it; the head and its headphones never do.
   const cut = { value: CUT_FROM - 1 }
   const seam = { value: new Color('#9c86ff') }
-  for (const m of robot.bodyMaterials) dissolvable(m, cut, seam)
-  for (const m of robot.furnitureMaterials) dissolvable(m, cut, seam)
+  if (!labOff('dissolve')) {
+    for (const m of robot.bodyMaterials) dissolvable(m, cut, seam)
+    for (const m of robot.furnitureMaterials) dissolvable(m, cut, seam)
+  }
   /** The top of the seated figure (the headphones), stage space. */
   let top = 2.4
 
@@ -346,7 +396,7 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
   const topPt = new Vector3()
 
   const camera = new PerspectiveCamera(FOV, 1, 0.1, 60)
-  if (import.meta.env.DEV) Object.assign(window, { __heroRobot: { robot, scene, perform, renderer, camera, stageCues, frame: () => stageFrame.get(), dock: () => ({ docked, face: shownMood, busy: dockBusy, cost: dockCost.n ? dockCost.sum / dockCost.n : 0, drawMs: dockCost.n ? dockCost.draw / dockCost.n : 0, frames: dockCost.n, calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, box: L.box }) } })
+  if (PERF_LAB) Object.assign(window, { __heroRobot: { robot, scene, perform, renderer, camera, stageCues, frame: () => stageFrame.get(), dock: () => ({ docked, face: shownMood, busy: dockBusy, cost: dockCost.n ? dockCost.sum / dockCost.n : 0, drawMs: dockCost.n ? dockCost.draw / dockCost.n : 0, frames: dockCost.n, draws: dockCost.draws, calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, box: L.box }) } })
   const tall = window.matchMedia(MOBILE_QUERY)
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)')
   const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)')
@@ -356,31 +406,70 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
   stageCues.governed = !lowPower
   applyLighting()
   /** The robot's pixel ratio: by tier (and 1.5 on an integrated GPU). Never lowered by the governor: the head and its eyes stay sharp. */
-  const pixelCap = () => Math.min(window.devicePixelRatio || 1, TIERS[tier].robotDpr, opts.integratedGpu ? 1.5 : 2)
+  const pixelCap = () => labNumber('rdpr') ?? Math.min(window.devicePixelRatio || 1, TIERS[tier].robotDpr, opts.integratedGpu ? 1.5 : 2)
 
   /**
-   * Quality steps taken when the hero cannot hold its frame rate (frames averaging over 24 ms across a 3 s
-   * window while the scene plays), one per window, in this order: 1-3 the backdrop's interference waves,
-   * comets and grid density (terrain.ts reads these), 4 the glows that stand in for bloom and the floor
-   * reflection, 5 the shadow map halves, 6 the equaliser drops to 28 columns; terrain.ts then lowers its
-   * own pixel ratio (7) and frame rate (8). Only ever downward (no oscillation); the head, the eyes and the
-   * laptop's screen are never touched (the robot's pixel ratio is not on the ladder).
+   * Quality steps taken when the hero cannot hold its frame rate (frames averaging more than 12% over the paced
+   * interval across a 2 s window while the scene plays, tier.ts overBudget, or a tenth of them late: lateFrame),
+   * one per window, in this order: the
+   * vortex (half, then off), 1-3 the backdrop's interference waves, comets and grid density (terrain.ts reads
+   * these), 4 the glows that stand in for bloom and the floor reflection, 5 the shadow map halves, 6 the
+   * equaliser drops to 28 columns; terrain.ts then lowers its own pixel ratio (7) and frame rate (8); last,
+   * every WebGL loop locks to an even 30 (clock.ts). Far over budget, the lock comes first. Only ever downward
+   * (no oscillation); the head, the eyes and the laptop's screen are never touched (the robot's pixel ratio is
+   * not on the ladder).
    */
   let degrade = 0
-  const perf = { sum: 0, n: 0 }
+  const perf = { sum: 0, n: 0, late: 0 }
   /** Development only: ?hq holds the governor off (for captures on slow, software-rendered machines). */
-  const holdQuality = (import.meta.env.DEV && new URLSearchParams(location.search).has('hq')) || FROZEN
+  const holdQuality = (import.meta.env.DEV && new URLSearchParams(location.search).has('hq')) || FROZEN || labOff('adapt')
   function governor(dt: number) {
     if (holdQuality) return
     perf.sum += dt
     perf.n++
+    if (lateFrame(dt * 1000)) perf.late++
     if (perf.sum < SLOW_FRAME.span / 1000) return
-    const avg = perf.sum / perf.n
-    perf.sum = perf.n = 0
-    if (avg <= SLOW_FRAME.ms / 1000 || degrade >= 8) return
+    const avg = (perf.sum / perf.n) * 1000
+    const jitter = perf.late / perf.n
+    perf.sum = perf.n = perf.late = 0
+    if (!overBudget(avg) && jitter <= JITTER) return
+    // Far over (under ~40 frames a second at 60 Hz): no feature would win back that much, and shedding them
+    // one window at a time would leave it stuttering in between for a while: an even 30 at once, every
+    // feature kept. A little over: the least visible feature goes, one per window, the lock last. (Once
+    // locked, the same ladder runs against the 30's budget.)
+    if (!pacing.locked && overBudget(avg / 1.35)) pacing.locked = true
+    else stepDown()
+  }
+  /**
+   * LOW's own watch (the governor stands down there, having nothing left to shed): drawn frames averaging more
+   * than 12% over the even 30's interval (under ~27 a second), or a tenth of them late (tier.ts lateFrame), for
+   * two 2 s windows in a row at rest in the hero, and the hero's last-resort loop is asked for
+   * (opts.onStruggling, src/hero/loop.ts). Once.
+   */
+  const lowWatch = { sum: 0, n: 0, late: 0, windows: 0, told: false, since: performance.now() }
+  function watchLow(dt: number) {
+    if (holdQuality || lowWatch.told || !opts.onStruggling || performance.now() - lowWatch.since < 1500) return
+    lowWatch.sum += dt
+    lowWatch.n++
+    if (lateFrame(dt * 1000, true)) lowWatch.late++
+    if (lowWatch.sum < SLOW_FRAME.span / 1000) return
+    const avg = (lowWatch.sum / lowWatch.n) * 1000
+    const jitter = lowWatch.late / lowWatch.n
+    lowWatch.sum = lowWatch.n = lowWatch.late = 0
+    lowWatch.windows = overBudget(avg, true) || jitter > JITTER ? lowWatch.windows + 1 : 0
+    if (lowWatch.windows < 2) return
+    lowWatch.told = true
+    opts.onStruggling()
+  }
+  function stepDown() {
     // The landscape's inflow vortex goes first: half its dots, then all of them (terrain.ts).
     if (stageCues.vortex < 2) {
       stageCues.vortex++
+      return
+    }
+    // Last: every WebGL loop locks to an even ~30 frames a second (clock.ts).
+    if (degrade >= 8) {
+      pacing.locked = true
       return
     }
     degrade++
@@ -627,6 +716,7 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
   /** The launcher slot the canvas sits in while docked (null: no launcher yet, the head waits unseen). */
   let homed: HTMLElement | null = null
   function sizeCanvas() {
+    shownFresh = false
     if (docked) {
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
       renderer.setSize(L.box.w, L.box.h, false)
@@ -648,6 +738,7 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
   function home() {
     const slot = docked ? robotLink.slot : null
     if (slot === homed) return
+    shownFresh = false
     homed = slot
     if (slot) slot.appendChild(canvas)
     else if (canvas.parentElement !== layer.el) layer.el.appendChild(canvas)
@@ -691,7 +782,7 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
   /** The body's meshes under the head's pivot (the neck). */
   const neckMeshes: Mesh[] = []
   headPivot.traverse((o) => {
-    if (o instanceof Mesh && robot.bodyMaterials.includes(o.material as Material)) neckMeshes.push(o)
+    if (o instanceof Mesh && !o.userData.skinBone && robot.bodyMaterials.includes(o.material as Material)) neckMeshes.push(o)
   })
 
   /**
@@ -862,6 +953,8 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
   let buildSeed = 0
   /** The shadow map exists (the reflection pass, which never updates it, waits for the first). */
   let shadowReady = false
+  /** When the shadow map was last drawn (ms). */
+  let shadowAt = -Infinity
   /** Frames drawn (the floor reflection is redrawn every other frame). */
   let frameNo = 0
   /** The typing was in a burst last frame (its start is published as stageCues.burstAt). */
@@ -883,7 +976,8 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     return hi
   })()
 
-  /** Docked: time carried over skipped frames (30 a second while nothing moves), and whether anything moves. */
+  /** Time carried over skipped frames (the pacer's), and docked, whether anything moves. */
+  const pace = createPacer()
   let dockCarry = 0
   let dockBusy = true
   /** performance.now() when the head last came off the neck (its eyes go wide, then ^ ^). */
@@ -894,7 +988,7 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
   /** The camera's aim: the head's seat on the neck (so the lift off it shows), easing onto the lifted head. */
   const camHead = new Vector3()
   /** Development: the docked frame's CPU time (ms), summed. */
-  const dockCost = { sum: 0, n: 0, draw: 0 }
+  const dockCost = { sum: 0, n: 0, draw: 0, draws: 0 }
   /** The scene's world matrices: docked, only the head moves (its parents hold still), so only its subtree. */
   const syncWorld = () => (docked ? headPivot.updateMatrixWorld(true) : robot.root.updateMatrixWorld(true))
   const tableInv = new Matrix4()
@@ -904,15 +998,16 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
   const lowRingY = robot.rings[1].points.position.y
   function frame(time: number, dt0: number) {
     if (lost || !compiled || document.hidden || opts.isPaused?.()) return
-    // 30 frames a second when docked and idle, and always in LOW (the skipped frames' time is carried, so
-    // nothing slows).
-    let dt = dt0
-    if (docked || lowPower) {
-      dockCarry += dt0
-      if ((lowPower || !dockBusy) && dockCarry < 1 / 31) return
-      dt = Math.min(dockCarry, 1 / 15)
-      dockCarry = 0
-    }
+    // The landscape's programs compile in the background too: the first frame waits for them (2 s at most), so
+    // the scene comes in whole.
+    if (!ready && !stageCues.backdropReady && performance.now() - compiledAt < 2000) return
+    if (ready && labOff('robot')) return
+    // Paced (clock.ts): about 60 frames a second on any display; an even ~30 in LOW, at the quality ladder's
+    // last step and docked while nothing moves (the skipped frames' time is carried, so nothing slows).
+    dockCarry += dt0
+    if (!pace(performance.now(), lowPower || pacing.locked || (docked && !dockBusy))) return
+    const dt = dockCarry === dt0 ? dt0 : Math.min(dockCarry, 1 / 15)
+    dockCarry = 0
     const t0 = performance.now()
     const now = t0
     const p = progress
@@ -939,7 +1034,7 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     if (!docked) perform.update(dt, beatNow, { amp: lowPower ? 0.7 : 1, weight, still, turn: smoothstep(0, 0.7, a), faceYaw: 0 })
     const pf = perform.out
     // LOW (and the governor's step 4): no glow cards (the scene's stand-in for bloom).
-    const glows = !lowPower && degrade < 4
+    const glows = !lowPower && degrade < 4 && !labOff('glows')
     if (!glows) rig.coreGlow.opacity = 0
     placeHead(pf.dip)
     // The head lifts off the neck as its flight begins; the camera keeps to its seat at first, so the lift shows.
@@ -1322,10 +1417,19 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     // renderer walks the scene's matrices itself; docked it does not, and only the head's have moved.)
     if (docked) syncWorld()
     // The shadow map is drawn every frame in the hero (once without shadows, where it is unused), never docked.
-    renderer.shadowMap.needsUpdate = !docked && (shadows || !shadowReady)
+    // (About 30 times a second: the casters' motion, the typing and the bob, is slow enough that a refresh's lag
+    // in their shadows never shows, and the shadow pass is a third of the robot's draws.)
+    const shadowDue = !shadowReady || now - shadowAt >= 25 || labOff('shadow30')
+    renderer.shadowMap.needsUpdate = !docked && (shadows || !shadowReady) && shadowDue
+    if (renderer.shadowMap.needsUpdate) shadowAt = now
     if (!docked && !lowPower && a < 0.05 && now - revealedAt > 1000) governor(dt)
+    if (!docked && lowPower && a < 0.05 && now - revealedAt > 1000) watchLow(dt)
     const tDraw = performance.now()
-    draw(docked || !shadows || degrade >= 4 || !shadowReady ? 0 : REFLECT.opacity * (1 - smoothstep(0, 0.12, a)))
+    // Docked, a frame whose picture would not change is not drawn (render on demand): see samePicture().
+    if (!docked || !samePicture(ty)) {
+      if (docked) dockCost.draws++
+      draw(docked || !shadows || degrade >= 4 || !shadowReady || labOff('reflect') ? 0 : REFLECT.opacity * (1 - smoothstep(0, 0.12, a)))
+    }
     if (docked) dockCost.draw += performance.now() - tDraw
     shadowReady ||= renderer.shadowMap.needsUpdate === false
     // Docked, anything moving (the eyes, the neck's spring, a blink or a change of face) earns full frame rate.
@@ -1343,6 +1447,37 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     }
   }
 
+  /**
+   * Docked: whether this frame would show the same picture as the last one drawn: the head's pose, its eyes,
+   * lids and glow within a hair of it, the float within a quarter of a device pixel (in a 72-112 px icon), the
+   * face unchanged, no halo or z's. Then nothing is drawn: a resting head costs its bookkeeping alone.
+   */
+  const shown = new Float64Array(9)
+  const next = new Float64Array(9)
+  const EPS = [3e-4, 3e-4, 3e-4, 2e-4, 2e-4, 2e-4, 2e-3, 0.25, 1e-3]
+  let shownFresh = false
+  function samePicture(ty: number) {
+    if (labOff('dockdemand')) return false
+    const r = headPivot.rotation
+    next[0] = r.x
+    next[1] = r.y
+    next[2] = r.z
+    next[3] = headPivot.position.y
+    next[4] = robot.eyes.position.x
+    next[5] = robot.eyes.position.y
+    next[6] = robot.lid.scale.y
+    next[7] = ((ty * VH) / 2) * renderer.getPixelRatio()
+    next[8] = robot.bezel.emissiveIntensity
+    let same = shownFresh && painted === shownFace && !robot.halo.visible && head.sleep <= 0.05
+    for (let i = 0; i < next.length && same; i++) same = Math.abs(next[i] - shown[i]) < EPS[i]
+    if (same) return true
+    shown.set(next)
+    shownFace = painted
+    shownFresh = true
+    return false
+  }
+  let shownFace = ''
+
   /** The frame, with the floor reflection under it while the figure sits in the hero. */
   function draw(reflect: number) {
     renderer.autoClear = false
@@ -1354,11 +1489,20 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
         layer.el.classList.add('is-revealed')
         opts.onReady?.()
       })
-    }
+    } else if (ready && labOff('robotdraw')) return
     if (reflect > 0.001) {
-      // The figure mirrored in the stage plane (y = 0), the stage itself left out, nothing cut. Redrawn
-      // every other frame (a quarter-resolution blur: the lag does not show).
-      if (frameNo % 2 === 0 || !reflectFresh) drawReflection()
+      // The figure mirrored in the stage plane (y = 0), the stage itself left out, nothing cut. Redrawn at once
+      // when the view moves, else about 15 times a second: it shows only what is near the floor (the feet, the
+      // chair's and the table's legs, which hold still), at a quarter of the resolution, blurred and faint.
+      const view = camera.projectionMatrix.elements
+      let moved = !reflectFresh
+      for (let i = 0; i < 16 && !moved; i++) moved = view[i] !== reflectView[i]
+      const due = labOff('reflect15') ? frameNo % 2 === 0 : performance.now() - reflectAt >= 60
+      if (moved || due) {
+        drawReflection()
+        reflectView.set(view)
+        reflectAt = performance.now()
+      }
       floorPt.set(0, 0, 0).project(camera)
       topPt.set(0, top, 0).project(camera)
       const u = reflectMat.uniforms
@@ -1375,6 +1519,9 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
   }
 
   let reflectFresh = false
+  /** The projection the reflection was drawn with, and when (ms). */
+  const reflectView = new Float32Array(16)
+  let reflectAt = -Infinity
   function drawReflection() {
     reflectFresh = true
     const cutWas = cut.value
@@ -1410,10 +1557,66 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
   // the first frame: compiled on first use they would hold the main thread for seconds on a phone. The
   // poster covers the hero until that first frame (Hero.tsx).
   let compiled = false
-  renderer
-    .compileAsync(scene, camera)
+  let compiledAt = 0
+  /** One caster of each kind in the scene, wearing the shadow pass's depth material (kept: disposing it would free the program). */
+  // (Back faces: the shadow pass's side for the casters' front-sided materials, three's shadowSide.)
+  const depthStandIn = new MeshDepthMaterial({ depthPacking: BasicDepthPacking, side: BackSide })
+  const shadowLike = new WebGLRenderTarget(4, 4)
+  function casterStandIns() {
+    const out = new Scene()
+    const kinds = new Set<string>()
+    scene.traverse((o) => {
+      const m = o as Mesh
+      if (!m.isMesh || !m.castShadow || m.customDepthMaterial) return
+      const s = o as SkinnedMesh
+      const kind = s.isSkinnedMesh ? 'skinned' : (o as InstancedMesh).isInstancedMesh ? 'instanced' : 'plain'
+      if (kinds.has(kind)) return
+      kinds.add(kind)
+      let stand: Mesh
+      if (kind === 'skinned') {
+        const sm = new SkinnedMesh(s.geometry, depthStandIn)
+        sm.bind(s.skeleton, s.bindMatrix)
+        stand = sm
+      } else stand = kind === 'instanced' ? new InstancedMesh(m.geometry, depthStandIn, 1) : new Mesh(m.geometry, depthStandIn)
+      stand.frustumCulled = false
+      out.add(stand)
+    })
+    return out
+  }
+  envReady
     .catch(() => {})
-    .finally(() => (compiled = true))
+    .then(() => renderer.compileAsync(scene, camera))
+    .catch(() => {})
+    .then(() => {
+      // HIGH draws the floor reflection into a render target, which takes other variants of the same programs
+      // (no tone mapping, linear output): compiled on first use they held the first frame for seconds.
+      if (!shadows || labOff('compilert')) return
+      renderer.setRenderTarget(reflectRT)
+      const pending = renderer.compileAsync(scene, camera)
+      renderer.setRenderTarget(null)
+      return pending
+    })
+    .catch(() => {})
+    .then(() => {
+      // Drawn outside the scene, so never compiled with it: the shadow pass (three draws each caster with its own
+      // depth material, a plain and a skinned variant here; every tier draws it at least once) and the floor
+      // reflection's composite. Compiled on first use they held a first visit's first frame for ~2 s.
+      if (labOff('compileaux')) return
+      renderer.setRenderTarget(shadowLike)
+      // (Lit by the scene's lights: their counts and shadows are part of every program's key, the depth one's too.)
+      const pending = renderer.compileAsync(casterStandIns(), camera, scene)
+      renderer.setRenderTarget(null)
+      return Promise.all([pending, renderer.compileAsync(reflectScene, quadCam)])
+    })
+    .catch(() => {})
+    .then(() => prefetchPrograms(renderer, () => tornDown))
+    .catch(() => {})
+    .finally(() => {
+      compiled = true
+      compiledAt = performance.now()
+      // The lab: which programs were built ahead (any made later were compiled on first use: a stall).
+      if (PERF_LAB) Object.assign(window, { __programsAhead: (renderer.info.programs ?? []).map((p) => `${p.name} ${p.cacheKey.length}`) })
+    })
   const stopTick = onTick(frame, 10)
 
   let fallback: RobotHandle | null = null
@@ -1430,6 +1633,7 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
   canvas.addEventListener('webglcontextlost', onLost)
 
   function teardown() {
+    tornDown = true
     stopTick()
     gsap.ticker.remove(sampleAnchor)
     offSection()
@@ -1442,9 +1646,11 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     document.documentElement.removeEventListener('pointerleave', onLeave)
     window.removeEventListener('blur', onBlur)
     robot.dispose()
-    env.dispose()
+    env?.dispose()
     reflectRT.dispose()
     reflectMat.dispose()
+    depthStandIn.dispose()
+    shadowLike.dispose()
     reflectQuad.geometry.dispose()
     key.shadow.map?.dispose()
     renderer.dispose()
@@ -1473,6 +1679,8 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
     },
     setTier(v) {
       tier = v
+      // (Stepping down to LOW: its watch starts afresh, once the step has settled.)
+      if (v === 'low' && !lowPower) Object.assign(lowWatch, { sum: 0, n: 0, late: 0, windows: 0, since: performance.now() })
       lowPower = v === 'low'
       shadows = v === 'high'
       stageCues.governed = !lowPower && !lost
@@ -1488,6 +1696,75 @@ export function mountRobot(host: HTMLElement, opts: RobotOptions = {}): RobotHan
       else if (!lost) teardown()
     },
   }
+}
+
+/**
+ * three asks each program for its uniforms and attributes at its first draw: a synchronous round trip to the GPU
+ * process, queued behind that frame's driver work (ANGLE builds the final shaders at a program's first draw), which
+ * on a first visit held a first frame ~1.3 s. Asked ahead instead, a few at a time between frames (while the poster
+ * shows). Programs already asked answer at once.
+ */
+async function prefetchPrograms(renderer: WebGLRenderer, gone: () => boolean = () => false) {
+  if (labOff('prefetch')) return
+  let t = performance.now()
+  for (const p of renderer.info.programs ?? []) {
+    if (gone()) return
+    p.getUniforms()
+    p.getAttributes()
+    if (performance.now() - t > SLICE_MS) {
+      await yieldToMain()
+      t = performance.now()
+    }
+  }
+}
+
+/** The prefiltered studio's face size: the studio is a few soft boxes in the dark, and a 256 cube's prefilter cost the load ~0.5 s on a phone. */
+const ENV_SIZE = 128
+
+/**
+ * The studio (studioEnvironment) prefiltered for reflections (PMREM). three compiles PMREM's shaders when it
+ * first draws with them, holding the main thread until the driver has built them (~2 s on a first visit, with
+ * no shader cache): here they are built first, in the background (compileAsync: KHR_parallel_shader_compile
+ * where there is one), along with the studio's own for the cube it is drawn into. Reaching into PMREM's steps
+ * (it allocates the same targets and materials again and reuses them); if that ever fails, the prefilter simply
+ * compiles as it draws.
+ */
+async function prefilteredStudio(renderer: WebGLRenderer): Promise<Texture> {
+  const pmrem = new PMREMGenerator(renderer)
+  const studio = studioEnvironment()
+  const steps = pmrem as unknown as { _setSize?(size: number): void; _allocateTargets?(): WebGLRenderTarget; _blurMaterial?: Material; _ggxMaterial?: Material; _lodMeshes?: Mesh[] }
+  try {
+    if (steps._setSize && steps._allocateTargets) {
+      steps._setSize(ENV_SIZE)
+      const target = steps._allocateTargets()
+      const passes = new Scene()
+      // (On PMREM's own quads: whether a geometry has positions is part of a program's key.)
+      const geometry = steps._lodMeshes?.[0]?.geometry ?? new BufferGeometry()
+      for (const m of [steps._blurMaterial, steps._ggxMaterial]) {
+        if (!m) continue
+        const quad = new Mesh(geometry, m)
+        quad.frustumCulled = false
+        passes.add(quad)
+      }
+      const previous = renderer.getRenderTarget()
+      const tone = renderer.toneMapping
+      renderer.setRenderTarget(target)
+      renderer.toneMapping = NoToneMapping
+      // (The traversal is synchronous: the target and tone mapping only need to hold for the calls.)
+      const pending = Promise.all([renderer.compileAsync(passes, new OrthographicCamera()), renderer.compileAsync(studio.scene, new PerspectiveCamera(90, 1, 0.1, 100))])
+      renderer.setRenderTarget(previous)
+      renderer.toneMapping = tone
+      await pending
+      await prefetchPrograms(renderer)
+      target.dispose()
+    }
+  } catch {
+    // (The prefilter below compiles as it draws.)
+  }
+  const env = pmrem.fromScene(studio.scene, 0.04, 0.1, 100, { size: ENV_SIZE }).texture
+  pmrem.dispose()
+  studio.dispose()
+  return env
 }
 
 /**
@@ -1556,10 +1833,15 @@ float dNoise(vec3 p) {
       .replace(
         '#include <clipping_planes_fragment>',
         `#include <clipping_planes_fragment>
-float dN = dNoise(vDissolve * 11.0) * 0.6 + dNoise(vDissolve * 27.0) * 0.4;
-float dH = vDissolve.y + (dN - 0.5) * 0.22 - uCut;
-if (dH < 0.0) discard;
-float dSeam = 1.0 - smoothstep(0.0, 0.035, dH);`,
+// (Before the dissolve starts the cut lies far below the scene: no fragment is near it, so the noise is skipped.
+// A uniform branch: every fragment takes the same side.)
+float dSeam = 0.0;
+if (uCut > ${labOff('dissolveskip') ? '-1000.0' : '-0.5'}) {
+  float dN = dNoise(vDissolve * 11.0) * 0.6 + dNoise(vDissolve * 27.0) * 0.4;
+  float dH = vDissolve.y + (dN - 0.5) * 0.22 - uCut;
+  if (dH < 0.0) discard;
+  dSeam = 1.0 - smoothstep(0.0, 0.035, dH);
+}`,
       )
       .replace('#include <opaque_fragment>', `outgoingLight += uSeam * dSeam * ${m.transparent ? '0.0' : '2.2'};
 #include <opaque_fragment>`)

@@ -67,14 +67,16 @@
  * ratio of 1, no waves, sweep, comets, depth of field, glow, morph or parallax, a 24-dot trail, a 60-dot
  * ring, 30 frames a second. Reduced motion: one still frame, the agent resting at the plateau's edge with
  * its trail. Paused while the hero is off screen, the tab hidden or the backdrop faded. When frames run
- * over 24 ms for 3 s (the engine's governor, stageCues.degrade; this layer's own watchdog where that does
+ * over budget for 2 s (tier.ts overBudget; the engine's governor, stageCues.degrade; this layer's own watchdog where that does
  * not run) it gives up, one step at a time: the interference waves, the comets, grid density, trail length
  * with the glow, depth of field and ring dots, its pixel ratio, then its frame rate.
  */
 import { stageCues, type StageFrame } from './dom'
 import { easeInOut, easeOut, energy, heroScroll, masterBeats } from '../motion'
-import { SLOW_FRAME, TIERS, type HeroTier } from '../tier'
+import { overBudget, SLOW_FRAME, TIERS, type HeroTier } from '../tier'
+import { createPacer, pacing } from '../../core/clock'
 import { FROZEN, randomSource } from '../freeze'
+import { PERF_LAB, labNumber, labOff } from '../../core/perfLab'
 
 const VIOLET = [124 / 255, 92 / 255, 255 / 255]
 const LILAC = [167 / 255, 139 / 255, 250 / 255]
@@ -591,6 +593,25 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
     }
   }
   let { terrain, fx, vortex } = programs
+  /** The programs are linked (true), still compiling (false) or failed (null: nothing is drawn). */
+  let ready: boolean | null = false
+  let pollTimer = 0
+  /** Polls the programs' background compile (cheaply, on a timer: not tied to the hero being on screen). */
+  function poll() {
+    pollTimer = 0
+    if (disposed || lost) return
+    ready = settle(gl!, [terrain, fx, vortex])
+    if (ready === false) {
+      pollTimer = window.setTimeout(poll, 16)
+      return
+    }
+    stageCues.backdropReady = true
+    if (ready) {
+      if (still()) stillFrame()
+      else wake()
+    }
+  }
+  stageCues.backdropReady = false
   let terrainBuf = gl.createBuffer()!
   let fxBuf = gl.createBuffer()!
   // The vortex's seeds: one static buffer, written once (a tier's count is a prefix of it).
@@ -765,7 +786,7 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
     }
 
     // Up to 1.25x (the dots are soft; on 3x phones this is a ninth of the native fill), 1x in LOW, less once degraded.
-    dpr = (tune.dpr ?? Math.min(window.devicePixelRatio || 1, TIERS[tierNow()].terrainDpr)) * (degradeStep() >= 7 ? 0.75 : 1)
+    dpr = (tune.dpr ?? labNumber('tdpr') ?? Math.min(window.devicePixelRatio || 1, TIERS[tierNow()].terrainDpr)) * (degradeStep() >= 7 ? 0.75 : 1)
     canvas.width = Math.round(W * dpr)
     canvas.height = Math.round(H * dpr)
     layoutVersion++
@@ -1573,7 +1594,7 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
   let arrVersion = 0
 
   function draw(time: number, still: boolean) {
-    if (lost) return
+    if (lost || ready !== true) return
     if (degradeStep() !== lastDegrade || lite() !== wasLite || tierNow() !== lastTier) {
       const liteChanged = lite() !== wasLite
       lastDegrade = degradeStep()
@@ -1632,13 +1653,13 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
     g.bindBuffer(g.ARRAY_BUFFER, terrainBuf)
     g.enableVertexAttribArray(terrain.a.aFlow)
     g.vertexAttribPointer(terrain.a.aFlow, 4, g.FLOAT, false, 0, 0)
-    if (!tune.noDraw) g.drawArrays(g.POINTS, 0, gridCount)
+    if (!tune.noDraw && !labOff('landscape')) g.drawArrays(g.POINTS, 0, gridCount)
     g.disableVertexAttribArray(terrain.a.aFlow)
 
     drawVortex(px, py, breath, still)
 
     buildFx(still)
-    if (nFx) {
+    if (nFx && !labOff('fx')) {
       setShared(fx, px, py, breath)
       g.bindBuffer(g.ARRAY_BUFFER, fxBuf)
       g.bufferSubData(g.ARRAY_BUFFER, 0, fxData.subarray(0, nFx * FX_STRIDE))
@@ -1666,7 +1687,7 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
     const n = tune.vortexCount ?? vortexCount()
     const arc = stageCues.swallow
     arc.gain = 0
-    if (fade <= 0 || !n) return
+    if (fade <= 0 || !n || labOff('inflow')) return
     const g = gl!
     const phone = size === 'phone'
     const life = phone ? VORTEX.phoneLife : VORTEX.life
@@ -1738,13 +1759,14 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
   let raf = 0
   let last = 0
   let carry = 0
-  const moving = () => !lost && !still() && visible && !document.hidden && backdrop() > 0.01
+  const pace = createPacer()
+  const moving = () => !lost && !still() && visible && !document.hidden && backdrop() > 0.01 && !stageCues.loop
   /** CPU time per drawn frame (ms), for the performance check (the console, in development). */
   const cost = { sum: 0, n: 0, plan: 0 }
 
   /** Development only: GPU time of the layer's draws (EXT_disjoint_timer_query), when available. */
   // Opt in with ?gpu: polling the queries can stall the pipeline, so it is off even in development.
-  const timer = import.meta.env.DEV && new URLSearchParams(location.search).has('gpu') ? gl.getExtension('EXT_disjoint_timer_query') : null
+  const timer = PERF_LAB && new URLSearchParams(location.search).has('gpu') ? gl.getExtension('EXT_disjoint_timer_query') : null
   const gpu = { sum: 0, n: 0 }
   const queries: WebGLQuery[] = []
   let query: WebGLQuery | null = null
@@ -1770,7 +1792,7 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
   let resizeRaf = 0
   /**
    * Its own frame-rate watchdog, where the engine's governor (stageCues.degrade) does not run (LOW, or no
-   * engine): frames averaging over 24 ms for 3 s (once the intro is over) take it one step down its own
+   * engine): frames averaging over budget for 2 s (once the intro is over) take it one step down its own
    * rungs of the governor's ladder (degradeStep), only ever downward: the interference waves, the comets,
    * grid density, trail length with the glow and ring dots, resolution, then the frame rate.
    */
@@ -1778,13 +1800,14 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
   /** (The vortex goes first: half its dots, then all of them, before the first rung.) */
   const watchdog = { sum: 0, n: 0, level: 0, rung: 0, vortex: 0 }
   function watch(ms: number) {
-    if (stageCues.governed || watchdog.rung >= RUNGS.length || (performance.now() - bornAt) / 1000 < 6 || ms > 400) return
+    if (stageCues.governed || labOff('adapt') || watchdog.rung >= RUNGS.length || (performance.now() - bornAt) / 1000 < 6 || ms > 400) return
     watchdog.sum += ms
     watchdog.n++
     if (watchdog.sum < SLOW_FRAME.span) return
     const avg = watchdog.sum / watchdog.n
     watchdog.sum = watchdog.n = 0
-    if (avg <= SLOW_FRAME.ms) return
+    // (Its frames are the page's refreshes: the budget is the refresh's, unlocked.)
+    if (!overBudget(avg, false)) return
     if (watchdog.vortex < 2 && VORTEX.count[tierNow()] > 0) {
       watchdog.vortex++
       return
@@ -1793,7 +1816,7 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
     layout()
   }
   /** Development only: skip the layer entirely (A/B frame-time checks). */
-  let skip = false
+  let skip = labOff('terrain')
   function tick(now: number) {
     raf = 0
     if (!moving()) return idle()
@@ -1805,11 +1828,11 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
     if (last) watch(now - last)
     last = now
     carry += dt
-    // Phones and LOW: ~30 frames a second is plenty for motion this slow; the ladder's last step halves the
-    // rest to 30 (and those already at 30 to 20).
-    let fps = size === 'phone' || TIERS[tierNow()].fps <= 30 ? 30 : 60
-    if (degradeStep() >= 8) fps = fps > 30 ? 30 : 20
-    if (fps >= 60 || carry >= 1 / (fps + 2)) {
+    // Paced with the robot (clock.ts): about 60 frames a second on any display. Phones and LOW: an even ~30 is
+    // plenty for motion this slow; the ladder's last step halves the rest to 30 (and those already at 30 to 20).
+    const slow = size === 'phone' || TIERS[tierNow()].fps <= 30
+    const due = slow && degradeStep() >= 8 ? carry >= 1 / 22 : pace(now, slow || degradeStep() >= 8 || pacing.locked)
+    if (due) {
       const t0 = performance.now()
       gpuBegin()
       update(carry)
@@ -1856,8 +1879,8 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
   }
   const onRestored = () => {
     const rebuilt = build(gl)
-    if (!rebuilt) return
     ;({ terrain, fx, vortex } = rebuilt)
+    ready = false
     terrainBuf = gl.createBuffer()!
     fxBuf = gl.createBuffer()!
     vortexBuf = gl.createBuffer()!
@@ -1868,15 +1891,14 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
     lost = false
     gridKey = ''
     layout()
-    if (still()) stillFrame()
-    wake()
+    poll()
   }
   canvas.addEventListener('webglcontextlost', onLost)
   canvas.addEventListener('webglcontextrestored', onRestored)
 
   layout()
   setArrangement(lite() ? fixedArrangement() : arrangement(side))
-  if (import.meta.env.DEV)
+  if (PERF_LAB)
     Object.assign(window, {
       __heroTerrain: {
         cost,
@@ -1918,7 +1940,7 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
         state: () => ({ V, vortexCount: vortexCount(), vortexFade: vortexFade(), swallow: { ...stageCues.swallow }, ladder: { vortex: Math.max(stageCues.vortex, watchdog.vortex), degrade: degradeStep() }, nFx, ring: ringAt(clock - landAt), phase, clock, step, nArrive, nPath, rate, landAt, gridCount, C, B, G, L, W, H, detours: planner.detours, at: agentPos(), agentScreen: (() => { const [x, z] = agentPos(); return onScreen(cur, x, z) })() }),
       },
     })
-  wake()
+  poll()
 
   return {
     resize() {
@@ -1934,6 +1956,8 @@ export function mountTerrain(host: HTMLElement, parent: HTMLElement, frame: () =
     },
     dispose() {
       disposed = true
+      window.clearTimeout(pollTimer)
+      stageCues.backdropReady = true
       cancelAnimationFrame(raf)
       cancelAnimationFrame(resizeRaf)
       io.disconnect()
@@ -1967,45 +1991,59 @@ interface Program {
   /** The layout and arrangement versions its uniforms were last sent for. */
   layout: number
   arr: number
+  /** Still compiling (build): its shaders and the names to look up once it is linked. */
+  pending: { v: WebGLShader; f: WebGLShader; attrs: string[]; uniforms: string[] } | null
 }
 
 /** Uniform arrays (their location is their first element's). */
 const ARRAYS = new Set(['uWell', 'uHill', 'uFrontA', 'uFrontB', 'uWake', 'uRing'])
 
+/**
+ * The three programs, compiled and linked without waiting: with KHR_parallel_shader_compile the driver builds
+ * them in the background (asking for a status at once would hold the main thread until it is done, seconds on a
+ * phone while the robot's own shaders compile). settle() finishes them once they are ready.
+ */
 function build(gl: WebGLRenderingContext) {
-  const compile = (type: number, src: string) => {
-    const s = gl.createShader(type)!
-    gl.shaderSource(s, src)
-    gl.compileShader(s)
-    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
-      if (import.meta.env.DEV) console.warn('[terrain]', gl.getShaderInfoLog(s))
-      return null
+  const link = (vs: string, fs: string, attrs: string[], uniforms: string[]): Program => {
+    const shader = (type: number, src: string) => {
+      const sh = gl.createShader(type)!
+      gl.shaderSource(sh, src)
+      gl.compileShader(sh)
+      return sh
     }
-    return s
-  }
-  const link = (vs: string, fs: string, attrs: string[], uniforms: string[]): Program | null => {
-    const v = compile(gl.VERTEX_SHADER, vs)
-    const f = compile(gl.FRAGMENT_SHADER, fs)
-    if (!v || !f) return null
+    const v = shader(gl.VERTEX_SHADER, vs)
+    const f = shader(gl.FRAGMENT_SHADER, fs)
     const p = gl.createProgram()!
     gl.attachShader(p, v)
     gl.attachShader(p, f)
     gl.linkProgram(p)
-    gl.deleteShader(v)
-    gl.deleteShader(f)
-    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
-      if (import.meta.env.DEV) console.warn('[terrain]', gl.getProgramInfoLog(p))
-      return null
-    }
-    const u: Program['u'] = {}
-    for (const n of uniforms) u[n] = gl.getUniformLocation(p, ARRAYS.has(n) ? `${n}[0]` : n)
-    const a: Program['a'] = {}
-    for (const n of attrs) a[n] = gl.getAttribLocation(p, n)
-    return { p, u, a, layout: -1, arr: -1 }
+    return { p, u: {}, a: {}, layout: -1, arr: -1, pending: { v, f, attrs, uniforms } }
   }
   const shared = ['uWell', 'uHill', 'uBowl', 'uBowl2', 'uPlat', 'uCam', 'uScr', 'uShift', 'uHead', 'uBody', 'uClear', 'uDpr']
   const terrain = link(TERRAIN_VS, DOT_FS, ['aFlow'], [...shared, 'uFlowT', 'uDepth', 'uSize', 'uRowK', 'uFx', 'uFrontA', 'uFrontB', 'uWaveK', 'uWake', 'uTap', 'uMove', 'uSweep', 'uLand', 'uRing'])
   const fx = link(FX_VS, DOT_FS, ['aPos', 'aK', 'aSoft'], shared)
   const vortex = link(VORTEX_VS, DOT_FS, ['aSeed', 'aArm', 'aTrail'], [...shared, 'uFlow', 'uRing', 'uVLife', 'uVLook', 'uVClear'])
-  return terrain && fx && vortex ? { terrain, fx, vortex } : null
+  return { terrain, fx, vortex }
+}
+
+/** True once all three programs are linked and their locations read; false while they compile; null if one failed. */
+function settle(gl: WebGLRenderingContext, progs: Program[]): boolean | null {
+  const ext = gl.getExtension('KHR_parallel_shader_compile')
+  for (const prog of progs) {
+    if (!prog.pending) continue
+    if (ext && !gl.getProgramParameter(prog.p, ext.COMPLETION_STATUS_KHR)) return false
+  }
+  for (const prog of progs) {
+    const pend = prog.pending
+    if (!pend) continue
+    prog.pending = null
+    const ok = gl.getProgramParameter(prog.p, gl.LINK_STATUS)
+    if (!ok && import.meta.env.DEV) console.warn('[terrain]', gl.getShaderInfoLog(pend.v), gl.getShaderInfoLog(pend.f), gl.getProgramInfoLog(prog.p))
+    gl.deleteShader(pend.v)
+    gl.deleteShader(pend.f)
+    if (!ok) return null
+    for (const n of pend.uniforms) prog.u[n] = gl.getUniformLocation(prog.p, ARRAYS.has(n) ? `${n}[0]` : n)
+    for (const n of pend.attrs) prog.a[n] = gl.getAttribLocation(prog.p, n)
+  }
+  return true
 }
