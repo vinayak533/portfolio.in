@@ -11,3 +11,6 @@ dist
 src/project-videos/
 # Hero visual-regression output (scripts/hero-baseline.mjs) and audit scratch
 .hero-shots/
+
+# Performance lab build (scripts/perf-lab.mjs)
+dist-perf/

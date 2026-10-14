@@ -157,7 +157,8 @@ function legGeometry(rTop: number, rBottom: number, h: number) {
   return g
 }
 
-export function buildFurniture(kit: Kit): Furniture {
+/** The furniture, built in steps (a generator, as buildBody: body.ts). */
+export function* buildFurniture(kit: Kit): Generator<void, Furniture> {
   const { geo, mat } = kit
   const solids: Mesh[] = []
   const own: Material[] = []
@@ -181,6 +182,7 @@ export function buildFurniture(kit: Kit): Furniture {
     return o
   }
 
+  yield
   // ---- chair
 
   const chair = new Group()
@@ -218,6 +220,7 @@ export function buildFurniture(kit: Kit): Furniture {
   const spine = add(geo(new BoxGeometry(0.05, 0.3, 0.022)), satin, chair, 0, SEAT_TOP + 0.1, -0.255)
   spine.rotation.x = -0.1
 
+  yield
   // ---- table: level, centred on its own frame, its +z (the front edge) toward the robot
 
   const table = new Group()
@@ -288,6 +291,7 @@ export function buildFurniture(kit: Kit): Furniture {
   pool.rotation.x = -Math.PI / 2
   pool.renderOrder = -1
 
+  yield
   // ---- laptop
 
   const L = LAPTOP

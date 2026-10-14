@@ -247,13 +247,19 @@ export function span(o: Object3D, a: Vector3, b: Vector3, hint: Vector3) {
   orient(o, AB.subVectors(a, b), hint)
 }
 
-export function buildBody(kit: Kit, parent: Group): BodyRig {
+/**
+ * The body, built in steps (a generator: each `yield` is a point where the build may hand the main thread back,
+ * engine.ts mountRobotAsync; buildRobot runs it straight through).
+ */
+export function* buildBody(kit: Kit, parent: Group): Generator<void, BodyRig> {
   const { geo, mat } = kit
   const solids: Mesh[] = []
   const peel = orangePeel()
   kit.tex(peel.normal)
   kit.tex(peel.rough)
+  yield
 
+  yield
   // ---- materials (the body's own: the head keeps its originals, model.ts)
 
   const ceramic = mat(
@@ -322,6 +328,7 @@ export function buildBody(kit: Kit, parent: Group): BodyRig {
   /** A turned shell (lathe) along -Y: [radius, -y] pairs. */
   const lathe = (profile: [number, number][], segs = 28) => geo(new LatheGeometry(profile.map(([r, y]) => new Vector2(r, -y)).reverse(), segs))
 
+  yield
   // ---- pelvis, waist and the torso pivot (all riding on the hips)
 
   const hips = new Group()
@@ -330,6 +337,7 @@ export function buildBody(kit: Kit, parent: Group): BodyRig {
   add(geo(blobGeometry({ a: 0.13, b: 0.075, c: 0.1, e: 2.4 }, 32, 18)), rubber, hips, 0, 0.135, 0.01)
   const ribGeo = geo(new TorusGeometry(0.124, 0.008, 8, 40))
   for (const y of [0.11, 0.145]) {
+    yield
     const rib = add(ribGeo, satin, hips, 0, y, 0.0)
     rib.rotation.x = Math.PI / 2
     rib.scale.set(1, 0.8, 1)
@@ -411,6 +419,7 @@ export function buildBody(kit: Kit, parent: Group): BodyRig {
   const spineVent = mat(createVent({ cols: 5, rows: 3, shape: 'rect', dim: 0.6 }))
   const spineGeo = geo(new PlaneGeometry(0.075, 0.045))
   for (const [i, y] of [0.12, 0.03, -0.06].entries()) {
+    yield
     const z = -frontZ(TORSO, 0, y) - 0.004
     const sv = add(spineGeo, spineVent, shell, 0, y, z, false)
     sv.rotation.y = Math.PI
@@ -426,6 +435,7 @@ export function buildBody(kit: Kit, parent: Group): BodyRig {
   glowRing.rotation.x = Math.PI / 2
   add(geo(new CylinderGeometry(0.1, 0.13, 0.04, 40)), rubber, torso, 0, collarY - 0.02, 0)
 
+  yield
   // ---- shoulders: ceramic pods with a dot vent, over graphite ball joints
 
   const podGeo = geo(blobGeometry({ a: 0.1, b: 0.09, c: 0.105, e: 2.5, eBottom: 2.1 }, 32, 22))
@@ -433,6 +443,7 @@ export function buildBody(kit: Kit, parent: Group): BodyRig {
   const podVentGeo = geo(new CircleGeometry(0.036, 32))
   const shoulders: Vector3[] = []
   for (const s of [-1, 1] as const) {
+    yield
     const sx = s * 0.335
     const sy = TORSO_Y + 0.165
     const pod = add(podGeo, ceramic, torso, sx, sy + 0.04, -0.005)
@@ -443,6 +454,7 @@ export function buildBody(kit: Kit, parent: Group): BodyRig {
     shoulders.push(new Vector3(sx + s * 0.03, sy - 0.015, 0.0))
   }
 
+  yield
   // ---- arms (placed each frame by perform.ts) and hands
 
   const ballGeo = geo(new SphereGeometry(0.055, 24, 16))
@@ -479,6 +491,7 @@ export function buildBody(kit: Kit, parent: Group): BodyRig {
     return geo(new TubeGeometry(new CatmullRomCurve3(pts), 60, 0.0052, 6, false))
   })
 
+  yield
   const knuckleGeo = geo(new SphereGeometry(0.0125, 14, 10))
   const proxGeo = geo(new CapsuleGeometry(0.0102, 0.024, 4, 10))
   const midJointGeo = geo(new SphereGeometry(0.0108, 12, 8))
@@ -489,6 +502,7 @@ export function buildBody(kit: Kit, parent: Group): BodyRig {
 
   const arms: Arm[] = []
   for (const [i, s] of ([-1, 1] as const).entries()) {
+    yield
     const upper = new Group()
     const fore = new Group()
     const hand = new Group()
@@ -519,6 +533,7 @@ export function buildBody(kit: Kit, parent: Group): BodyRig {
       { x: -s * 0.05, z: 0.03, len: 0.9, splay: -s * 0.75, thumb: true },
     ]
     for (const d of defs) {
+      yield
       const base = new Group()
       base.position.set(d.x, d.thumb ? -0.008 : 0, d.z)
       base.rotation.y = d.splay
@@ -546,6 +561,7 @@ export function buildBody(kit: Kit, parent: Group): BodyRig {
     arms[i] = { side: s, shoulder: shoulders[i], upper, fore, hand, fingers }
   }
 
+  yield
   // ---- legs (placed each frame by perform.ts): thigh -> knee hub -> shin -> ankle -> foot
 
   const thighSleeve = geo(new CapsuleGeometry(0.05, THIGH - 0.06, 6, 18))
@@ -581,6 +597,7 @@ export function buildBody(kit: Kit, parent: Group): BodyRig {
 
   const legs: Leg[] = []
   for (const s of [-1, 1] as const) {
+    yield
     const thigh = new Group()
     const shin = new Group()
     const foot = new Group()

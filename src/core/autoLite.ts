@@ -1,5 +1,6 @@
 import { useStore } from '../store/useStore'
 import { FROZEN } from '../hero/freeze'
+import { labOff } from './perfLab'
 
 /**
  * Lite rendering is never a choice the visitor has to make: it switches itself on. Full quality by
@@ -42,7 +43,7 @@ export function initialLite(reducedMotion: boolean): boolean {
 /** Watches the frame rate once the page has loaded (WebGL only) and turns lite on if it stays low. */
 export function watchFrameRate(): () => void {
   // Development only: ?hq holds quality (captures on slow machines), as the hero engine's governor does.
-  if (import.meta.env.DEV && new URLSearchParams(location.search).has('hq')) return () => {}
+  if ((import.meta.env.DEV && new URLSearchParams(location.search).has('hq')) || labOff('adapt')) return () => {}
   let raf = 0
   let timer = 0
   let last = 0

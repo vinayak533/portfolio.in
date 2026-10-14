@@ -66,13 +66,15 @@ const stem = (w: string) => {
   return t
 }
 
-/** Lower-case, accent-free, punctuation-free, lightly stemmed words. */
+/** Lower-case, accent-free, punctuation-free, lightly stemmed words. "C++" and "C#" keep their own word ("cpp", "csharp"), so neither reads as C. */
 export function words(s: string): string[] {
   return s
     .toLowerCase()
     .normalize('NFKD')
     .replace(/[̀-ͯ]/g, '')
     .replace(/['’]s\b/g, '')
+    .replace(/\bc\+\+/g, 'cpp')
+    .replace(/\bc#/g, 'csharp')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
     .split(' ')
@@ -622,7 +624,6 @@ const TOPICS: Topic[] = [
     reply: () => ({
       text: [
         `**${site.name}** is an ${site.role} at **${currentRole.company}** in ${site.location}.`,
-        image(assistant.images.profile),
         assistant.profile.pitch,
         list(assistant.profile.proof),
         '*Want to see his best project?*',
@@ -664,7 +665,7 @@ const TOPICS: Topic[] = [
             stockAgents && `${namedMore(stockAgents)}: CrewAI agents turning live market data into a Buy, Sell or Hold rationale.`,
           ].filter((s): s is string => Boolean(s)),
         ),
-        `**Toolkit:** ${assistant.skillGroups.find((g) => g.label === 'LLMs and agents')?.items.join(', ')}.`,
+        `**Toolkit:** ${assistant.skillGroups.find((g) => g.label === 'Generative AI & LLMs')?.items.join(', ')}.`,
         '*Want the architecture behind Loom.ai?*',
       ].join('\n\n'),
       suggestions: ['How does Loom.ai work?', 'Why should I hire him?'],
@@ -715,7 +716,7 @@ const TOPICS: Topic[] = [
   })),
   {
     id: 'projects',
-    keys: keys('project', 'projects', 'portfolio', 'what has he built', 'what did he build', 'built', 'build', 'made', 'created', 'showcase', 'side project', 'app', 'apps', 'what else', 'repo', 'repos', 'repositories', 'recent', 'recent work', 'recent project', 'latest', 'latest work', 'newest', 'what new', 'lately', 'work sample', 'work samples', 'all project', 'list of project'),
+    keys: keys('project', 'projects', 'portfolio', 'what has he built', 'what did he build', 'built', 'build', 'made', 'created', 'showcase', 'side project', 'app', 'apps', 'what else', 'repo', 'repos', 'repositories', 'recent', 'recent work', 'recent project', 'latest', 'latest work', 'newest', 'what new', 'lately', 'work sample', 'work samples', 'all project', 'list of project', 'case study', 'case studies'),
     reply: () => ({
       text: [
         `**Flagship**\n\n${list(flagship)}`,

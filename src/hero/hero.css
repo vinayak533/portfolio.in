@@ -209,6 +209,11 @@
   inset: 0;
   background: rgb(167 139 250 / 0.13);
 }
+/* Its own compositor layer while the beat pulses it (stage.ts): the swell is then composited, not a repaint of
+   the masked cone (and whatever shares its layer) on every frame. */
+.hero-cinematic:not([data-idle]) .hero-beam__light {
+  will-change: opacity;
+}
 
 /* The violet glow pool under the dais (the robot's floor reflection is drawn over it, engine.ts). */
 .hero-pool {
@@ -243,6 +248,27 @@
 .hero-cinematic[data-live] .hero-poster {
   opacity: 0;
   visibility: hidden;
+}
+/* The last-resort loop (src/hero/loop.ts): the hero pre-rendered, in the poster's place and framing, over the
+   poster and the stage. It covers with the poster's crossfade; while it does, the live robot's canvas (fixed over
+   the page, robot.css) is put away, and it comes back the same way as the hand-off begins. */
+.hero-loop {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 40%;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur-swap) var(--ease-in-out);
+}
+.hero-cinematic[data-loop] .hero-loop {
+  opacity: 1;
+}
+html[data-hero-loop] .robot-canvas:not(.is-docked) {
+  opacity: 0;
 }
 /* Under the poster the stage's layers are laid out (and drawn) but not shown: when the engine's layout
    moves the beam and the floor's pool, nothing visible shifts. */

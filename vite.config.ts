@@ -156,8 +156,10 @@ function heroBoot(): Plugin {
   }
 }
 
-export default defineConfig(({ command }) => ({
+export default defineConfig(({ command, mode }) => ({
   plugins: [react(), tailwindcss(), glsl({ minify: command === 'build' }), contactApi(), siteMeta(), heroBoot()],
+  // `npm run perf:build`: the production build with the performance lab's switches (src/core/perfLab.ts).
+  define: mode === 'perf' ? { 'import.meta.env.VITE_PERF_LAB': JSON.stringify('1') } : {},
   // OneDrive turns node_modules files into reparse points; without this the
   // Rolldown resolver treats them as broken symlinks and fails to resolve deps.
   resolve: { preserveSymlinks: true },

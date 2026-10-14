@@ -48,6 +48,7 @@ import {
   Vector3,
   type BufferGeometry,
   type Material,
+  type Skeleton,
   type Texture,
 } from 'three'
 import { createDais, createDotFace, DAIS_R, FACE_GRID, type FaceMood } from './dots'
@@ -55,7 +56,8 @@ import { blobGeometry, frontPanel, frontRect, seamGeometry, squircle, squircleR,
 import { buildBody, type BodyRig, type Kit } from './body'
 import { buildHeadphones, createCommitPulse, createEqualizer, createOrbitRing, KEYBOARD, type CommitPulse, type Headphones, type Keyboard, type PointRing } from './props'
 import { buildFurniture, KEYS_TOP, LAPTOP, LID_H, LID_TILT, TABLE, TABLE_TOP } from './furniture'
-import { heldObjects, mergeStatic } from './merge'
+import { heldObjects, mergeStatic, skinParts } from './merge'
+import { PERF_LAB, labOff } from '../../core/perfLab'
 
 export interface Seat {
   x: number
@@ -232,10 +234,21 @@ function zTexture(): Texture {
   return tex
 }
 
+/** The robot, built straight through (engine.ts mountRobotAsync runs buildRobotSteps in slices instead). */
 export function buildRobot(): RobotModel {
+  const steps = buildRobotSteps()
+  for (;;) {
+    const r = steps.next()
+    if (r.done) return r.value
+  }
+}
+
+/** The robot, built in steps: each `yield` is a point where the build may hand the main thread back. */
+export function* buildRobotSteps(): Generator<void, RobotModel> {
   const geometries: BufferGeometry[] = []
   const materials: Material[] = []
   const textures: Texture[] = []
+  const skeletons: Skeleton[] = []
   const headMaterials = new Set<Material>()
   const stageMaterials = new Set<Material>()
   const propMaterials = new Set<Material>()
@@ -243,6 +256,7 @@ export function buildRobot(): RobotModel {
   const mat = <M extends Material>(m: M, owner?: Set<Material>) => (materials.push(m), owner?.add(m), m)
   const tex = <T extends Texture>(t: T) => (textures.push(t), t)
 
+  yield
   // ---- the head's materials, exactly as designed (the body has its own, body.ts)
 
   // Matte ceramic with a soft clearcoat: the key light gives it a gentle highlight, never a mirror.
@@ -308,6 +322,7 @@ export function buildRobot(): RobotModel {
   const body = new Group()
   root.add(body)
 
+  yield
   // ---- dais: a base disc, the rings of dots, a faint glow lifting off them, a shadow catcher for the
   // figure and the furniture, the equaliser round it all, two orbit rings and the commit pulse
 
@@ -373,19 +388,21 @@ export function buildRobot(): RobotModel {
   mat(pulse.material, S)
   stage.add(pulse.points)
 
+  yield
   // ---- body
 
   const kit: Kit = { geo, mat: (m) => mat(m), tex, glow: glowTex }
-  const rig = buildBody(kit, body)
+  const rig = yield* buildBody(kit, body)
   rig.hips.position.set(0, 0.672, 0)
   rig.hips.updateMatrix()
   rig.torso.updateMatrix()
   const NECK_Y = rig.neck.clone().applyMatrix4(rig.torso.matrix).applyMatrix4(rig.hips.matrix).y
 
+  yield
   // ---- the desk
 
   const furnitureFrom = materials.length
-  const furniture = buildFurniture(kit)
+  const furniture = yield* buildFurniture(kit)
   for (const m of furniture.own) propMaterials.add(m)
   const furnitureMaterials = materials.slice(furnitureFrom).filter((m) => !propMaterials.has(m))
   root.add(furniture.chair, furniture.table, furniture.laptop)
@@ -477,6 +494,7 @@ export function buildRobot(): RobotModel {
   }
   placeFurniture(1)
 
+  yield
   // ---- head
 
   const headPivot = new Group()
@@ -555,11 +573,13 @@ export function buildRobot(): RobotModel {
   })
 
 
+  yield
   // ---- headphones, over the ear caps (the head itself is not touched)
 
   const phoneKit: Kit = { geo, mat: (m) => mat(m, propMaterials), tex, glow: glowTex }
   const phones = buildHeadphones(phoneKit, head)
 
+  yield
   // ---- shadows: the body, the head, the headphones and the furniture cast and take soft shadows
 
   const shadowCasters: Mesh[] = [...rig.solids, ...phones.meshes, ...furniture.solids]
@@ -654,11 +674,13 @@ export function buildRobot(): RobotModel {
     extents: { daisR: DAIS_R },
     dispose() {
       geometries.forEach((g) => g.dispose())
+      skeletons.forEach((k) => k.dispose())
       materials.forEach((m) => m.dispose())
       textures.forEach((t) => t.dispose())
     },
   }
 
+  yield
   // ---- fewer draws (merge.ts): the static opaque parts baked into what moves them, the picture unchanged.
   // Held: everything the handle reaches at run time (not its build-time lists), and the table's glow.
   // (Development: ?nomerge keeps every mesh, for A/B checks.)
@@ -671,5 +693,39 @@ export function buildRobot(): RobotModel {
     geometries.splice(geometries.indexOf(g), 1)
     g.dispose()
   }
+
+  yield
+  // ---- and what moves (merge.ts skinParts): the parts riding on each held group drawn as one skinned mesh per
+  // material, within each visibility domain the engine shows and hides on its own (engine.ts setDocked, putAway).
+  if (labOff('skin')) return model
+  // Domains: the head (never hidden), the rest of the body (hidden together once docked), the chair, the table,
+  // the laptop's parts (hidden together once docked), the stage. Each skinned mesh hangs in its domain's group.
+  const bodyParts = new Group()
+  bodyParts.name = 'skinned body'
+  body.add(bodyParts)
+  const laptopParts = new Group()
+  laptopParts.name = 'skinned laptop'
+  furniture.laptop.add(laptopParts)
+  // The neck: of the body, under the head's pivot (the engine hides it on its own once docked).
+  const neckParts = new Group()
+  neckParts.name = 'skinned neck'
+  headPivot.add(neckParts)
+  const neck = new Set<Object3D>()
+  headPivot.traverse((o) => {
+    if (o instanceof Mesh && bodyMaterials.includes(o.material as Material)) neck.add(o)
+  })
+  const domainOf = (o: Object3D): Object3D | null => {
+    if (neck.has(o)) return neckParts
+    for (let x: Object3D | null = o.parent; x; x = x.parent) {
+      if (x === headPivot || x === stage || x === furniture.chair || x === furniture.table) return x
+      if (x === body) return bodyParts
+      if (x === furniture.laptop) return laptopParts
+    }
+    return null
+  }
+  const skinned = skinParts(root, held, domainOf, new Set(), !labOff('skinalpha'))
+  if (PERF_LAB) Object.assign(window, { __skinned: { parts: skinned.parts, meshes: skinned.meshes, why: skinned.why } })
+  geometries.push(...skinned.created)
+  skeletons.push(...skinned.skeletons)
   return model
 }

@@ -12,14 +12,17 @@ import './styles/global.css'
 
 import { App } from './App'
 import { useStore } from './store/useStore'
-import { detectQuality, hasWebGL2, isTouchDevice, prefersReducedMotion } from './core/quality'
+import { detectQuality, gpuName, hasWebGL2, isTouchDevice, prefersReducedMotion } from './core/quality'
 import { initialLite, watchFrameRate } from './core/autoLite'
 import { expect } from './core/loading'
 import { initialHeroTier } from './hero/tier'
+import { softwareRenderer } from './hero/loop'
 
 // Decide the render mode once, before first paint.
 const reducedMotion = prefersReducedMotion()
-const webgl = hasWebGL2()
+// A software renderer (no GPU behind the WebGL) draws every frame on the CPU: the static layout, whose hero is
+// its pre-rendered loop (src/hero/loop.ts).
+const webgl = hasWebGL2() && !softwareRenderer(gpuName())
 // ?static forces the no-WebGL / reduced-motion layout for QA.
 const forceStatic = new URLSearchParams(location.search).has('static')
 const mode = webgl && !reducedMotion && !forceStatic ? 'webgl' : 'static'

@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { assistant } from '../../assistant'
 import { contact, experience, site } from '../../content'
-import { COMMANDS, nodeCode, preview, ROUTE_LABEL, stats, type Action, type Resolution, type Route, type View } from '../../core/console'
+import { COMMANDS, stats, type Action, type Resolution, type View } from '../../core/console'
 import {
   capabilitiesOf,
   capabilitiesUsing,
@@ -22,6 +22,9 @@ import {
 } from '../../core/graph'
 import { closeOpenMarks, streamChunks, toPlainText } from '../../core/markdown'
 import { InlineMarkdown, Markdown } from './Markdown'
+import { Robot } from './Robot'
+import { SignOff, type Pic } from './SignOff'
+import { Work, planWork } from './Work'
 
 /** What every view can do: run an input, put one in the command line, light a node on the map, follow a page link. */
 export interface ViewActions {
@@ -29,33 +32,31 @@ export interface ViewActions {
   fill: (input: string) => void
   probe: (key: string | null) => void
   onAnchor: (id: string) => void
+  /** Open pictures in the viewer, at `i`. */
+  view: (pics: Pic[], i: number) => void
   resume: string | null
 }
 
-const Actions = createContext<ViewActions>({ run: () => {}, fill: () => {}, probe: () => {}, onAnchor: () => {}, resume: null })
+const Actions = createContext<ViewActions>({ run: () => {}, fill: () => {}, probe: () => {}, onAnchor: () => {}, view: () => {}, resume: null })
 const useActions = () => useContext(Actions)
 
 /* ----------------------------------------------------------------- pieces */
 
-const pad = (n: number) => String(n).padStart(2, '0')
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
-function Head({ code, meta, title, sub }: { code: string; meta?: (string | false | undefined)[]; title: string; sub?: ReactNode }) {
+/** A view's heading: a quiet line of context, the title, and a line under it. */
+function Head({ meta, title, sub }: { meta?: (string | false | undefined)[]; title: string; sub?: ReactNode }) {
+  const m = meta?.filter(Boolean) as string[] | undefined
   return (
     <header className="cx-vhead">
-      <p className="cx-kicker">
-        <span className="cx-code">{code}</span>
-        {meta?.filter(Boolean).map((m) => (
-          <span key={m as string}>{m}</span>
-        ))}
-      </p>
+      {m && m.length > 0 && <p className="cx-kicker">{m.join(' · ')}</p>}
       <h3 className="cx-title">{title}</h3>
       {sub && <p className="cx-sub">{sub}</p>}
     </header>
   )
 }
 
-/** A numbered section (CSS counter). */
+/** A titled section of a view. */
 function Sec({ title, aside, children }: { title: string; aside?: string; children: ReactNode }) {
   return (
     <section className="cx-sec">
@@ -91,14 +92,13 @@ function Chip({ node, count, note }: { node: GraphNode; count?: number; note?: s
   )
 }
 
-/** A node as a list row: code, name, a line about it. */
+/** A node as a list row: name, a line about it. */
 function NodeRow({ node, line, meta, style }: { node: GraphNode; line?: ReactNode; meta?: ReactNode; style?: CSSProperties }) {
   const { run } = useActions()
   const probe = useProbe(node.key)
   return (
     <li style={style}>
       <button type="button" className="cx-row" data-kind={node.kind} onClick={() => run(commandFor(node))} {...probe}>
-        <span className="cx-row-code">{nodeCode(node)}</span>
         <span className="cx-row-main">
           <span className="cx-row-title">{node.label}</span>
           {line && <span className="cx-row-line">{line}</span>}
@@ -106,6 +106,17 @@ function NodeRow({ node, line, meta, style }: { node: GraphNode; line?: ReactNod
         {meta && <span className="cx-row-meta">{meta}</span>}
       </button>
     </li>
+  )
+}
+
+/** A picture in a reply: a project's screenshot, the stack. */
+function Figure({ image }: { image: { alt: string; src: string } }) {
+  const [failed, setFailed] = useState(false)
+  if (failed) return null
+  return (
+    <figure className="cx-figure">
+      <img src={image.src} alt={image.alt} loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setFailed(true)} />
+    </figure>
   )
 }
 
@@ -145,68 +156,143 @@ function CopyText({ text, label }: { text: string; label: string }) {
 
 /* ------------------------------------------------------------------ views */
 
+/** Ease-out count from 0, once per page load (later first screens show the numbers at rest). */
+let counted = false
+function useCountUp(to: number, ms = 800) {
+  const [n, setN] = useState(() => (counted || matchMedia('(prefers-reduced-motion: reduce)').matches ? to : 0))
+  useEffect(() => {
+    if (n === to) return
+    const t0 = performance.now()
+    // A timer, not requestAnimationFrame, which the WebGL page can starve.
+    const id = window.setInterval(() => {
+      const k = Math.min(1, (performance.now() - t0) / ms)
+      setN(Math.round(to * (1 - (1 - k) ** 3)))
+      if (k >= 1) {
+        window.clearInterval(id)
+        counted = true
+      }
+    }, 16)
+    return () => window.clearInterval(id)
+    // Runs once: the count starts from where the first render left it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  return n
+}
+
+function Pill({ value, plus, label }: { value: number; plus?: boolean; label: string }) {
+  const n = useCountUp(value)
+  return (
+    <li className="cx-pill">
+      <span className="cx-pill-n">
+        {n}
+        {plus && n === value ? '+' : ''}
+      </span>{' '}
+      {label}
+    </li>
+  )
+}
+
+const SUGGEST_ICONS: Record<string, ReactNode> = {
+  grid: <path d="M3.5 3.5h5v5h-5zM11.5 3.5h5v5h-5zM3.5 11.5h5v5h-5zM11.5 11.5h5v5h-5z" />,
+  spark: <path d="M10 2.5v4M10 13.5v4M2.5 10h4M13.5 10h4M5 5l2.2 2.2M12.8 12.8 15 15M15 5l-2.2 2.2M7.2 12.8 5 15" />,
+  star: <path d="m10 2.8 2.2 4.6 5 .6-3.7 3.4 1 5-4.5-2.5-4.5 2.5 1-5L2.8 8l5-.6z" />,
+  mail: <path d="M3 5.5h14v9H3zM3.5 6l6.5 5 6.5-5" />,
+}
+
+const TIPS = [
+  'Type / to see every command.',
+  'Click any project in the graph to ask about it.',
+  'Press Esc while I’m working to interrupt.',
+  'Ask a follow-up like “how does it work?”',
+  'Answers end with pictures whenever there are some.',
+]
+
+/** One tip at a time, changing every few seconds (fixed under reduced motion). */
+function Tip() {
+  const [i, setI] = useState(0)
+  useEffect(() => {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const t = window.setInterval(() => setI((n) => (n + 1) % TIPS.length), 4200)
+    return () => window.clearInterval(t)
+  }, [])
+  return (
+    <p className="cx-tip">
+      <span className="cx-tip-k">Tip</span>
+      <span className="cx-tip-t" key={i}>
+        {TIPS[i]}
+      </span>
+    </p>
+  )
+}
+
+/**
+ * The first screen: a welcome box like a coding agent's (what this is, the index in a line), a
+ * headline, his work in four numbers, and four numbered questions to start with.
+ */
 function Home() {
   const { run } = useActions()
   const c = assistant.console
   const s = stats()
+  const counted = { Projects: s.projects, Technologies: s.tech, Capabilities: s.capabilities, Roles: s.roles }
+  const [lead, rest] = c.headline.split(/,\s*/)
   return (
     <div className="cx-home">
-      <p className="cx-kicker">
-        <span className="cx-code">{c.kicker}</span>
-      </p>
-      <h3 className="cx-statement">
-        <span>{c.statement[0]}</span>
-        <span className="cx-accent">{c.statement[1]}</span>
+      <div className="cx-welcome">
+        <span className="cx-welcome-bot" aria-hidden="true">
+          <Robot mood="happy" live />
+        </span>
+        <div className="cx-welcome-text">
+          <p className="cx-welcome-t">
+            <span className="cx-welcome-star" aria-hidden="true">
+              ✻
+            </span>{' '}
+            Welcome to <strong>{assistant.name}</strong>
+          </p>
+          <p className="cx-welcome-l">
+            <code>/help</code> for commands · <kbd>Ctrl</kbd> <kbd>K</kbd> to open or close
+          </p>
+          <p className="cx-welcome-l cx-welcome-l--dim">
+            answers only from his projects, roles and skills · runs in your browser
+          </p>
+        </div>
+      </div>
+      <h3 className="cx-hero">
+        {rest ? (
+          <>
+            {lead}, <em>{rest}</em>
+          </>
+        ) : (
+          c.headline
+        )}
       </h3>
       <p className="cx-lede">{c.lede}</p>
-      <dl className="cx-counts">
-        {(
-          [
-            ['Projects', s.projects],
-            ['Technologies', s.tech],
-            ['Capabilities', s.capabilities],
-            ['Roles', s.roles],
-          ] as const
-        ).map(([k, v]) => (
-          <div key={k}>
-            <dt>{k}</dt>
-            <dd>{pad(v)}</dd>
-          </div>
+      <ul className="cx-pills" aria-label="His work in numbers">
+        {c.pills.map((p) => (
+          <Pill key={p.label} value={p.value ?? counted[p.label]} plus={p.plus} label={p.label} />
         ))}
-      </dl>
-      <Sec title="Entry points">
-        <ul className="cx-entry">
-          {c.entry.map((cmd) => {
-            const spec = COMMANDS.find((x) => `/${x.name}` === cmd)
-            const pv = preview(cmd)
-            return (
-              <li key={cmd}>
-                <button type="button" onClick={() => run(cmd)}>
-                  <code>{cmd}</code>
-                  <span className="cx-entry-text">
-                    <span>{spec?.summary}</span>
-                    {pv?.lines[pv.lines.length - 1] && <span className="cx-entry-pv">{pv.lines[pv.lines.length - 1]}</span>}
-                  </span>
-                  <span className="cx-enter" aria-hidden="true">
-                    ↵
-                  </span>
-                </button>
-              </li>
-            )
-          })}
-        </ul>
-      </Sec>
-      <Sec title="Or ask">
-        <ul className="cx-asks">
-          {c.examples.map((q) => (
-            <li key={q}>
-              <button type="button" onClick={() => run(q)}>
-                {q}
-              </button>
-            </li>
-          ))}
-        </ul>
-      </Sec>
+      </ul>
+      <p className="cx-try">Try asking</p>
+      <ol className="cx-suggest" aria-label="Suggested questions">
+        {c.suggestions.map((x, i) => (
+          <li key={x.q} style={{ '--i': i } as CSSProperties}>
+            <button type="button" onClick={() => run(x.q)}>
+              <span className="cx-suggest-n" aria-hidden="true">
+                {String(i + 1).padStart(2, '0')}
+              </span>
+              <span className="cx-suggest-icon" aria-hidden="true">
+                <svg viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  {SUGGEST_ICONS[x.icon]}
+                </svg>
+              </span>
+              <span className="cx-suggest-q">{x.q}</span>
+              <svg className="cx-suggest-go" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                <path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          </li>
+        ))}
+      </ol>
+      <Tip />
     </div>
   )
 }
@@ -221,7 +307,8 @@ function Project({ id }: { id: string }) {
   const arch = graph.architecture(p.id)
   return (
     <>
-      <Head code={nodeCode(p)} meta={[p.year, p.role, p.flagship && 'flagship', p.onPage ? 'case study on this page' : 'on GitHub']} title={p.label} sub={<InlineMarkdown text={p.tagline} />} />
+      <Head meta={[p.year, p.role, p.flagship && 'Flagship', p.onPage ? 'Case study on this page' : 'On GitHub']} title={p.label} sub={<InlineMarkdown text={p.tagline} />} />
+      {p.image && <Figure image={p.image} />}
       {p.overview && (
         <p className="cx-prose">
           <InlineMarkdown text={p.overview} onAnchor={onAnchor} />
@@ -278,7 +365,7 @@ function Project({ id }: { id: string }) {
         <Sec title="Architecture" aside={`${arch.stages.length} stages`}>
           <button type="button" className="cx-archlink" onClick={() => run(`/arch ${p.id}`)}>
             <span className="cx-archlink-flow">{arch.stages.map((s) => s.label).join('  →  ')}</span>
-            <code>/arch {p.id}</code>
+            <span className="cx-archlink-go">See the architecture →</span>
           </button>
         </Sec>
       )}
@@ -346,12 +433,12 @@ function Arch({ id }: { id: string }) {
   const named = (label: string) => tech.filter((t) => label.toLowerCase().includes(t.label.toLowerCase()))
   return (
     <>
-      <Head code={`ARC · ${nodeCode(p)}`} meta={[plural(a.stages.length, 'stage'), 'documented']} title={p.label} sub={a.title} />
+      <Head meta={[`${plural(a.stages.length, 'stage')}, as documented`]} title={p.label} sub={a.title} />
       <ol className="cx-arch" aria-label={`${p.label}: ${a.title}`}>
         {a.stages.map((s, i) => (
           <li key={s.label} style={{ '--i': i } as CSSProperties}>
             <span className="cx-arch-n" aria-hidden="true">
-              {pad(i + 1)}
+              {i + 1}
             </span>
             <div className="cx-arch-box">
               <p className="cx-arch-label">{s.label}</p>
@@ -404,7 +491,7 @@ function Tech({ techKey }: { techKey: string }) {
       : `Listed under ${t.group} in his skills. No project or role in the index names it, so there is nothing more to show.`
   return (
     <>
-      <Head code={nodeCode(t)} meta={[t.group, t.skill ? 'listed skill' : undefined]} title={t.label} sub={sub} />
+      <Head meta={[t.group, t.skill ? 'Listed skill' : undefined]} title={t.label} sub={sub} />
       {users.length > 0 && (
         <Sec title="Used in" aside={`${users.length}`}>
           <ul className="cx-rows">
@@ -460,7 +547,7 @@ function Capability({ id }: { id: string }) {
   const tech = techForCapability(c.key).slice(0, 12)
   return (
     <>
-      <Head code={nodeCode(c)} meta={[plural(ev.projects.length, 'project'), ev.roles.length > 0 && plural(ev.roles.length, 'role')]} title={c.label} sub={c.summary} />
+      <Head meta={[plural(ev.projects.length, 'project'), ev.roles.length > 0 && plural(ev.roles.length, 'role')]} title={c.label} sub={c.summary} />
       <Sec title="Evidence" aside="from each project’s own text">
         <ul className="cx-evidence">
           {ev.projects.map((p) => (
@@ -487,7 +574,7 @@ function Capability({ id }: { id: string }) {
         </Sec>
       )}
       <button type="button" className="cx-btn cx-btn--wide" onClick={() => run(`/projects ${c.id}`)}>
-        List these as projects <code>/projects {c.id}</code>
+        List these as projects
       </button>
     </>
   )
@@ -499,7 +586,6 @@ function EvidenceRow({ node, why }: { node: GraphNode; why: string }) {
   return (
     <li>
       <button type="button" className="cx-ev" onClick={() => run(commandFor(node))} {...probe}>
-        <span className="cx-row-code">{nodeCode(node)}</span>
         <span className="cx-ev-main">
           <span className="cx-row-title">{node.label}</span>
           <span className="cx-ev-why">
@@ -523,7 +609,7 @@ function Projects({ filter }: { filter?: string }) {
     const ps = (f.kind === 'tech' ? projectsUsing(f.key) : evidenceFor(f.key).projects).map((x) => x.node)
     return (
       <>
-        <Head code="IDX · FILTER" meta={[f.kind === 'tech' ? 'technology' : 'capability']} title={`Projects · ${f.short}`} sub={`${plural(ps.length, 'project')} ${f.kind === 'tech' ? 'name' : 'show'} ${f.label}.`} />
+        <Head meta={[f.kind === 'tech' ? 'Technology' : 'Capability']} title={`Projects with ${f.short}`} sub={`${plural(ps.length, 'project')} ${f.kind === 'tech' ? 'name' : 'show'} ${f.label}.`} />
         <div className="cx-filter">
           <Chip node={f} />
           <button type="button" className="cx-btn" onClick={() => run('/projects')}>
@@ -540,7 +626,7 @@ function Projects({ filter }: { filter?: string }) {
   const minor = all.filter((p) => p.minor)
   return (
     <>
-      <Head code="IDX" meta={[plural(all.length, 'project')]} title="Projects" sub={`${all.filter((p) => p.onPage).length} have case studies on this page; the rest are on GitHub. Filter with /projects <technology>.`} />
+      <Head meta={[plural(all.length, 'project')]} title="Projects" sub={`${all.filter((p) => p.onPage).length} have case studies on this page; the rest are on GitHub.`} />
       <Sec title="Flagship">
         <ul className="cx-rows">{rows(flagship)}</ul>
       </Sec>
@@ -568,7 +654,8 @@ function Stack() {
   const max = Math.max(...tech.map((t) => usage(t.key)))
   return (
     <>
-      <Head code="IDX · TEC" meta={[plural(tech.length, 'technology', 'technologies'), plural(groups.length, 'group')]} title="Stack" sub="Every technology in his skills and projects. The bar is how many projects use it; an empty bar is a listed skill no project in the index names." />
+      <Head meta={[plural(tech.length, 'technology', 'technologies'), plural(groups.length, 'group')]} title="Stack" sub="Every technology in his skills and projects. The bar is how many projects use it; an empty bar is a listed skill no project in the index names." />
+      <Figure image={assistant.images.stack} />
       {groups.map(({ g, ts }) => (
         <Sec key={g} title={g} aside={`${ts.length}`}>
           <ul className="cx-bars">
@@ -608,7 +695,7 @@ function Experience({ role }: { role?: string }) {
   }, [role])
   return (
     <>
-      <Head code="EXP" meta={[plural(roles.length, 'role')]} title="Experience" sub="Newest first. Technologies are the ones each role’s details name." />
+      <Head meta={[plural(roles.length, 'role')]} title="Experience" sub="Newest first. Technologies are the ones each role’s details name." />
       <ol ref={list} className="cx-timeline">
         {roles.map((r) => {
           const tech = techOf(r.key)
@@ -658,7 +745,7 @@ function Profile() {
   const now = experience.find((r) => /present/i.test(r.end)) ?? experience[0]
   return (
     <>
-      <Head code="ID · 00" meta={[site.role, `${site.location} · ${site.timezoneLabel}`]} title={site.name} sub={assistant.profile.pitch} />
+      <Head meta={[site.role, `${site.location} · ${site.timezoneLabel}`]} title={site.name} sub={assistant.profile.pitch} />
       <p className="cx-prose">
         <InlineMarkdown text={assistant.profile.positioning} />
       </p>
@@ -675,7 +762,6 @@ function Profile() {
         <ul className="cx-rows">
           <li>
             <button type="button" className="cx-row" onClick={() => run(`/experience ${graph.of('role')[0]?.id ?? ''}`)}>
-              <span className="cx-row-code">ROL 01</span>
               <span className="cx-row-main">
                 <span className="cx-row-title">
                   {now.title}, {now.company}
@@ -716,12 +802,11 @@ function Certs() {
   const cs = assistant.certifications
   return (
     <>
-      <Head code="IDX · CRT" meta={[plural(cs.length, 'certification')]} title="Certifications" sub="Newest first. Verify links appear only where they were checked to resolve to his certificate." />
+      <Head meta={[plural(cs.length, 'certification')]} title="Certifications" sub="Newest first. Verify links appear only where they were checked to resolve to his certificate." />
       <ul className="cx-rows">
-        {cs.map((c, i) => (
+        {cs.map((c) => (
           <li key={c.id}>
             <div className="cx-row cx-row--static">
-              <span className="cx-row-code">CRT {pad(i + 1)}</span>
               <span className="cx-row-main">
                 <span className="cx-row-title">{c.title}</span>
                 <span className="cx-row-line">
@@ -752,7 +837,7 @@ function Contact() {
   const direct = assistant.notCovered.filter((n) => n.direct).map((n) => n.label)
   return (
     <>
-      <Head code="CON" meta={['direct links']} title="Contact" sub="Genuine ways to reach Vinayak." />
+      <Head title="Contact" sub="Genuine ways to reach Vinayak." />
       <div className="cx-mail">
         <a href={`mailto:${contact.email}`} className="cx-mail-addr">
           {contact.email}
@@ -800,24 +885,17 @@ function Help() {
   const { fill, run } = useActions()
   const groups = [...new Set(COMMANDS.map((c) => c.group))]
   const keys: [string, string][] = [
-    ['/', 'Open the command palette'],
-    ['↑ ↓', 'Move in the palette, or through earlier inputs'],
-    ['Tab', 'Complete the highlighted command'],
-    ['↵', 'Run'],
-    ['Esc', 'Close the palette, clear the line, go back, then close'],
-    ['Ctrl K / ⌘K', 'Open or close the console from anywhere on the page'],
-    ['← → ↑ ↓', 'Move through the relation map'],
-  ]
-  const routes: [Route, string][] = [
-    ['command', 'Input starting with “/” runs that command.'],
-    ['entity', 'A whole input that names a project, technology, capability or role opens it (“loom”, “fastapi”, “rag”).'],
-    ['context', 'A follow-up about what is on screen: “which projects use it?”, “how does it work?”.'],
-    ['intent', 'Keyword and synonym rules match the question to a curated answer or view.'],
-    ['fallback', 'Nothing matched: it says so and lists the nearest names, rather than guessing.'],
+    ['/', 'Show the commands'],
+    ['↵', 'Send'],
+    ['Shift ↵', 'New line'],
+    ['↑ ↓', 'Move in the commands, or through earlier questions'],
+    ['Esc', 'Close the commands, clear the draft, go back, then close'],
+    ['Ctrl K / ⌘K', 'Open or close Ask Vinayak from anywhere on the page'],
+    ['← → ↑ ↓', 'Move through the graph; Enter picks a node'],
   ]
   return (
     <>
-      <Head code="SYS · HELP" meta={[plural(COMMANDS.length, 'command')]} title="Help" sub="Ask in plain words, or drive it with commands. Every click in a view runs the command shown in the trail, so the trail doubles as a reference." />
+      <Head title="Help" sub="Ask in plain words, click anything in the graph, or type / for commands." />
       {groups.map((g) => (
         <Sec key={g} title={g}>
           <ul className="cx-cmds">
@@ -850,125 +928,52 @@ function Help() {
           ))}
         </dl>
       </Sec>
-      <Sec title="How input resolves" aside="first match wins">
-        <ol className="cx-routes">
-          {routes.map(([k, v]) => (
-            <li key={k}>
-              <span className="cx-route" data-route={k}>
-                {ROUTE_LABEL[k]}
-              </span>
-              <span>{v}</span>
-            </li>
-          ))}
-        </ol>
-        <p className="cx-note">No language model and no network: the same input on the same view always resolves the same way.</p>
-      </Sec>
     </>
   )
 }
 
 /*
- * How a response arrives: a short "processing" beat that walks through what the resolver actually
- * did (read the input, the rule that matched, what it read), then an answer's text streams in a few
- * words at a time and the "Next" actions follow once it is done. Structured views (a project, the
- * stack…) skip the stream and unfold section by section instead. Only the presentation is paced:
- * earlier turns in the thread are shown whole.
- * Timers and CSS, not requestAnimationFrame, which the WebGL page can starve.
+ * How a response arrives, like a coding agent's: first the work (Work.tsx: a spinner, a verb, the
+ * steps landing one by one), then the answer. An answer's text streams in a word at a time at a
+ * medium, readable pace (STREAM_TOKENS_PER_SEC, a little jitter per word, a breath after each
+ * sentence and line), each word fading in, a violet caret at its end. Structured views (a project,
+ * the stack…) unfold block by block, REVEAL_MS apart. Then it signs off: pictures, a smile and
+ * actions (SignOff.tsx). Everything resolves locally and at once; only the presentation is paced.
+ * Earlier turns, and reduced motion, show whole. Timers, not requestAnimationFrame, which the WebGL
+ * page can starve.
  */
 export type Phase = 'thinking' | 'live' | 'done'
+
+/** Words per second while an answer streams. The one knob for the pace. */
+export const STREAM_TOKENS_PER_SEC = 22
+/** Each word lands up to this much (ms) earlier or later than the even beat. */
+const STREAM_JITTER_MS = 14
+/** The extra breath (ms) after a sentence ends or a line breaks. */
+const SENTENCE_PAUSE_MS: [number, number] = [160, 320]
+/** Between the blocks of a structured view as it unfolds (ms). */
+const REVEAL_MS = 190
+
+const between = ([lo, hi]: [number, number]) => lo + Math.random() * (hi - lo)
+/** A chunk that ends a sentence or a line: a pause follows it. */
+const ENDS_SENTENCE = /(?:[.?!…:]["'”’)\]*_]*\s*$)|\n/
 
 interface StreamState {
   /** Whether this view arrives animated at all (fixed for the view's lifetime). */
   animated: boolean
   phase: Phase
-  /** The answer finished streaming (or the reader skipped ahead). */
+  /** The reader stopped it: what has arrived stays, nothing more comes. */
+  stopped: boolean
+  /** The answer finished streaming. */
   finish: () => void
 }
-const Stream = createContext<StreamState>({ animated: false, phase: 'done', finish: () => {} })
+const Stream = createContext<StreamState>({ animated: false, phase: 'done', stopped: false, finish: () => {} })
 
-/** Chunks (words, or a whole link / bold span / image) per second, and the most a long answer may take. */
-const STREAM_RATE = 34
-const STREAM_MAX_MS = 3600
 /** A list marker or heading mark on its own would render as a stray "-" until its words arrive. */
 const BARE_MARK = /(^|\n)[^\S\n]*(?:[-*•]|\d+[.)]|#{1,6})[^\S\n]*$/
-/** Each processing step lands this long after the one before (keep in step with --cx-step in chat.css). */
-const STEP_MS = 230
 
-const ROUTE_WORD: Record<Route, string> = { command: 'command', entity: 'name in the index', context: 'follow-up', intent: 'intent', fallback: 'no exact rule' }
-
-/** The processing steps, read off the resolution itself. */
-function stepsOf(res: Resolution): string[] {
-  const read = res.sources.length ? `Reading ${res.sources.slice(0, 2).join(' · ')}` : res.route === 'fallback' ? 'Looking for the closest names' : 'Composing the reply'
-  return [res.route === 'command' ? 'Parsing the command' : 'Reading your question', `Matched ${ROUTE_WORD[res.route]} · ${res.rule}`, read]
-}
-
-/** How long the processing beat lasts: every step lands, a little longer for a longer answer, never long. */
-function thinkFor(res: Resolution | null): number {
-  const steps = 3 * STEP_MS
-  if (res?.view?.kind !== 'answer') return steps + 60
-  const n = toPlainText(res.view.reply.text).split(/\s+/).length
-  return steps + Math.min(n, 120) * 1.5
-}
-
-/** A small orbit: a turning violet-to-blue ring around a breathing core, two satellites circling it. */
-function Orb({ size = 22 }: { size?: number }) {
-  return (
-    <span className="cx-orb" style={{ '--s': `${size}px` } as CSSProperties} aria-hidden="true">
-      <span className="cx-orb-ring" />
-      <span className="cx-orb-core" />
-      <span className="cx-orb-sat" />
-      <span className="cx-orb-sat cx-orb-sat--b" />
-    </span>
-  )
-}
-
-function Thinking({ res }: { res: Resolution }) {
-  const steps = stepsOf(res)
-  return (
-    <div className="cx-thinking" role="status" aria-label="Processing">
-      <p className="cx-thinking-head">
-        <Orb />
-        <span className="cx-thinking-text">Processing</span>
-      </p>
-      <ol className="cx-steps" aria-hidden="true">
-        {steps.map((t, i) => (
-          <li key={i} style={{ '--n': i } as CSSProperties}>
-            <span className="cx-step-mark" />
-            <span className="cx-step-text">{t}</span>
-          </li>
-        ))}
-      </ol>
-    </div>
-  )
-}
-
-/** What the processing beat settles into: one quiet line above the response. */
-function Trace({ res }: { res: Resolution }) {
-  return (
-    <p className="cx-trace">
-      <span className="cx-trace-dot" aria-hidden="true" />
-      <span>
-        {ROUTE_WORD[res.route]} · {res.rule}
-        {res.sources.length > 0 && ` · ${plural(res.sources.length, 'source')}`}
-      </span>
-    </p>
-  )
-}
-
-/** Three dots in a wave, after the text while more is arriving. */
-function Typing() {
-  return (
-    <span className="cx-typing" aria-hidden="true">
-      <i />
-      <i />
-      <i />
-    </span>
-  )
-}
-
-/** Reveals the answer chunk by chunk, following the bottom of the pane unless the reader scrolled up. */
+/** Reveals the answer word by word, following the bottom of the thread unless the reader scrolled up. */
 function useStreamed(text: string) {
-  const { animated, phase, finish } = useContext(Stream)
+  const { animated, phase, stopped, finish } = useContext(Stream)
   const chunks = useRef(streamChunks(text)).current
   const [n, setN] = useState(() => (animated ? 0 : chunks.length))
   const box = useRef<HTMLDivElement>(null)
@@ -976,40 +981,55 @@ function useStreamed(text: string) {
   useEffect(() => {
     if (phase !== 'live') return
     if (!chunks.length) return finish()
-    const rate = Math.max(STREAM_RATE / 1000, chunks.length / STREAM_MAX_MS)
-    const t0 = performance.now()
-    const id = window.setInterval(() => {
-      const t = performance.now() - t0
-      // A slight wobble, so words land in uneven little bursts rather than on a metronome.
-      const next = Math.min(chunks.length, Math.floor(t * rate + Math.sin(t / 110) * 1.4))
-      setN((m) => Math.max(m, next))
-      if (next >= chunks.length) {
-        window.clearInterval(id)
-        finish()
-      }
-    }, 32)
-    return () => window.clearInterval(id)
+    let i = 0
+    let t = 0
+    const beat = 1000 / STREAM_TOKENS_PER_SEC
+    const step = () => {
+      i += 1
+      setN(i)
+      if (i >= chunks.length) return finish()
+      const pause = ENDS_SENTENCE.test(chunks[i - 1]) ? between(SENTENCE_PAUSE_MS) : 0
+      t = window.setTimeout(step, Math.max(4, beat + (Math.random() * 2 - 1) * STREAM_JITTER_MS + pause))
+    }
+    t = window.setTimeout(step, beat)
+    return () => window.clearTimeout(t)
   }, [phase, chunks, finish])
 
-  // Stick to the bottom while text is arriving, unless the reader has scrolled up to read.
+  // Follow the text as it grows, unless the reader has scrolled up to read; scrolling back down
+  // to the end picks it up again.
   const stick = useRef(true)
   useEffect(() => {
     const sc = box.current?.closest<HTMLElement>('.cx-main')
     if (!sc || !animated) return
-    const on = () => {
-      stick.current = sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 48
+    const up = () => {
+      stick.current = false
     }
-    sc.addEventListener('scroll', on, { passive: true })
-    return () => sc.removeEventListener('scroll', on)
+    const onWheel = (e: WheelEvent) => e.deltaY < 0 && up()
+    const onKey = (e: KeyboardEvent) => ['ArrowUp', 'PageUp', 'Home'].includes(e.key) && up()
+    const onScroll = () => {
+      if (sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 24) stick.current = true
+    }
+    sc.addEventListener('wheel', onWheel, { passive: true })
+    sc.addEventListener('touchmove', up, { passive: true })
+    sc.addEventListener('keydown', onKey)
+    sc.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      sc.removeEventListener('wheel', onWheel)
+      sc.removeEventListener('touchmove', up)
+      sc.removeEventListener('keydown', onKey)
+      sc.removeEventListener('scroll', onScroll)
+    }
   }, [animated])
   useLayoutEffect(() => {
     const sc = box.current?.closest<HTMLElement>('.cx-main')
-    if (sc && phase === 'live' && stick.current) sc.scrollTop = sc.scrollHeight
+    if (!sc || phase !== 'live' || !stick.current) return
+    const bottom = sc.scrollHeight - sc.clientHeight
+    if (bottom - sc.scrollTop > 2) sc.scrollTo({ top: bottom, behavior: 'smooth' })
   }, [n, phase])
 
-  const done = phase === 'done' || n >= chunks.length
+  const done = (phase === 'done' && !stopped) || n >= chunks.length
   const shown = done ? text : closeOpenMarks(chunks.slice(0, n).join('')).replace(BARE_MARK, '$1')
-  return { shown, box, live: !done, animated, skip: finish }
+  return { shown, box, live: phase === 'live' && !done, animated, empty: stopped && n === 0 }
 }
 
 function Answer({ res }: { res: Resolution }) {
@@ -1017,25 +1037,10 @@ function Answer({ res }: { res: Resolution }) {
   const reply = res.view?.kind === 'answer' ? res.view.reply : null
   const s = useStreamed(reply?.text ?? '')
   if (!reply) return null
-  const tags = assistant.topicTags
-  const tag = tags[reply.topic] ?? Object.entries(tags).find(([k]) => k.endsWith(':') && reply.topic.startsWith(k))?.[1]
   return (
-    <>
-      <Head code="ANS" meta={[tag ? `${tag[0]} ${tag[1]}` : undefined, plural(toPlainText(reply.text).split(/\s+/).filter(Boolean).length, 'word')]} title={tag?.[1] ?? 'Answer'} />
-      <div
-        ref={s.box}
-        className="cx-md chat-md"
-        data-streamed={s.animated || undefined}
-        aria-busy={s.live || undefined}
-        // Clicking a streaming answer (anywhere but a link) shows the rest at once.
-        onClick={(e) => {
-          if (s.live && !(e.target as HTMLElement).closest('a')) s.skip()
-        }}
-      >
-        <Markdown src={s.shown} onAnchor={onAnchor} stream={s.animated} />
-        {s.live && <Typing />}
-      </div>
-    </>
+    <div ref={s.box} className="cx-md chat-md" data-streamed={s.animated || undefined} data-live={s.live || undefined} aria-busy={s.live || undefined}>
+      {s.empty ? <p className="cx-stopped">Stopped.</p> : <Markdown src={s.shown} onAnchor={onAnchor} stream={s.animated} />}
+    </div>
   )
 }
 
@@ -1043,9 +1048,9 @@ function None({ view }: { view: Extract<View, { kind: 'none' }> }) {
   const fallback = Boolean(view.text)
   return (
     <>
-      <Head code={fallback ? 'NUL' : 'SYS'} meta={[fallback ? 'no rule matched' : undefined]} title={view.title} sub={view.reason} />
+      <Head title={view.title} sub={view.reason} />
       {view.candidates.length > 0 && (
-        <Sec title={fallback ? 'Closest names in the index' : 'Choose'} aside={`${view.candidates.length}`}>
+        <Sec title={fallback ? 'Did you mean' : 'Choose one'}>
           <ul className="cx-rows">
             {view.candidates.map((v) => (
               <NodeRow key={v.key} node={v} line={v.kind === 'project' ? <InlineMarkdown text={v.tagline} /> : v.kind === 'tech' ? v.group : v.kind === 'capability' ? v.summary : v.role.title} />
@@ -1056,7 +1061,7 @@ function None({ view }: { view: Extract<View, { kind: 'none' }> }) {
       {fallback && (
         <Sec title="Ask him directly">
           <p className="cx-prose">
-            <a href={`mailto:${contact.email}`}>{contact.email}</a>. Or type <code>/</code> to see what the index covers.
+            <a href={`mailto:${contact.email}`}>{contact.email}</a>. Or type / to see everything you can ask.
           </p>
         </Sec>
       )}
@@ -1102,14 +1107,12 @@ function Next({ next }: { next: Action[] }) {
   const { run } = useActions()
   if (!next.length) return null
   return (
-    <nav className="cx-next" aria-label="Next">
-      <p className="cx-next-h">Next</p>
+    <nav className="cx-next" aria-label="Follow-up questions">
       <ul>
         {next.map((a) => (
           <li key={a.run}>
             <button type="button" onClick={() => run(a.run)}>
-              <span className="cx-next-label">{a.label}</span>
-              {a.run.startsWith('/') && <code>{a.run}</code>}
+              {a.label}
             </button>
           </li>
         ))}
@@ -1119,52 +1122,85 @@ function Next({ next }: { next: Action[] }) {
 }
 
 /**
- * The view for a resolution (or the first screen), its provenance and where to go next. With
- * `animate`, it arrives the way a response does (see Stream above); `onPhase` reports each step.
- * In the thread only the last turn offers "Next".
+ * The view for a resolution (or the first screen), the work behind it, how it signs off and where to
+ * go next. With `animate`, it arrives the way a response does (see above); `onPhase` reports each
+ * step, and `stopRef` is handed the function that stops it. `seed` keeps a turn's work the same live
+ * and later. In the thread only the last turn offers follow-ups.
  */
 export function ViewPane({
   res,
   actions,
   animate = false,
   onPhase,
+  stopRef,
   showNext = true,
+  seed = 'home',
+  onRetry,
 }: {
   res: Resolution | null
   actions: ViewActions
   animate?: boolean
   onPhase?: (p: Phase) => void
+  stopRef?: { current: (() => void) | null }
   showNext?: boolean
+  seed?: string
+  onRetry?: () => void
 }) {
   const [animated] = useState(() => animate && Boolean(res))
   const [phase, setPhase] = useState<Phase>(animated ? 'thinking' : 'done')
+  const [stopped, setStopped] = useState<false | 'working' | 'writing'>(false)
   const finish = useRef(() => setPhase('done')).current
+  const [plan] = useState(() => planWork(res, seed))
+  const out = useRef<HTMLDivElement>(null)
+  const isAnswer = res?.view?.kind === 'answer'
+  const phaseNow = useRef(phase)
+  phaseNow.current = phase
 
-  useEffect(() => {
-    if (phase !== 'thinking') return
-    const t = window.setTimeout(() => setPhase(res?.view?.kind === 'answer' ? 'live' : 'done'), thinkFor(res))
-    return () => window.clearTimeout(t)
-  }, [phase, res])
   useEffect(() => onPhase?.(phase), [phase, onPhase])
+
+  // A structured view unfolds block by block, then it is done.
+  useLayoutEffect(() => {
+    if (phase !== 'live' || isAnswer || !out.current) return
+    const kids = [...out.current.children] as HTMLElement[]
+    kids.forEach((k, i) => k.style.setProperty('--d', `${i * REVEAL_MS}ms`))
+    const t = window.setTimeout(finish, Math.max(0, kids.length - 1) * REVEAL_MS + 420)
+    return () => window.clearTimeout(t)
+  }, [phase, isAnswer, finish])
+
+  // Stop: what has arrived stays (a structured view shows whole), nothing more comes. Stopped while
+  // still working, no answer comes at all.
+  useEffect(() => {
+    if (!stopRef) return
+    stopRef.current = () => {
+      if (phaseNow.current === 'done') return
+      setStopped(phaseNow.current === 'thinking' ? 'working' : 'writing')
+      setPhase('done')
+    }
+    return () => {
+      stopRef.current = null
+    }
+  }, [stopRef])
+
+  const copyText = () => (res?.view?.kind === 'answer' ? toPlainText(res.view.reply.text) : (out.current?.innerText ?? ''))
 
   return (
     <Actions.Provider value={actions}>
-      <Stream.Provider value={{ animated, phase, finish }}>
-        <article className="cx-view" data-kind={res?.view?.kind ?? 'home'} data-reveal={animated || undefined}>
-          {phase === 'thinking' && res ? (
-            <Thinking res={res} />
+      <Stream.Provider value={{ animated, phase, stopped: Boolean(stopped), finish }}>
+        <article className="cx-view" data-kind={res?.view?.kind ?? 'home'}>
+          {res && <Work plan={plan} running={phase === 'thinking'} animated={animated} onDone={() => setPhase('live')} />}
+          {!res ? (
+            <Home />
+          ) : stopped === 'working' ? (
+            <p className="cx-stopped">Stopped before answering.</p>
           ) : (
-            <>
-              {res && <Trace res={res} />}
-              {res ? <Body res={res} /> : <Home />}
-              {phase === 'done' && res && res.sources.length > 0 && (
-                <p className="cx-prov">
-                  <span>Read from</span> {res.sources.slice(0, 4).join(' · ')}
-                </p>
-              )}
-              {phase === 'done' && res && showNext && <Next next={res.next} />}
-            </>
+            phase !== 'thinking' && (
+              <div ref={out} className="cx-out" data-reveal={(animated && !stopped && !isAnswer) || undefined}>
+                <Body res={res} />
+              </div>
+            )
           )}
+          {phase === 'done' && res && <SignOff res={res} animated={animated} brief={Boolean(stopped)} onRetry={onRetry} onView={actions.view} copyText={copyText} />}
+          {phase === 'done' && res && showNext && !stopped && <Next next={res.next} />}
         </article>
       </Stream.Provider>
     </Actions.Provider>

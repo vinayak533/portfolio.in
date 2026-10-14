@@ -18,10 +18,11 @@
  * out (hero.css pauses its animations, and this loop stops). Lite (automatic, src/core/autoLite.ts) and
  * reduced motion: still, no parallax.
  */
-import { stageFrame, type StageFrame } from './dom'
+import { stageCues, stageFrame, type StageFrame } from './dom'
 import { beat, emptySample } from './beat'
 import { mountTerrain, type TerrainHandle } from './terrain'
 import { FROZEN } from '../freeze'
+import { labOff } from '../../core/perfLab'
 
 const VIOLET = '124,92,255'
 /** Parallax easing rate (1/s): a 200 ms time constant. */
@@ -140,7 +141,7 @@ export function mountStage(host: HTMLElement): StageHandle {
   let disposed = false
   let raf = 0
   let last = 0
-  const moving = () => !calm() && !lite() && onScreen && !document.hidden && backdrop() > 0.01
+  const moving = () => !labOff('beam') && !calm() && !lite() && onScreen && !document.hidden && backdrop() > 0.01 && !stageCues.loop
 
   function tick(now: number) {
     raf = 0
@@ -158,7 +159,7 @@ export function mountStage(host: HTMLElement): StageHandle {
   }
 
   function idle() {
-    host.toggleAttribute('data-idle', !onScreen || document.hidden || backdrop() <= 0.01)
+    host.toggleAttribute('data-idle', !onScreen || document.hidden || backdrop() <= 0.01 || stageCues.loop)
     // Still (lite, reduced motion): the parallax let go, the beam steady.
     if (calm() || lite()) {
       at.x = at.y = 0

@@ -77,17 +77,44 @@ Nothing on the robot or its props passes L\* 92 except the LED eyes and the scre
 
 | | HIGH | MEDIUM | LOW |
 |---|---|---|---|
-| chosen for | desktops | touch, <= 1024 px, 3G | Save-Data, 2G, <= 4 cores or GB, software GL, battery < 20%, failed probe |
+| chosen for | desktops | touch, <= 1024 px, 3G | Save-Data, 2G, <= 4 cores or GB, battery < 20%, failed probe |
 | landscape grid | 220 x 130 budget | 100 x 60 | 80 x 48, DPR 1 |
 | robot DPR cap | 2 (1.5 integrated GPU) | 1.5 | 1.25 |
 | shadows, floor reflection | yes | no | no |
 | waves / comets / wake | 100% / yes / pointer | 70% / yes / taps | none |
 | frame rate | 60 | 60 (landscape 30 on phones) | 30 |
 
-Probe: 1.5 s of frames, 3.2 s after the scene is live; over 24 ms average steps down one tier. Live ladder
-(frames over 24 ms for 3 s, one step per window, never back up): first the vortex (half, then off), then 1 interference waves, 2 comets, 3 grid
-density, 4 glow cards and floor reflection, 5 shadow map halves, 6 equaliser 28 columns, 7 landscape DPR x0.75,
-8 landscape frame rate. Site-wide lite (under 40 fps for 3 s) means LOW. The head, eyes and screen never degrade.
+Frame pacing (src/core/clock.ts `pacing`): every WebGL loop (robot, landscape, sections) draws on whole refreshes at
+about 60 a second whatever the display: 60-100 Hz every refresh, 120 Hz every 2nd (60), 144 Hz every 2nd (72, the
+even cadence nearest 60), 165 Hz every 3rd (55), 240 Hz every 4th. Locked: an even ~30 (every 2nd refresh at 60 Hz,
+4th at 120, 5th at 144). The DOM (scroll, tweens) runs on every refresh; motion is delta-time based.
+
+Probe: 1.5 s of frames, 3.2 s after the scene is live. Under ~28 fps (over 36 ms) steps down one tier; under ~40
+(over the budget by 35%) locks to the even 30 and keeps the tier's features. Live ladder (2 s windows, only
+downward): frames more than 12% over the paced interval (under ~54 fps at 60 Hz; under ~27 once locked), or more
+than a tenth of them a refresh late (hovering between cadences), shed one step; far over (under ~40) locks to 30 at once instead. Steps: the vortex (half, then off), then 1 interference
+waves, 2 comets, 3 grid density, 4 glow cards and floor reflection, 5 shadow map halves, 6 equaliser 28 columns,
+7 landscape DPR x0.75, 8 landscape frame rate, then the 30 lock. Site-wide lite (under 40 fps for 3 s) means LOW.
+The head, eyes and screen never degrade. Docked, the head draws only when its picture changes (render on demand).
+
+Last resort (src/hero/loop.ts): a pre-rendered loop of the hero itself (public/hero/loop-{phone,tablet,desktop},
+H.264 + VP9, 10 s at 30 fps, 720 px wide / 1080 px tall in the posters' framings, phones <= 2 MB, tablets <= 2.5,
+desktops <= 6: the landscape's dots lose their detail below that at 1080p) in the poster's place, under the grain, vignette, scrim and the real copy. Taken where LOW cannot
+keep a steady 30 (the engine's LOW watch: drawn frames over ~37 ms on average, or a tenth of them late, for two 2 s
+windows in a row at rest):
+the loop covers the hero while it rests at the top (after 1.2 s there) and the robot and the landscape sleep under
+it; the scroll's hand-off is still the live scene, which wakes and crossfades back over the loop (300 ms, the
+poster's) as the hero starts to move. Docked, the head is the engine's (drawn only when it changes). No WebGL or a
+software renderer (SwiftShader, llvmpipe, Microsoft Basic Render): the static layout, with the loop as the hero.
+Never with reduced motion, Save-Data or `?freeze`; a loop that cannot play (no codec, autoplay refused) leaves the
+hero as it was. `npm run perf:build && npm run hero:loop` captures them from the real scene on a virtual clock
+(seeded, deterministic; scripts/hero-loop.mjs) and crossfades their last 0.8 s into their first; recapture with the
+posters. The lab forces it with `?loop=1` (perf build).
+
+Draw-call budget (src/hero/robot/merge.ts): static parts are baked into what moves them (mergeStatic); the moving
+parts left are drawn as one skinned mesh per material within each visibility domain (skinParts: each part is its
+own bone, weight 1, normals by the inverse transpose), so the frame is the same. The robot: 83 draws on HIGH
+(was 171), 80 on MEDIUM; its WebGL calls per frame 1051 on HIGH (was 1909), 580 on MEDIUM (was 982).
 
 ## Scroll hand-off (src/hero/config.ts, shot.ts, robot/engine.ts; progress p 0..1 over the pin)
 
@@ -118,8 +145,17 @@ robot jump at the crossfade (and is the whole hero without WebGL).
   HIGH). Harmless in production: it only stops motion.
 - `npm run hero:baseline`: frozen frames at 390x844, 768x1024, 1440x900, 1920x1080 and the docked head at
   390x844 and 1440x900 against `scripts/baselines/hero/` (fails above 0.2% of pixels); `-- --update` rewrites.
-- `npm run hero:perf`: Lighthouse mobile (perf >= 90, LCP <= 2.5 s, CLS 0, TBT <= 200 ms, transfer <= 2.5 MB)
-  and in-session at 390x844, CPU 4x (>= 45 fps avg, >= 30 worst second, heap < 150 MB, no long tasks).
+- `npm run build && npm run hero:perf`: Lighthouse mobile (perf >= 90, LCP <= 2.5 s, CLS 0, TBT <= 200 ms,
+  transfer <= 2.5 MB), then a frame-time smoke test (scripts/perf-lab.mjs) on a laptop and a phone profile (CPU
+  4x): hero idle, pointer and the hand-off both ways at 55+ fps with p95 <= 20 ms or a steady 30 (28+, p95 <= 34),
+  no frame over 50 ms, JS heap < 150 MB. Exit 1 on any miss.
+- `npm run perf:build && npm run perf:lab -- --profiles phone-mid --scenarios idle,pointer --matrix`: the
+  performance lab (frame-by-frame CPU and GPU time per WebGL context, per device profile and scenario; the
+  kill-switch matrix with `?off=` one layer at a time, src/core/perfLab.ts). Production builds ignore the switches.
+- First visits (no shader cache): every program the robot and its environment prefilter will draw with is built in
+  the background and asked for its uniforms before the first frame (engine.ts compile chain, prefetchPrograms):
+  diffing `renderer.info.programs` at that point against the list after the first seconds live (`window.__programsAhead`
+  in the perf build) finds none compiled on first use on HIGH, MEDIUM or LOW.
 - Open exception (2026-10-12): the perf guard does not pass. Lighthouse mobile is ~65 on a warmed browser (the
   build before the Oct fix pass: ~67); FCP 2.4 s, LCP 2.9 s, TBT ~1.4-1.7 s, transfer 1.1 MB. The blocking time is
   the procedural robot's build (~0.6 s + ~0.45 s tasks at 4x); it needs a baked GLB or a worker build. A cold

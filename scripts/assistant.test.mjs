@@ -206,7 +206,8 @@ test('answers show at most one image, only from the approved list', () => {
     for (const i of imgs) assert.ok(approved.has(i.src), `${q}: ${i.src}`)
   }
   const shows = (q) => parseBlocks(answer(q).text).find((b) => b.kind === 'img')?.src
-  assert.equal(shows('Who is Vinayak?'), assistant.images.profile.src)
+  // His own photo is never shown (his request): answers about him carry no picture of him.
+  assert.equal(shows('Who is Vinayak?'), undefined)
   assert.equal(shows('Show me loom.ai'), assistant.images.loom.src)
 })
 

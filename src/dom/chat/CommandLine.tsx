@@ -1,30 +1,34 @@
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from 'react'
 import { assistant } from '../../assistant'
-import { complete, preview, type Completion, type ConsoleContext } from '../../core/console'
+import { complete, type Completion } from '../../core/console'
 
 interface CommandLineProps {
-  inputRef: RefObject<HTMLInputElement | null>
+  inputRef: RefObject<HTMLTextAreaElement | null>
   value: string
   onChange: (value: string) => void
   /** Runs an input; true when it ran. */
   onRun: (input: string) => boolean
-  /** The context the preview resolves in (the view on screen). */
-  context: () => ConsoleContext
-  /** The node a highlighted palette entry opens, lit on the map. */
+  /** The node a highlighted dropdown entry opens, previewed on the graph. */
   onHover: (key: string | null) => void
   /** Earlier inputs, 0 = the last one. */
   recall: (at: number) => string | undefined
-  /** Escape with nothing left to close here: the panel goes back a view, or closes. */
+  /** Escape with nothing left to close here: the panel goes back, or closes. */
   onEscape: () => void
+  /** An answer is still arriving: the send button becomes Stop. */
+  busy: boolean
+  onStop: () => void
 }
 
+/** The textarea grows with its text up to this many pixels, then scrolls. */
+const MAX_HEIGHT = 168
+
 /**
- * The command line. Plain words are questions; "/" opens the palette: every command with what it
- * does, then (after a space) its arguments. ↑ / ↓ move through the palette, or through earlier
- * inputs when it is closed; Tab completes; Enter runs; Escape closes the palette, then clears the
- * line, then hands over to the panel. The highlighted entry is previewed before it runs.
+ * The composer. Plain words are questions: Enter sends, Shift+Enter starts a new line. Typing "/"
+ * opens a dropdown of commands, each with what it does in a few words; after a space, its
+ * options. ↑ / ↓ move through the dropdown, or (on a one-line draft) through earlier questions;
+ * Tab completes; Escape closes the dropdown, then clears the draft, then hands over to the panel.
  */
-export function CommandLine({ inputRef, value, onChange, onRun, context, onHover, recall, onEscape }: CommandLineProps) {
+export function CommandLine({ inputRef, value, onChange, onRun, onHover, recall, onEscape, busy, onStop }: CommandLineProps) {
   const listId = useId()
   const [active, setActive] = useState(0)
   const [dismissed, setDismissed] = useState(false)
@@ -32,7 +36,7 @@ export function CommandLine({ inputRef, value, onChange, onRun, context, onHover
   const list = useRef<HTMLUListElement>(null)
 
   const items = useMemo(() => complete(value), [value])
-  const open = Boolean(items) && !dismissed
+  const open = Boolean(items?.length) && !dismissed
   const item: Completion | undefined = open ? items![Math.min(active, items!.length - 1)] : undefined
 
   // A new query starts at the top of the list.
@@ -42,7 +46,7 @@ export function CommandLine({ inputRef, value, onChange, onRun, context, onHover
   }, [item, onHover])
   useEffect(() => {
     if (!open) return
-    // Scroll the list alone: scrollIntoView would move the view behind the palette too.
+    // Scroll the list alone: scrollIntoView would move the thread behind it too.
     const ul = list.current
     const li = ul?.querySelector<HTMLElement>('[aria-selected="true"]')
     if (!ul || !li) return
@@ -50,10 +54,24 @@ export function CommandLine({ inputRef, value, onChange, onRun, context, onHover
     else if (li.offsetTop + li.offsetHeight > ul.scrollTop + ul.clientHeight) ul.scrollTop = li.offsetTop + li.offsetHeight - ul.clientHeight
   }, [active, open])
 
+  // Grow with the text.
+  useLayoutEffect(() => {
+    const ta = inputRef.current
+    if (!ta) return
+    ta.style.height = 'auto'
+    ta.style.height = `${Math.min(ta.scrollHeight, MAX_HEIGHT)}px`
+    ta.style.overflowY = ta.scrollHeight > MAX_HEIGHT ? 'auto' : 'hidden'
+  }, [value, inputRef])
+
   const change = (v: string) => {
     setDismissed(false)
     setHist(-1)
     onChange(v)
+  }
+
+  const send = (text: string) => {
+    if (busy) return
+    if (onRun(text)) change('')
   }
 
   const pick = (c: Completion) => {
@@ -62,29 +80,30 @@ export function CommandLine({ inputRef, value, onChange, onRun, context, onHover
       inputRef.current?.focus()
       return
     }
-    if (onRun(c.value)) change('')
+    send(c.value)
   }
 
-  const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
+  const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.nativeEvent.isComposing || e.keyCode === 229) return
     const n = open ? items!.length : 0
     switch (e.key) {
       case 'ArrowDown':
       case 'ArrowUp': {
-        e.preventDefault()
         const step = e.key === 'ArrowDown' ? 1 : -1
         if (n) {
+          e.preventDefault()
           setActive((a) => (Math.min(a, n - 1) + step + n) % n)
           return
         }
-        if (open) return
-        // Shell-style history: ↑ older, ↓ newer, back to an empty line.
+        // History only on a one-line draft, so the arrows still move between lines of a longer one.
+        if (value.includes('\n')) return
         const at = hist - step
         if (at < -1) return
         const v = at === -1 ? '' : recall(at)
         if (v === undefined) return
+        e.preventDefault()
         setHist(at)
-        // A recalled command keeps the palette shut, so ↑ / ↓ keep walking the history; typing reopens it.
+        // A recalled command keeps the dropdown shut, so ↑ / ↓ keep walking the history; typing reopens it.
         setDismissed(at !== -1)
         onChange(v)
         return
@@ -95,9 +114,10 @@ export function CommandLine({ inputRef, value, onChange, onRun, context, onHover
         change(item.ready && item.kind === 'command' && item.value === value ? `${item.value} ` : item.value)
         return
       case 'Enter':
+        if (e.shiftKey) return
         e.preventDefault()
         if (item) return pick(item)
-        if (onRun(value)) change('')
+        send(value)
         return
       case 'Escape':
         e.stopPropagation()
@@ -107,103 +127,119 @@ export function CommandLine({ inputRef, value, onChange, onRun, context, onHover
     }
   }
 
-  const pv = useMemo(() => {
-    if (!item) return null
-    // Not runnable yet: say what it needs.
-    if (!item.ready) return { title: `${item.label} ${item.hint ?? ''}`.trim(), lines: [item.detail, `Tab or ↵ to add the ${item.hint?.replace(/[<>]/g, '') ?? 'argument'}`] }
-    return preview(item.value, context())
-  }, [item, context])
-
   const optionId = (i: number) => `${listId}-o${i}`
+  const empty = !value.trim()
 
   return (
     <div className="cx-cmd">
       {open && (
         <div className="cx-palette" data-lenis-prevent>
-          <p className="cx-pal-head" aria-hidden="true">
-            <span>{value.includes(' ') ? 'Arguments' : 'Commands'}</span>
-            <span className="cx-keys">
-              <kbd>↑</kbd>
-              <kbd>↓</kbd> select <kbd>Tab</kbd> complete <kbd>↵</kbd> run <kbd>Esc</kbd> close
-            </span>
-          </p>
-          {items!.length ? (
-            <ul ref={list} id={listId} className="cx-pal-list" role="listbox" aria-label={value.includes(' ') ? 'Arguments' : 'Commands'}>
-              {items!.map((c, i) => (
-                <li
-                  key={c.value}
-                  id={optionId(i)}
-                  role="option"
-                  aria-selected={c === item}
-                  className="cx-pal-item"
-                  data-kind={c.kind}
-                  onMouseMove={() => i !== active && setActive(i)}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => pick(c)}
-                >
-                  <span className="cx-pal-label">{c.label}</span>
-                  {c.hint && <span className="cx-pal-hint">{c.hint}</span>}
-                  <span className="cx-pal-detail">{c.detail}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="cx-pal-empty" role="status">
-              No command “{value.trim()}”. Enter shows the closest ones.
-            </p>
-          )}
-          {pv && (
-            <div className="cx-pal-preview" aria-live="polite">
-              <p className="cx-pal-preview-title">
-                <span aria-hidden="true">→</span> {pv.title}
-              </p>
-              {pv.lines.filter(Boolean).map((l, i) => (
-                <p key={i}>{l}</p>
-              ))}
-            </div>
-          )}
+          <ul ref={list} id={listId} className="cx-pal-list" role="listbox" aria-label={value.includes(' ') ? 'Options' : 'Commands'}>
+            {items!.map((c, i) => (
+              <li
+                key={c.value}
+                id={optionId(i)}
+                role="option"
+                aria-selected={c === item}
+                className="cx-pal-item"
+                data-kind={c.kind}
+                onMouseMove={() => i !== active && setActive(i)}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => pick(c)}
+              >
+                <span className="cx-pal-label">{c.label}</span>
+                <span className="cx-pal-detail">{c.detail}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
       <form
         className="cx-line"
+        data-busy={busy || undefined}
         onSubmit={(e) => {
           e.preventDefault()
+          if (busy) return onStop()
           if (item) pick(item)
-          else if (onRun(value)) change('')
+          else send(value)
         }}
       >
-        <span className="cx-prompt" aria-hidden="true">
-          ›
-        </span>
         <label className="sr-only" htmlFor={`${listId}-input`}>
-          Ask a question or type a command
+          Ask a question, or type / for commands
         </label>
-        <input
+        <span className="cx-prompt" aria-hidden="true">
+          ❯
+        </span>
+        <textarea
           ref={inputRef}
           id={`${listId}-input`}
           className="cx-input"
-          type="text"
+          rows={1}
           role="combobox"
-          aria-expanded={open && Boolean(items?.length)}
+          aria-expanded={open}
           aria-controls={listId}
           aria-autocomplete="list"
           aria-activedescendant={item && items?.length ? optionId(items.indexOf(item)) : undefined}
           value={value}
           maxLength={assistant.maxLength}
           placeholder={assistant.console.placeholder}
-          enterKeyHint="go"
+          enterKeyHint="send"
           autoComplete="off"
-          autoCapitalize="off"
           spellCheck={false}
           onChange={(e) => change(e.target.value)}
           onKeyDown={onKey}
         />
-        <button type="submit" className="cx-run" disabled={!value.trim()} aria-label="Run">
-          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-            <path d="M12.5 3.5v4.25a2 2 0 0 1-2 2H3.5M6.5 6.75 3.5 9.75l3 3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+        {/* The commands, one click away: puts "/" in the composer, which opens the dropdown. */}
+        <button
+          type="button"
+          className="cx-slash"
+          aria-label="Show commands"
+          title="Commands (/)"
+          aria-pressed={value.startsWith('/')}
+          onClick={() => {
+            change(value.startsWith('/') ? '' : '/')
+            inputRef.current?.focus()
+          }}
+        >
+          /
         </button>
+        {busy ? (
+          <button type="submit" className="cx-send cx-send--stop" aria-label="Stop the answer">
+            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+              <rect x="4" y="4" width="8" height="8" rx="1.6" fill="currentColor" />
+            </svg>
+          </button>
+        ) : (
+          <button type="submit" className="cx-send" disabled={empty} aria-label="Send">
+            <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
+              <path d="M10 15.5v-11M5 9l5-5 5 5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        )}
       </form>
+      <p className="cx-hints" aria-hidden="true">
+        {busy ? (
+          <span className="cx-hint cx-hint--busy">
+            <kbd>esc</kbd> to interrupt
+          </span>
+        ) : (
+          <>
+            <span className="cx-hint">
+              <kbd>↵</kbd> send
+            </span>
+            <span className="cx-hint cx-hint--wide">
+              <kbd>⇧ ↵</kbd> new line
+            </span>
+            <span className="cx-hint">
+              <kbd>/</kbd> commands
+            </span>
+            <span className="cx-hint cx-hint--wide">
+              <kbd>↑</kbd> history
+            </span>
+          </>
+        )}
+        <span className="cx-hint-r">Runs in your browser · nothing is sent</span>
+      </p>
     </div>
   )
 }
