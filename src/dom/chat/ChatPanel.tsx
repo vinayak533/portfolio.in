@@ -283,7 +283,6 @@ export function ChatPanel({ id, open, onClose }: ChatPanelProps) {
   const view = useCallback((pics: Pic[], i: number) => setLightbox({ pics, i }), [])
   const actions = useMemo<ViewActions>(() => ({ run, fill, probe: setProbe, onAnchor, view, resume }), [run, fill, onAnchor, view, resume])
   const showRail = wide && rail
-  const status = !busy ? 'Ready' : phase === 'thinking' ? 'Working…' : 'Writing…'
 
   return (
     <div
@@ -309,11 +308,6 @@ export function ChatPanel({ id, open, onClose }: ChatPanelProps) {
           <h2 id={titleId} className="cx-brand">
             {assistant.name}
           </h2>
-          <p className="cx-state" data-state={busy ? 'busy' : 'idle'}>
-            <i aria-hidden="true" />
-            {status}
-            <span className="cx-state-x"> · grounded in his work</span>
-          </p>
         </div>
         <div className="cx-head-acts">
           {wide && (
